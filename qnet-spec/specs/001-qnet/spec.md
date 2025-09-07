@@ -67,11 +67,11 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 3. Binaries MUST have SLSA 3 provenance
 
 ## Bounties
-- HTX client/server crate ($12,000 USDC)
-- High-performance Nym mixnode ($8,000 USDC)
-- C library implementation ($4,000 USDC)
-- Spec-compliance linter ($4,000 USDC)
-- Chrome-Stable uTLS generator ($4,000 USDC)
+- HTX client/server crate
+- High-performance Nym mixnode
+- C library implementation
+- Spec-compliance linter
+- Chrome-Stable uTLS generator
 
 ## Acceptance Criteria
 - All user stories implemented

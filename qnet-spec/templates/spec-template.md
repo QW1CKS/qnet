@@ -100,6 +100,9 @@ When creating this spec from a user prompt:
 - [ ] Scope is clearly bounded
 - [ ] Dependencies and assumptions identified
 
+### Guardrails
+- [ ] AI Guardrail reviewed (`memory/ai-guardrail.md`) and commit includes `AI-Guardrail: PASS`
+
 ---
 
 ## Execution Status

@@ -34,11 +34,15 @@
 [SECTION_2_CONTENT]
 <!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+## Development Workflow & Quality Gates
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+All changes MUST comply with the AI-Generated Code Guardrail.
+
+- Mandatory rule: Before editing/adding/improving any code or creating any new file, authors MUST read and satisfy `memory/ai-guardrail.md`.
+- PRs MUST include a checklist confirmation (`AI-Guardrail: PASS`) and reference the relevant requirement in `specs/001-qnet`.
+- Reviewers MUST reject changes that do not meet the guardrail.
+
+Quality Gates (minimum): build, lint/format, unit tests, and relevant integration tests MUST pass.
 
 ## Governance
 <!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->

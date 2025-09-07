@@ -21,3 +21,9 @@ Auto-generated from all feature plans. Last updated: [DATE]
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
+
+## Review Checklist
+- [ ] Linked to requirement in `specs/001-qnet`
+- [ ] Tests added/updated (unit/integration)
+- [ ] Docs updated (if public API)
+- [ ] AI Guardrail checked (`memory/ai-guardrail.md`) and `AI-Guardrail: PASS` noted in commit
