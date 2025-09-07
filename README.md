@@ -1,4 +1,6 @@
-<img src="logo.png" alt="QNet Logo" width="400">
+<div align="center">
+  <img src="logo.png" alt="QNet Logo" width="400">
+</div>
 
 # QNet
 
