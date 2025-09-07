@@ -1,4 +1,4 @@
-![QNet Logo](logo.png)
+<img src="logo.png" alt="QNet Logo" width="400">
 
 # QNet
 
@@ -171,6 +171,8 @@ QNet welcomes contributions from developers, security researchers, and protocol 
 - Maintain high test coverage (target: 80%+)
 - Document all public APIs
 - Use conventional commits for PRs
+
+**Development Note**: Parts or most of the code in this project have been developed using agentic large language models (LLMs) to accelerate development, ensure modular implementations, and maintain high standards of quality and documentation.
 
 ## Bounties
 
