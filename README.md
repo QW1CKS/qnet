@@ -1,3 +1,5 @@
+![QNet Logo](logo.png)
+
 # QNet
 
 QNet is a decentralized, censorship-resistant network protocol stack designed to replace traditional web infrastructure with a privacy-preserving, self-sovereign alternative. It enables secure, anonymous communication over any IP bearer, from fiber to satellite, without relying on centralized authorities or vulnerable DNS systems.
