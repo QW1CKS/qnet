@@ -27,3 +27,4 @@ Auto-generated from all feature plans. Last updated: [DATE]
 - [ ] Tests added/updated (unit/integration)
 - [ ] Docs updated (if public API)
 - [ ] AI Guardrail checked (`memory/ai-guardrail.md`) and `AI-Guardrail: PASS` noted in commit
+- [ ] Testing Rules checked (`memory/testing-rules.md`) and `Testing-Rules: PASS` noted in commit

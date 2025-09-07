@@ -126,3 +126,4 @@ Task: "Integration test auth in tests/integration/test_auth.py"
 - [ ] Each task specifies exact file path
 - [ ] No task modifies same file as another [P] task
 - [ ] AI Guardrail reviewed (`memory/ai-guardrail.md`) and commit includes `AI-Guardrail: PASS`
+- [ ] Testing Rules reviewed (`memory/testing-rules.md`) and commit includes `Testing-Rules: PASS`

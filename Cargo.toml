@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "crates/core-crypto",
+    "crates/core-cbor",
+    "crates/core-framing",
+    "crates/htx",
+    "examples/echo",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"

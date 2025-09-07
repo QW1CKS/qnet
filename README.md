@@ -125,6 +125,26 @@ The spec kit ensures all changes are driven by documented requirements and maint
 - Docker (for builds and testing)
 - Linux/Windows development environment
 
+### Windows prerequisites
+- Install Visual Studio Build Tools 2022 with C++ and the Windows SDK:
+  - Required components: "MSVC v143 - VS 2022 C++ x64/x86 build tools" and a "Windows 10/11 SDK".
+  - Install via GUI (Build Tools installer) or with Winget:
+
+```powershell
+# Install Visual Studio Build Tools (opens installer UI to select components)
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e
+
+# Ensure Rust MSVC toolchain is installed and selected
+rustup toolchain install stable-x86_64-pc-windows-msvc
+rustup default stable-x86_64-pc-windows-msvc
+
+# Open "Developer PowerShell for VS 2022" (recommended) and build
+cargo build --workspace --all-targets
+cargo test --workspace --all-features
+```
+
+If you see "LNK1181: cannot open input file 'kernel32.lib'": launch the Build Tools installer and add a Windows SDK, then retry from a Developer PowerShell.
+
 ### Building
 ```bash
 # Clone the repository

@@ -36,13 +36,13 @@
 
 ## Development Workflow & Quality Gates
 
-All changes MUST comply with the AI-Generated Code Guardrail.
+All changes MUST comply with the AI-Generated Code Guardrail and the Testing Rules.
 
-- Mandatory rule: Before editing/adding/improving any code or creating any new file, authors MUST read and satisfy `memory/ai-guardrail.md`.
-- PRs MUST include a checklist confirmation (`AI-Guardrail: PASS`) and reference the relevant requirement in `specs/001-qnet`.
+- Mandatory rule: Before editing/adding/improving any code or creating any new file, authors MUST read and satisfy `memory/ai-guardrail.md` and `memory/testing-rules.md`.
+- PRs MUST include checklist confirmations (`AI-Guardrail: PASS`, `Testing-Rules: PASS`) and reference the relevant requirement in `specs/001-qnet`.
 - Reviewers MUST reject changes that do not meet the guardrail.
 
-Quality Gates (minimum): build, lint/format, unit tests, and relevant integration tests MUST pass.
+Quality Gates (minimum): build, lint/format, unit tests, and relevant integration tests MUST pass. New/changed core paths SHOULD meet coverage targets outlined in `memory/testing-rules.md`.
 
 ## Governance
 <!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->

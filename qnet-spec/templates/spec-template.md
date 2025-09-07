@@ -102,6 +102,7 @@ When creating this spec from a user prompt:
 
 ### Guardrails
 - [ ] AI Guardrail reviewed (`memory/ai-guardrail.md`) and commit includes `AI-Guardrail: PASS`
+- [ ] Testing Rules reviewed (`memory/testing-rules.md`) and commit includes `Testing-Rules: PASS`
 
 ---
 

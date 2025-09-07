@@ -11,6 +11,35 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 
 ---
 
+## Progress Checklist
+- [x] T1.1: Project Structure Setup
+- [ ] T1.2: Crypto Primitives Implementation
+- [ ] T1.3: L2 Frame Handling
+- [ ] T1.4: Noise XK Handshake
+- [ ] T1.5: Deterministic CBOR & TemplateID
+- [ ] T2.1: TLS Origin Mirroring
+- [ ] T2.2: Inner Channel Establishment
+- [ ] T2.3: Frame Multiplexing
+- [ ] T2.4: HTX Crate API
+- [ ] T2.5: Fuzzing and Testing
+- [ ] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
+- [ ] T3.1: SCION Packet Structures
+- [ ] T3.2: HTX Tunneling
+- [ ] T3.3: libp2p Integration
+- [ ] T3.4: Bootstrap Discovery
+- [ ] T3.5: Translation Layer (v1.1 Interop)
+- [ ] T4.1: Mixnode Selection
+- [ ] T4.2: Nym Mixnet Integration
+- [ ] T4.3: Self-Certifying IDs
+- [ ] T4.4: Alias Ledger
+- [ ] T5.1: Voucher System
+- [ ] T5.2: Governance Scoring
+- [ ] T6.1: C Library Implementation
+- [ ] T6.2: Go Spec Linter
+- [ ] T6.3: uTLS Template Generator
+- [ ] T6.4: SLSA Provenance
+- [ ] T6.5: Compliance Test Harness
+
 ## Phase 1: Core Infrastructure Setup (Priority: High)
 
 ### T1.1: Project Structure Setup
