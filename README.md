@@ -161,14 +161,75 @@ cargo test
 docker build -t qnet .
 ```
 
-### Running Examples
-```bash
-# Echo server
-cargo run --bin echo-server
+## Quick local run
 
-# Echo client
-cargo run --bin echo-client
+Below are minimal commands to run a working example locally. Use the PowerShell block on Windows or the Bash block on Linux/macOS.
+
+Windows (PowerShell):
+```powershell
+# From the repo root
+cargo test --workspace
+
+# TLS origin mirroring demo (with rustls client config)
+cargo run -p htx --features rustls-config --example tls_mirror_demo -- https://www.cloudflare.com
+
+# Echo placeholder example
+cargo run -p echo
 ```
+
+Linux/macOS (Bash):
+```bash
+# From the repo root
+cargo test --workspace
+
+# TLS origin mirroring demo (with rustls client config)
+cargo run -p htx --features rustls-config --example tls_mirror_demo -- https://www.cloudflare.com
+
+# Echo placeholder example
+cargo run -p echo
+```
+
+What you’ll see (example):
+- origin: the URL you probed
+- template_id: 32-byte ID (hex) of the mirrored TLS template
+- alpn: negotiated protocol preferences (e.g., ["h2", "http/1.1"]) 
+- ja3: JA3 fingerprint hash derived from the template
+- rustls_cfg_alpn: ALPN list embedded into the rustls ClientConfig (when feature enabled)
+
+Notes:
+- The rustls-config feature embeds a ready-to-use rustls::ClientConfig in the example output. If you don’t need it, omit --features rustls-config.
+- On first run for a host, a 24h in-memory cache of the template is populated.
+
+### Running Examples
+- TLS origin mirroring demo:
+  - With rustls ClientConfig embedded:
+    - Windows (PowerShell):
+      ```powershell
+      cargo run -p htx --features rustls-config --example tls_mirror_demo -- https://example.com
+      ```
+    - Linux/macOS (Bash):
+      ```bash
+      cargo run -p htx --features rustls-config --example tls_mirror_demo -- https://example.com
+      ```
+  - Without rustls ClientConfig (still prints TemplateID/ALPN/JA3):
+    - Windows (PowerShell):
+      ```powershell
+      cargo run -p htx --example tls_mirror_demo -- https://example.com
+      ```
+    - Linux/macOS (Bash):
+      ```bash
+      cargo run -p htx --example tls_mirror_demo -- https://example.com
+      ```
+
+- Echo placeholder example (prints a line; will be wired to HTX later):
+  - Windows (PowerShell):
+    ```powershell
+    cargo run -p echo
+    ```
+  - Linux/macOS (Bash):
+    ```bash
+    cargo run -p echo
+    ```
 
 ### Development Workflow
 1. Review `qnet-spec/specs/001-qnet/tasks.md` for current priorities

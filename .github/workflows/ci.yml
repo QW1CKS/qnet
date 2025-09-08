@@ -12,6 +12,10 @@ jobs:
           toolchain: stable
           override: true
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: |
+          cargo build --workspace --all-targets
+          cargo build -p htx --features rustls-config --examples
       - name: Test
-        run: cargo test --workspace --all-features
+        run: |
+          cargo test --workspace --all-features
+          cargo test -p htx --features rustls-config
