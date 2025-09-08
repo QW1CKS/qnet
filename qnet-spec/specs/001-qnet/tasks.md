@@ -15,8 +15,8 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T1.1: Project Structure Setup
 - [x] T1.2: Crypto Primitives Implementation
 - [x] T1.3: L2 Frame Handling
-- [ ] T1.4: Noise XK Handshake
-- [ ] T1.5: Deterministic CBOR & TemplateID
+- [x] T1.4: Noise XK Handshake
+- [x] T1.5: Deterministic CBOR & TemplateID
 - [ ] T2.1: TLS Origin Mirroring
 - [ ] T2.2: Inner Channel Establishment
 - [ ] T2.3: Frame Multiplexing

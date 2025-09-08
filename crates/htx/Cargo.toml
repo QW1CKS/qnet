@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+core-crypto = { path = "../core-crypto" }
+ring = "0.17"
+curve25519-dalek = "4"
+rand = { version = "0.8", features = ["std"] }
 bytes = "1"
