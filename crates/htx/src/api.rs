@@ -51,6 +51,8 @@ impl Conn {
     }
 
     pub fn key_update(&self) { self.mux.key_update(); }
+
+    pub fn encryption_epoch(&self) -> u64 { self.mux.encryption_epoch() }
 }
 
 impl SecureStream {
@@ -310,6 +312,7 @@ pub struct HtxConn {
 impl HtxConn {
     pub fn open_stream(&self) -> StreamHandle { self.mux.open_stream() }
     pub fn accept_stream(&self, timeout: Duration) -> Option<StreamHandle> { self.mux.accept_stream(timeout) }
+    pub fn encryption_epoch(&self) -> u64 { self.mux.encryption_epoch() }
 }
 
 pub struct HtxListener {

@@ -273,6 +273,7 @@ pub mod tls_mirror;
 pub mod inner;
 pub mod mux;
 pub mod api;
+pub mod transition;
 
 #[cfg(test)]
 mod tests {

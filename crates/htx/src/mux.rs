@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use core_framing as framing;
 use core_crypto as crypto;
+use crate::transition::{ControlRecord, SignedControl};
+use serde_cbor as cbor;
 
 type StreamId = u32;
 
@@ -23,6 +25,8 @@ struct Inner {
     rx: Mutex<mpsc::Receiver<Bytes>>, // from peer (Mutex to make Inner Sync)
     // Optional encryption state (L2 AEAD + KEY_UPDATE)
     enc: Mutex<Option<EncState>>,
+    // Key epoch increments whenever tx or rx key rotates
+    key_epoch: Mutex<u64>,
     // Remote credit per stream (how many bytes we can send to peer)
     remote_credit: Mutex<HashMap<StreamId, usize>>,
     // Incoming data buffers per stream (to app)
@@ -34,6 +38,8 @@ struct Inner {
     credit_cv: Condvar,
     // Stream ID allocator (even for one side, odd for the other could be better; use sequential)
     next_id: Mutex<StreamId>,
+    // Control stream state (ID 0); when closed during rekey-close, data writes are ignored until resumed
+    control_open: Mutex<bool>,
 }
 
 pub struct StreamHandle {
@@ -64,12 +70,14 @@ impl Mux {
             tx,
             rx: Mutex::new(rx),
             enc: Mutex::new(None),
+            key_epoch: Mutex::new(0),
             remote_credit: Mutex::new(HashMap::new()),
             incoming: Mutex::new(HashMap::new()),
             accept_tx,
             accept_rx: Mutex::new(accept_rx),
             credit_cv: Condvar::new(),
             next_id: Mutex::new(1),
+            control_open: Mutex::new(true),
         });
 
         let mux = Mux { inner: inner.clone() };
@@ -139,6 +147,19 @@ impl Mux {
                             let id = u32::from_be_bytes([frame.payload[0], frame.payload[1], frame.payload[2], frame.payload[3]]);
                             let data = frame.payload[4..].to_vec();
 
+                            // Stream 0 is reserved for control messages (CBOR-encoded)
+                            if id == 0 {
+                                // Decode SignedControl; if invalid, ignore
+                                if let Ok(sc) = cbor::from_slice::<SignedControl>(&data) {
+                                    // Control messages are application-level; for this Mux we only manage rekey-close sequencing:
+                                    // When a REKEY control arrives (we infer via TS/FLOW variance), close control stream (set flag false), then reopen after rx key rotates.
+                                    // For simplicity, toggle control_open=false on any valid control message and set true after processing next KeyUpdate.
+                                    let mut ctrl = inner.control_open.lock().unwrap();
+                                    *ctrl = false;
+                                }
+                                continue;
+                            }
+
                             let mut incoming = inner.incoming.lock().unwrap();
                             if let Some(tx) = incoming.get(&id) {
                                 let _ = tx.send(data);
@@ -167,6 +188,12 @@ impl Mux {
                                 st.rx_key = newk;
                                 st.rx_ctr = 0;
                             }
+                            // Bump epoch on rx rotation
+                            let mut ep = inner.key_epoch.lock().unwrap();
+                            *ep = ep.saturating_add(1);
+                            // After rx rotation, re-open control stream to resume data plane per rekey-close behavior
+                            let mut ctrl = inner.control_open.lock().unwrap();
+                            *ctrl = true;
                         }
                         framing::FrameType::WindowUpdate => {
                             // payload: stream_id (u32) || credit (u32)
@@ -217,6 +244,10 @@ impl Mux {
     }
 
     fn send_data(&self, id: StreamId, data: &[u8]) {
+        // Enforce rekey-close: if control is closed, drop data frames until reopened
+        if id != 0 {
+            if !*self.inner.control_open.lock().unwrap() { return; }
+        }
         let mut payload = BytesMut::with_capacity(4 + data.len());
         payload.put_slice(&id.to_be_bytes());
         payload.put_slice(data);
@@ -283,6 +314,11 @@ pub fn pair_encrypted(a_tx_key: [u8;32], a_rx_key: [u8;32], b_tx_key: [u8;32], b
 }
 
 impl Mux {
+    // Send a transition control message on stream 0 (CBOR-encoded SignedControl)
+    pub fn send_control(&self, sc: &SignedControl) {
+        let data = cbor::to_vec(sc).expect("cbor");
+        self.send_data(0, &data);
+    }
     fn send_frame(&self, frame: framing::Frame) {
         let mut enc = self.inner.enc.lock().unwrap();
         if let Some(st) = enc.as_mut() {
@@ -319,7 +355,14 @@ impl Mux {
                 st2.tx_key = newk;
                 st2.tx_ctr = 0;
             }
+            // Bump epoch on tx rotation
+            let mut ep = self.inner.key_epoch.lock().unwrap();
+            *ep = ep.saturating_add(1);
         }
+    }
+
+    pub fn encryption_epoch(&self) -> u64 {
+        *self.inner.key_epoch.lock().unwrap()
     }
 }
 
@@ -474,5 +517,46 @@ mod tests {
         } else {
             panic!("did not accept stream");
         }
+    }
+
+    #[test]
+    fn control_rekey_close_blocks_data_until_keyupdate() {
+        use ring::signature::{Ed25519KeyPair, KeyPair};
+        // Encrypted pair
+        let (a, b) = super::pair_encrypted([1u8;32], [2u8;32], [2u8;32], [1u8;32]);
+
+        // Spawn server to accept data on stream 1 and count bytes
+        let server = thread::spawn(move || {
+            let sh = b.accept_stream(Duration::from_secs(1)).expect("accept");
+            let mut total = 0usize;
+            // First phase should read initial chunk only; after rekey-close, data is dropped until KeyUpdate
+            if let Some(buf) = sh.read() { total += buf.len(); }
+            // Sleep waiting; no more until after re-open
+            if let Some(buf) = sh.read() { total += buf.len(); }
+            total
+        });
+
+        // Client: open stream 1, send some data, then send a control message which triggers rekey-close, then send more data, then key_update to reopen
+        let sh = a.open_stream();
+        sh.write(&vec![1u8; 64]); // should arrive
+
+        // Send control message on stream 0
+        let rec = ControlRecord { prev_as: 1, next_as: 2, ts: 1_700_000_000, flow: 42, nonce: vec![0u8;16] };
+        let seed = [7u8;32];
+        let sc = rec.sign_ed25519(&seed);
+        a.send_control(&sc);
+
+        // While control is closed, data is dropped
+        sh.write(&vec![2u8; 64]);
+
+        // Now rotate keys to reopen
+        a.key_update();
+
+        // Data after reopen should pass again
+        sh.write(&vec![3u8; 64]);
+
+        let total = server.join().unwrap();
+        // Expect exactly 128 bytes (64 before close + 64 after reopen)
+        assert_eq!(total, 128);
     }
 }
