@@ -200,6 +200,37 @@ Notes:
 - The rustls-config feature embeds a ready-to-use rustls::ClientConfig in the example output. If you don’t need it, omit --features rustls-config.
 - On first run for a host, a 24h in-memory cache of the template is populated.
 
+### Using the HTX API (experimental)
+
+Enable the rustls-config feature to use the TLS-backed dial() API. This performs origin calibration, builds a rustls ClientConfig, derives inner keys via TLS exporter bound to the TemplateID and Caps, then opens a multiplexed secure connection.
+
+Windows (PowerShell):
+```powershell
+# Build and run tests with TLS integration
+cargo test -p htx --features rustls-config
+
+# Example: in-process secure connection demo
+cargo test -p htx api::tests::api_echo_e2e
+```
+
+Usage sketch:
+```rust
+use htx::api::{dial};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+  // Requires --features rustls-config
+  let conn = dial("https://www.cloudflare.com")?;
+  let s = conn.open_stream();
+  s.write(b"hello");
+  if let Some(resp) = s.read() {
+    println!("got {} bytes", resp.len());
+  }
+  Ok(())
+}
+```
+Feature flag:
+- The dial() function is only available with `--features rustls-config`. Without it, you’ll get ApiError::FeatureDisabled.
+
 ### Running Examples
 - TLS origin mirroring demo:
   - With rustls ClientConfig embedded:

@@ -20,7 +20,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T2.1: TLS Origin Mirroring
 - [x] T2.2: Inner Channel Establishment
 - [x] T2.3: Frame Multiplexing
-- [ ] T2.4: HTX Crate API
+- [x] T2.4: HTX Crate API
 - [ ] T2.5: Fuzzing and Testing
 - [ ] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
 - [ ] T3.1: SCION Packet Structures
