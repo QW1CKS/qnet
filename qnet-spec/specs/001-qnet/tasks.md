@@ -22,7 +22,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T2.3: Frame Multiplexing
 - [x] T2.4: HTX Crate API
 - [x] T2.5: Fuzzing and Testing
-- [ ] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
+- [x] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
 - [ ] T3.1: SCION Packet Structures
 - [ ] T3.2: HTX Tunneling
 - [ ] T3.3: libp2p Integration
@@ -168,6 +168,7 @@ Deliverables:
 - mux key-rotation logic; tests for simultaneous updates.
 Acceptance:
 - Tests show acceptance of new+old keys up to 3 frames; old frames rejected after switch.
+    - Status: Implemented in `htx::mux` with AEAD-protected frames, tx/rx counters reset on rotation, and overlap window of 3. Added tests `key_update_rotation_continues_flow` and `key_update_accepts_up_to_3_old_then_rejects`. API secure paths now instantiate `Mux::new_encrypted(...)`; `Conn::key_update()` exposed.
 
 ---
 

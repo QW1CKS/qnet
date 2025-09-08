@@ -840,6 +840,7 @@ dependencies = [
  "arbitrary",
  "core-crypto",
  "core-framing",
+ "curve25519-dalek",
  "htx",
  "libfuzzer-sys",
 ]

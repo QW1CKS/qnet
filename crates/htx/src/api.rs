@@ -49,6 +49,8 @@ impl Conn {
             recv_ctr: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
     }
+
+    pub fn key_update(&self) { self.mux.key_update(); }
 }
 
 impl SecureStream {
@@ -112,7 +114,7 @@ pub fn dial_inproc_secure() -> (Conn, Conn) {
     let tls_s = TlsStream::new(DummyTls { master });
     let ic = open_inner(&tls_c, &caps, &tpl, &init_hs).unwrap();
     let rc = open_inner(&tls_s, &caps, &tpl, &resp_hs).unwrap();
-    let (mux_c, mux_s) = mux::pair();
+    let (mux_c, mux_s) = mux::pair_encrypted(ic.tx_key, ic.rx_key, rc.tx_key, rc.rx_key);
     let c = Conn { mux: mux_c, tx_key: ic.tx_key, rx_key: ic.rx_key };
     let s = Conn { mux: mux_s, tx_key: rc.tx_key, rx_key: rc.rx_key };
     (c, s)
@@ -220,7 +222,7 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     // Wrap conn + tcp into a StreamOwned for IO
     let tls_stream = rustls::StreamOwned::new(conn, tcp);
     std::thread::spawn(move || spawn_tls_pump(tls_stream, to_net_rx, from_net_tx));
-    let mux = Mux::new(to_net_tx, from_net_rx);
+    let mux = Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key);
     Ok(Conn { mux, tx_key: inner.tx_key, rx_key: inner.rx_key })
 }
 

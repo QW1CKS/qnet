@@ -28,15 +28,12 @@ fn fixed_pair() -> (Handshake, Handshake) {
 fuzz_target!(|inp: Input| {
     let (mut init, mut resp) = fixed_pair();
     let mut last_msg: Option<Vec<u8>> = None;
-
-    for s in inp.steps.into_iter().take(16) { // keep it bounded
+    for s in inp.steps.into_iter().take(16) {
         match s.which % 3 {
-            0 => { let _ = init.next(None); }
-            1 => { let _ = init.next(last_msg.as_deref()); }
-            2 => { let _ = resp.next(last_msg.as_deref()); }
+            0 => { let _ = init.next(None).ok().flatten().map(|m| last_msg = Some(m)); }
+            1 => { let _ = init.next(last_msg.as_deref()).ok().flatten().map(|m| last_msg = Some(m)); }
+            2 => { let _ = resp.next(last_msg.as_deref()).ok().flatten().map(|m| last_msg = Some(m)); }
             _ => {}
         }
-        // capture one of the paths' output if any
-        if let Ok(Some(m)) = init.next(None) { last_msg = Some(m); }
     }
 });
