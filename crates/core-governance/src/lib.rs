@@ -24,7 +24,7 @@ pub struct Score {
     pub capped: f64,
 }
 
-pub fn score_nodes(mut nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
+pub fn score_nodes(nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
     // raw scores proportional to uptime
     let raw: Vec<f64> = nodes.iter().map(|n| n.uptime_ratio.max(0.0).min(1.0)).collect();
     // apply caps by redistributing excess above cap proportionally

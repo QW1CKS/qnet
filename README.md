@@ -6,6 +6,9 @@
 
 QNet or QuantaNet is a decentralized, censorship-resistant network protocol stack designed to replace traditional web infrastructure with a privacy-preserving, self-sovereign alternative. It enables secure, anonymous communication over any IP bearer, from fiber to satellite, without relying on centralized authorities or vulnerable DNS systems.
 
+Quick links:
+- Live task tracker: [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md)
+
 ## Overview
 
 QNet provides a layered architecture for building censorship-resistant applications:
@@ -144,6 +147,44 @@ cargo test --workspace --all-features
 ```
 
 If you see "LNK1181: cannot open input file 'kernel32.lib'": launch the Build Tools installer and add a Windows SDK, then retry from a Developer PowerShell.
+
+### Windows (MSVC): build the C library and echo example
+
+Use the Visual Studio x64 Native Tools Command Prompt (or Developer PowerShell) so cl.exe and the Windows SDK are on PATH.
+
+Windows PowerShell (recommended):
+
+```powershell
+# From the repo root
+cargo build -p qnet_c -r
+
+# Build the cdylib and compile the C example with MSVC
+Set-Location -Path 'crates/c-lib'
+./build-windows-msvc.ps1 -Configuration Release
+
+# Run the example (ensure qnet_c.dll is alongside echo.exe)
+Set-Location -Path 'examples'
+./echo.exe
+```
+
+Native Tools Command Prompt (cmd):
+
+```cmd
+REM Change drive and directory if needed
+cd /d P:\GITHUB\qnet
+cargo build -p qnet_c -r
+
+cd crates\c-lib
+powershell -ExecutionPolicy Bypass -File .\build-windows-msvc.ps1 -Configuration Release
+
+cd examples
+echo.exe
+```
+
+Troubleshooting:
+- "cl.exe not found": open the "x64 Native Tools Command Prompt for VS" and retry.
+- "kernel32.lib not found": install a Windows SDK via VS Build Tools and use the Developer shell.
+- "cannot cd to repo": in cmd use `cd /d P:\GITHUB\qnet` (the `/d` switches drives), or `pushd P:\GITHUB\qnet`.
 
 ### Building
 ```bash

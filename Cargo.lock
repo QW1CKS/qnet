@@ -2296,6 +2296,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qnet_c"
+version = "0.1.0"
+dependencies = [
+ "htx",
+ "libc",
+]
+
+[[package]]
 name = "quick-protobuf"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

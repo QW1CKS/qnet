@@ -12,6 +12,7 @@ members = [
     "crates/alias-ledger",
     "crates/voucher",
     "crates/core-governance",
+    "crates/c-lib",
     "examples/echo",
 ]
 resolver = "2"

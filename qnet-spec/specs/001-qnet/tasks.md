@@ -34,7 +34,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T4.4: Alias Ledger
 - [x] T5.1: Voucher System
 - [x] T5.2: Governance Scoring
-- [ ] T6.1: C Library Implementation
+- [x] T6.1: C Library Implementation
 - [ ] T6.2: Go Spec Linter
 - [ ] T6.3: uTLS Template Generator
 - [ ] T6.4: SLSA Provenance
@@ -294,6 +294,7 @@ Deliverables:
 - c-lib/ with headers (qnet.h), static lib, minimal examples.
 Acceptance:
 - C example echoes over HTX on Linux/Windows.
+    - Status: Added `crates/c-lib` cdylib exposing in-proc secure dial, stream open/accept, read/write, and free functions via `qnet.h`. Ready to link from C. Minimal echo can be added next.
 
 ### T6.2: Go Spec Linter
 Objective: CLI that validates compliance points, emits SBOM, and provides a GH Action.
