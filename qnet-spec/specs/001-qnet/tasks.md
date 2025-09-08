@@ -35,7 +35,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T5.1: Voucher System
 - [x] T5.2: Governance Scoring
 - [x] T6.1: C Library Implementation
-- [ ] T6.2: Go Spec Linter
+- [x] T6.2: Go Spec Linter
 - [ ] T6.3: uTLS Template Generator
 - [ ] T6.4: SLSA Provenance
 - [ ] T6.5: Compliance Test Harness
@@ -305,6 +305,7 @@ Deliverables:
 - linter/cmd/qnet-lint; rules for L2 framing, TemplateID, KEY_UPDATE, BN-Ticket header; SBOM via syft.
 Acceptance:
 - Running against PoC passes; failing configs produce clear messages.
+    - Status: Implemented as `linter/` Go module with CLI tool, validation rules, SBOM generation via Syft, and GitHub Action workflow.
 
 ### T6.3: uTLS Template Generator
 Objective: Produce deterministic ClientHello blobs; JA3 self-test; auto-refresh.

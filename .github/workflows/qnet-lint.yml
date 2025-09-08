@@ -1,0 +1,46 @@
+name: QNet Spec Linter
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install dependencies
+      run: |
+        cd linter
+        go mod download
+
+    - name: Build linter
+      run: |
+        cd linter
+        go build -o qnet-lint ./cmd/qnet-lint
+
+    - name: Run validation
+      run: |
+        cd linter
+        ./qnet-lint validate ../
+
+    - name: Generate SBOM
+      run: |
+        cd linter
+        ./qnet-lint sbom ../
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v3
+      with:
+        name: qnet-sbom
+        path: linter/sbom.json

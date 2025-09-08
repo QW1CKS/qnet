@@ -323,6 +323,36 @@ Feature flag:
     cargo run -p echo
     ```
 
+### Go Spec Linter
+
+QNet includes a Go-based CLI tool for validating implementations against the specification. It checks compliance with L2 framing, TemplateID, KEY_UPDATE, and BN-Ticket headers, and generates SBOMs for security tracking.
+
+#### Installation
+```bash
+cd linter
+go mod download
+go build -o qnet-lint ./cmd/qnet-lint
+```
+
+#### Usage
+```bash
+# Validate QNet implementation
+./qnet-lint validate /path/to/qnet/project
+
+# Generate SBOM
+./qnet-lint sbom /path/to/qnet/project
+```
+
+#### Features
+- **L2 Framing Validation**: Ensures AEAD protection and length checks
+- **TemplateID Validation**: Verifies deterministic CBOR and SHA-256 computation
+- **KEY_UPDATE Validation**: Checks 3-frame overlap and nonce lifecycle
+- **BN-Ticket Validation**: Validates 256-byte header compliance
+- **SBOM Generation**: Uses Syft to create Software Bill of Materials
+- **CI Integration**: Automated via GitHub Actions workflow
+
+The linter runs automatically in CI and provides clear error messages for non-compliant code.
+
 ### Development Workflow
 1. Review `qnet-spec/specs/001-qnet/tasks.md` for current priorities
 2. Use `qnet-spec/scripts/` for common operations
