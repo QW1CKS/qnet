@@ -272,32 +272,29 @@ pub mod impls {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                     let _ = swarm.behaviour_mut().request_response.send_request(&peer_id, local_msg.clone());
                 }
-                SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(ev)) => {
-                    match ev {
-                        gossipsub::Event::Message { propagation_source, message, .. } => {
-                            // Verify discovery message PoW and rate limit
-                            if let Ok(dmsg) = serde_json::from_slice::<DiscoMsg>(&message.data) {
-                                let now = current_unix();
-                                // Timestamp within 120s skew
-                                if now.abs_diff(dmsg.ts) <= 120
-                                    && rate.allow(propagation_source, now)
-                                {
-                                    let payload = {
-                                        let mut v = Vec::new();
-                                        v.extend_from_slice(dmsg.peer.as_bytes());
-                                        v.extend_from_slice(dmsg.ver.as_bytes());
-                                        for c in &dmsg.caps { v.extend_from_slice(c.as_bytes()); }
-                                        v.extend_from_slice(&dmsg.ts.to_le_bytes());
-                                        v
-                                    };
-                                    if pow_ok(&payload, dmsg.nonce, cfg.pow_difficulty_prefix_zeros) {
-                                        // Accept: for PoC we just print via log (omit actual logging here)
-                                        // In future: add to peer set / dial hints
-                                    }
-                                }
+                SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
+                    gossipsub::Event::Message { propagation_source, message, .. }
+                )) => {
+                    // Verify discovery message PoW and rate limit
+                    if let Ok(dmsg) = serde_json::from_slice::<DiscoMsg>(&message.data) {
+                        let now = current_unix();
+                        // Timestamp within 120s skew
+                        if now.abs_diff(dmsg.ts) <= 120
+                            && rate.allow(propagation_source, now)
+                        {
+                            let payload = {
+                                let mut v = Vec::new();
+                                v.extend_from_slice(dmsg.peer.as_bytes());
+                                v.extend_from_slice(dmsg.ver.as_bytes());
+                                for c in &dmsg.caps { v.extend_from_slice(c.as_bytes()); }
+                                v.extend_from_slice(&dmsg.ts.to_le_bytes());
+                                v
+                            };
+                            if pow_ok(&payload, dmsg.nonce, cfg.pow_difficulty_prefix_zeros) {
+                                // Accept: for PoC we just print via log (omit actual logging here)
+                                // In future: add to peer set / dial hints
                             }
                         }
-                        _ => {}
                     }
                 }
                 SwarmEvent::NewListenAddr { .. } | SwarmEvent::ListenerClosed { .. } | SwarmEvent::OutgoingConnectionError { .. } => {}
