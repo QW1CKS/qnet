@@ -310,7 +310,7 @@ QNet implements multiple layers of security:
 - Deterministic serialization to prevent parsing attacks
 - Anti-correlation measures and cover traffic
 
-For security issues, please email security@qnet.org (placeholder).
+For security issues, please submit an issue or contact the maintainers directly.
 
 ## License
 

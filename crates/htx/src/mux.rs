@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use core_framing as framing;
 use core_crypto as crypto;
-use crate::transition::{ControlRecord, SignedControl};
+use crate::transition::SignedControl;
 use serde_cbor as cbor;
 
 type StreamId = u32;
@@ -150,7 +150,7 @@ impl Mux {
                             // Stream 0 is reserved for control messages (CBOR-encoded)
                             if id == 0 {
                                 // Decode SignedControl; if invalid, ignore
-                                if let Ok(sc) = cbor::from_slice::<SignedControl>(&data) {
+                                if let Ok(_sc) = cbor::from_slice::<SignedControl>(&data) {
                                     // Control messages are application-level; for this Mux we only manage rekey-close sequencing:
                                     // When a REKEY control arrives (we infer via TS/FLOW variance), close control stream (set flag false), then reopen after rx key rotates.
                                     // For simplicity, toggle control_open=false on any valid control message and set true after processing next KeyUpdate.
@@ -370,6 +370,7 @@ impl Mux {
 mod tests {
     use super::*;
     use std::thread;
+    use crate::transition::ControlRecord;
 
     #[test]
     fn many_concurrent_streams_echo() {
@@ -521,7 +522,6 @@ mod tests {
 
     #[test]
     fn control_rekey_close_blocks_data_until_keyupdate() {
-        use ring::signature::{Ed25519KeyPair, KeyPair};
         // Encrypted pair
         let (a, b) = super::pair_encrypted([1u8;32], [2u8;32], [2u8;32], [1u8;32]);
 

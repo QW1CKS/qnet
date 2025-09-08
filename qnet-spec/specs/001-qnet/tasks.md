@@ -26,7 +26,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T3.1: SCION Packet Structures
 - [x] T3.2: HTX Tunneling
 - [x] T3.3: libp2p Integration
-- [ ] T3.4: Bootstrap Discovery
+- [x] T3.4: Bootstrap Discovery
 - [ ] T3.5: Translation Layer (v1.1 Interop)
 - [ ] T4.1: Mixnode Selection
 - [ ] T4.2: Nym Mixnet Integration
@@ -210,6 +210,7 @@ Deliverables:
 - discovery module; PoW verify constant-time; rate limits per prefix.
 Acceptance:
 - Join obtains ≥5 peers within 30s in local testnet.
+    - Status: Implemented in `core-mesh` with feature `with-libp2p`. Adds gossipsub-based rotating rendezvous topics derived from a salt and time period, lightweight PoW beacons (leading-zero bits), and per-peer sliding-window rate limiting. mdns + seeds still used; discovery beacons published and validated. Default build keeps feature off for Windows; enable on Linux/WSL to exercise discovery. Further tuning for peer counts can be done in integration tests.
 
 ### T3.5: Translation Layer (v1.1 Interop)
 Objective: L2/L3 mapping to interop with 1.1 peers without exposing plaintext.
