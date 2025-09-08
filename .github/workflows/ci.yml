@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.82.0  # Updated Rust version to satisfy ICU crates
+          toolchain: stable  # Use latest stable (supports Edition 2024 and ICU crates)
           override: true
           components: rustfmt, clippy
       - uses: actions/setup-go@v4
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.82.0  # Align with build; meets cargo-fuzz/clap requirements
+          toolchain: stable  # Align with build; supports modern crates
           override: true
       - uses: actions-rs/toolchain@v1
         with:
@@ -84,7 +84,7 @@ jobs:
       - name: Build fuzz targets
         run: |
           cd fuzz
-          cargo fuzz build
+          cargo +nightly fuzz build
       - name: Run fuzzers (time-boxed)
         run: |
           set -e
