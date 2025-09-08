@@ -186,11 +186,11 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     let cfg = client.rustls.clone();
     let server_name = rustls::ServerName::try_from(host.as_str()).map_err(|_| ApiError::Url)?;
     let mut conn = rustls::ClientConnection::new(cfg, server_name).map_err(|_| ApiError::Tls)?;
-    let tcp = TcpStream::connect((host.as_str(), port)).map_err(ApiError::Io)?;
+    let mut tcp = TcpStream::connect((host.as_str(), port)).map_err(ApiError::Io)?;
     tcp.set_nodelay(true).ok();
     // Drive handshake
     while conn.is_handshaking() {
-        match conn.complete_io(&tcp) { Ok(_) => {}, Err(e) => return Err(ApiError::Io(e)) }
+        match conn.complete_io(&mut tcp) { Ok(_) => {}, Err(e) => return Err(ApiError::Io(e)) }
     }
     // Exporter context
     let caps = Caps::default();
@@ -218,7 +218,7 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
     let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
     // Wrap conn + tcp into a StreamOwned for IO
-    let mut tls_stream = rustls::StreamOwned::new(conn, tcp);
+    let tls_stream = rustls::StreamOwned::new(conn, tcp);
     std::thread::spawn(move || spawn_tls_pump(tls_stream, to_net_rx, from_net_tx));
     let mux = Mux::new(to_net_tx, from_net_rx);
     Ok(Conn { mux, tx_key: inner.tx_key, rx_key: inner.rx_key })
