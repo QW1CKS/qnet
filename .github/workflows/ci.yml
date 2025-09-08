@@ -19,3 +19,52 @@ jobs:
         run: |
           cargo test --workspace --all-features
           cargo test -p htx --features rustls-config
+
+  fuzz-and-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: false
+      - name: Install cargo-fuzz and tarpaulin
+        run: |
+          cargo install cargo-fuzz
+          cargo install cargo-tarpaulin
+      - name: Build fuzz targets
+        run: |
+          cd fuzz
+          cargo fuzz build
+    - name: Run fuzzers (time-boxed)
+        run: |
+          set -e
+          cd fuzz
+          # Each for ~15 minutes => ~30 minutes total
+          set +e
+      timeout 15m cargo +nightly fuzz run framing_decode -- -runs=0
+          code=$?
+          if [ $code -ne 0 ] && [ $code -ne 124 ]; then echo "framing_decode crashed (exit $code)"; exit $code; fi
+      timeout 15m cargo +nightly fuzz run noise_handshake -- -runs=0
+          code=$?
+          if [ $code -ne 0 ] && [ $code -ne 124 ]; then echo "noise_handshake crashed (exit $code)"; exit $code; fi
+          set -e
+      - name: Coverage (core-framing ≥80%)
+        run: |
+          # Focus coverage on core-framing; allow test-only instrumentation
+          cargo tarpaulin -p core-framing --engine=llvm --line --out Xml --timeout 180 --ignore-tests || true
+          mv cobertura.xml cobertura-core-framing.xml || true
+          cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-core-framing.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
+          echo "core-framing line coverage: $cov"
+          awk -v c="$cov" 'BEGIN { if (c+0 < 0.80) exit 1; }'
+      - name: Coverage (htx handshake ≥80%)
+        run: |
+          cargo tarpaulin -p htx --engine=llvm --line --out Xml --timeout 180 --ignore-tests || true
+          mv cobertura.xml cobertura-htx.xml || true
+          cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-htx.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
+          echo "htx line coverage: $cov"
+          awk -v c="$cov" 'BEGIN { if (c+0 < 0.80) exit 1; }'

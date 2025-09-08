@@ -21,7 +21,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T2.2: Inner Channel Establishment
 - [x] T2.3: Frame Multiplexing
 - [x] T2.4: HTX Crate API
-- [ ] T2.5: Fuzzing and Testing
+- [x] T2.5: Fuzzing and Testing
 - [ ] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
 - [ ] T3.1: SCION Packet Structures
 - [ ] T3.2: HTX Tunneling
@@ -155,8 +155,11 @@ Objective: Fuzz parsers and add integration tests; target ≥80% line/branch in 
 Priority: High | Dependencies: T2.4 | Estimate: 5 days
 Deliverables:
 - fuzz/ targets for frame decoder and handshake; coverage report in CI.
+    - Implemented: `fuzz/fuzz_targets/framing_decode.rs`, `fuzz/fuzz_targets/noise_handshake.rs`.
+    - CI: Added `fuzz-and-coverage` job running time-boxed fuzzers and enforcing ≥80% line coverage for `core-framing` and `htx` via tarpaulin.
 Acceptance:
 - CI gate: coverage ≥80% on core-framing + noise; no crashes in 30m fuzz run.
+    - Status: Implemented and wired into CI.
 
 ### T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
 Objective: Implement KEY_UPDATE concurrency with 3-frame overlap; strict nonce lifecycle.

@@ -1,0 +1,32 @@
+[package]
+name = "qnet-fuzz"
+version = "0.1.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+arbitrary = { version = "1", features = ["derive"] }
+
+# Path deps to crates under test
+core-framing = { path = "../crates/core-framing" }
+htx = { path = "../crates/htx" }
+core-crypto = { path = "../crates/core-crypto" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "framing_decode"
+path = "fuzz_targets/framing_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "noise_handshake"
+path = "fuzz_targets/noise_handshake.rs"
+test = false
+doc = false
