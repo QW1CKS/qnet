@@ -7,6 +7,9 @@ members = [
     "crates/core-routing",
     "crates/core-mesh",
     "crates/core-mix",
+    "crates/mixnode",
+    "crates/core-identity",
+    "crates/alias-ledger",
     "examples/echo",
 ]
 resolver = "2"

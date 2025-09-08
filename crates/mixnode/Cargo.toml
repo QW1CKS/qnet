@@ -1,0 +1,11 @@
+[package]
+name = "mixnode"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rand = { version = "0.8", features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+parking_lot = "0.12"
+bytes = "1"

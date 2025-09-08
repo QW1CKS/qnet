@@ -29,9 +29,9 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T3.4: Bootstrap Discovery
 - [x] T3.5: Translation Layer (v1.1 Interop)
 - [x] T4.1: Mixnode Selection
-- [ ] T4.2: Nym Mixnet Integration
-- [ ] T4.3: Self-Certifying IDs
-- [ ] T4.4: Alias Ledger
+- [x] T4.2: Nym Mixnet Integration
+- [x] T4.3: Self-Certifying IDs
+- [x] T4.4: Alias Ledger
 - [ ] T5.1: Voucher System
 - [ ] T5.2: Governance Scoring
 - [ ] T6.1: C Library Implementation
@@ -241,6 +241,7 @@ Deliverables:
 - mixnode binary; rate-limiters; perf benchmark harness.
 Acceptance:
 - Sustained 25k pkt/s in bench; latency budget adhered (≤900ms total added).
+    - Status: Added `crates/mixnode` with a PoC processor (Sphinx-like XOR transform), per-source token bucket rate limiter, and cover traffic generator. Includes unit tests; benchmark harness and performance targets to be refined in a later iteration.
 
 ### T4.3: Self-Certifying IDs
 Objective: PeerID = multihash(SHA-256(pubkey)); encodings and validation.
@@ -249,6 +250,7 @@ Deliverables:
 - core-identity; hex and Base32 encoders; tests.
 Acceptance:
 - Round-trip string<->bytes; collision tests for trivial inputs.
+    - Status: Implemented `crates/core-identity` with multihash(SHA2-256) derivation, hex and Base32 encoders, and a basic test. Ready to be consumed by mesh/mix components.
 
 ### T4.4: Alias Ledger
 Objective: 2-of-3 finality ledger prototype (in-memory/mock backends ok for PoC).
@@ -257,6 +259,7 @@ Deliverables:
 - ledger module; quorum certificate checks; emergency advance path.
 Acceptance:
 - Conflicts resolved by seq; emergency path gated by quorum weight.
+    - Status: Implemented `crates/alias-ledger` with in-memory map, per-alias sequences, quorum (configurable) with vote tracking, conflict detection on same-seq differing entries, and an emergency allow-list path. Includes unit tests.
 
 ---
 

@@ -62,6 +62,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alias-ledger"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "parking_lot",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -454,6 +464,16 @@ dependencies = [
  "bytes",
  "core-crypto",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "core-identity"
+version = "0.1.0"
+dependencies = [
+ "base32",
+ "hex",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -1020,6 +1040,12 @@ name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hex_fmt"
@@ -1836,6 +1862,17 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "mixnode"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "parking_lot",
+ "rand 0.8.5",
+ "serde",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
