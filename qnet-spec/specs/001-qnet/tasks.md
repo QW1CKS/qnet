@@ -18,7 +18,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T1.4: Noise XK Handshake
 - [x] T1.5: Deterministic CBOR & TemplateID
 - [x] T2.1: TLS Origin Mirroring
-- [ ] T2.2: Inner Channel Establishment
+- [x] T2.2: Inner Channel Establishment
 - [ ] T2.3: Frame Multiplexing
 - [ ] T2.4: HTX Crate API
 - [ ] T2.5: Fuzzing and Testing
