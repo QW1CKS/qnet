@@ -24,8 +24,8 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T2.5: Fuzzing and Testing
 - [x] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
 - [x] T3.1: SCION Packet Structures
-- [ ] T3.2: HTX Tunneling
-- [ ] T3.3: libp2p Integration
+- [x] T3.2: HTX Tunneling
+- [x] T3.3: libp2p Integration
 - [ ] T3.4: Bootstrap Discovery
 - [ ] T3.5: Translation Layer (v1.1 Interop)
 - [ ] T4.1: Mixnode Selection
@@ -190,6 +190,9 @@ Deliverables:
 - htx/src/transition.rs: control stream CBOR map {prevAS,nextAS,TS,FLOW,NONCE,SIG}.
 Acceptance:
 - Duplicate (FLOW,TS) rejected; ±300s TS enforced; rekey closes control stream.
+    - Status: Implemented in `htx::transition` and `htx::mux`.
+        - `transition.rs`: ControlRecord and SignedControl using deterministic CBOR; Ed25519 sign/verify; timestamp skew enforcement (±300s) and a replay cache keyed by (FLOW, TS) with windowed GC; unit tests cover signing, skew, and replay rejection.
+        - `mux.rs`: Dedicated control stream (ID 0) added; receiving a valid control message triggers rekey-close (temporarily pauses data on non-zero streams); data resumes automatically on KEY_UPDATE (rx rotation). Added `send_control()` to emit control messages over stream 0. Integration test validates data is dropped during rekey-close and resumes after key update.
 
 ### T3.3: libp2p Integration
 Objective: Minimal mesh for seeds, capability exchange, and stream negotiation.
@@ -198,6 +201,7 @@ Deliverables:
 - core-mesh using libp2p; capability messages; basic gossip timer.
 Acceptance:
 - Node connects to 2 seeds; exchanges caps; opens stream 1 for CapMsg.
+    - Status: Implemented as `crates/core-mesh` behind `with-libp2p` feature (default off for Windows PoC). Includes mdns discovery, request/response capability exchange protocol (`/qnet/cap/1.0.0`), seed dialing, and async-std executor. Default stub compiles without libp2p; enabling feature provides full flow. In-proc test validates capability exchange loop without panics.
 
 ### T3.4: Bootstrap Discovery
 Objective: Rotating rendezvous/mDNS/LE prototype + adaptive PoW verification.

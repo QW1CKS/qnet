@@ -1,0 +1,22 @@
+[package]
+name = "core-mesh"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+with-libp2p = ["dep:libp2p"]
+
+[dependencies]
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+async-std = { version = "1", features = ["attributes"] }
+
+[dependencies.libp2p]
+version = "0.53"
+optional = true
+default-features = false
+features = [
+    "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros"
+]
