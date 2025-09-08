@@ -25,7 +25,7 @@ impl RateLimiter {
     }
     pub fn allow(&self, key: [u8;32]) -> bool {
         let mut m = self.state.lock();
-    let (mut tokens, last) = m.get(&key).cloned().unwrap_or((self.cap, Instant::now()));
+        let (mut tokens, last) = m.get(&key).cloned().unwrap_or((self.cap, Instant::now()));
         let now = Instant::now();
         let dt = now.duration_since(last).as_secs_f64();
         let refill = (dt * self.refill_per_sec as f64) as u32;
@@ -90,8 +90,8 @@ mod tests {
     fn transforms_body() {
         let rl = RateLimiter::new(100, 100);
         let node = MixNode::new(rl, MixConfig { cover_rate_hz: 0.0 });
-    let pkt = Packet { header: [7u8;32], body: vec![1,2,3,4] };
-    let out = node.process([0u8;32], pkt.clone()).unwrap();
-    assert_ne!(out.body, pkt.body);
+        let pkt = Packet { header: [7u8;32], body: vec![1,2,3,4] };
+        let out = node.process([0u8;32], pkt.clone()).unwrap();
+        assert_ne!(out.body, pkt.body);
     }
 }

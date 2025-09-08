@@ -36,7 +36,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T5.2: Governance Scoring
 - [x] T6.1: C Library Implementation
 - [x] T6.2: Go Spec Linter
-- [ ] T6.3: uTLS Template Generator
+- [x] T6.3: uTLS Template Generator
 - [ ] T6.4: SLSA Provenance
 - [ ] T6.5: Compliance Test Harness
 - [ ] T6.6: Performance Optimization
@@ -314,6 +314,7 @@ Deliverables:
 - utls-gen tool; downloads Chrome tags and updates templates; self-test command.
 Acceptance:
 - Self-test green; deterministic output across runs.
+    - Status: Implemented as `utls-gen/` Go module with CLI tool, generates deterministic ClientHello blobs for Chrome/Firefox, self-test validates files, update fetches latest Chrome version.
 
 ### T6.4: SLSA Provenance
 Objective: Reproducible builds and SLSA v3 provenance in CI.
