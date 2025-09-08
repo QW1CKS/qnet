@@ -39,6 +39,8 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [ ] T6.3: uTLS Template Generator
 - [ ] T6.4: SLSA Provenance
 - [ ] T6.5: Compliance Test Harness
+- [ ] T6.6: Performance Optimization
+- [ ] T6.7: Stealth Browser Application
 
 ## Phase 1: Core Infrastructure Setup (Priority: High)
 
@@ -328,7 +330,40 @@ Deliverables:
 Acceptance:
 - All MINIMAL profile tests pass; STANDARD subset passes where implemented.
 
----
+### T6.6: Performance Optimization
+Objective: Optimize QNet for extreme speed, achieving throughput and latency superior to TCP/TLS.
+Priority: High | Dependencies: T6.1-T6.5 | Estimate: 10 days
+Deliverables:
+- QUIC transport integration in core-mesh (add "quic" to libp2p features).
+- Criterion benchmarks for core-crypto (AEAD ≥2GB/s), core-framing, htx handshake.
+- Zero-copy AEAD and framing (mutable buffers, bytes crate).
+- Mixnet latency optimizations (adaptive routing, reduced hops for low-latency mode).
+- Profiling with flamegraph and perf reports.
+Interfaces:
+- Feature flags: quic (default off), perf-bench.
+- Bench commands: cargo bench --features perf-bench.
+Acceptance:
+- AEAD throughput >2GB/s; handshake latency <50ms; mixnet p95 <100ms.
+- QUIC builds pass E2E echo with <50ms improvement over TCP.
+Risks: QUIC adds UDP complexity; optimizations may trade privacy for speed.
+
+### T6.7: Stealth Browser Application
+Objective: Create a browser-based QNet app that mimics TCP/TLS traffic for plausible deniability, auto-connects globally, and routes via decoy IPs.
+Priority: High | Dependencies: T6.1-T6.6 | Estimate: 8 weeks
+Deliverables:
+- qnet-browser crate/binary (fork of Chromium/Firefox with QNet proxy).
+- Stealth framing in core-framing (TLS-like packet mimicry, padding for DPI evasion).
+- Decoy routing in htx/core-mesh (configurable list of benign IPs/domains for ISP logs).
+- Global bootstrap seeds in core-mesh (public nodes for auto-discovery).
+- Installer (MSI/APK/DMG) with auto-daemon launch.
+Interfaces:
+- Browser UI: Simple address bar for .qnet domains; settings for decoy list/latency mode.
+- API: SOCKS proxy for routing; feature flag: stealth-mode.
+Acceptance:
+- Traffic indistinguishable from HTTPS in Wireshark (no QNet signatures).
+- Global connection in <30s; decoy IPs logged as normal sites (e.g., google.com).
+- E2E browsing censored sites with <200ms added latency.
+Risks: Detection via advanced DPI; decoy node trust; legal concerns in restrictive regimes.
 
 ## Validation Matrix (Tasks → Compliance)
 - L2 framing + KEY_UPDATE: T1.3, T2.6 → Compliance 3, 12.
@@ -393,6 +428,10 @@ T1.1
     - Exit: linter passes PoC; CI emits SBOM + provenance; compliance harness green (MINIMAL).
 - M6 (Month 6): Payments/Governance (T5.1–T5.2)
     - Exit: voucher encode/decode; governance calculators pass tests.
+- M7 (Month 7): Performance Optimization (T6.6)
+    - Exit: benchmarks exceed targets; QUIC integration tested; profiling complete.
+- M8 (Month 8): Stealth Browser Application (T6.7)
+    - Exit: browser auto-connects globally; traffic mimics HTTPS; decoy routing tested.
 
 ---
 
