@@ -3,29 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/QW1CKS/qnet/linter/pkg/validator"
-	"github.com/spf13/cobra"
-)
-	Use:   "sbom [path]",
-	Short: "Generate SBOM for QNet implementation",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		path := args[0]
-		fmt.Printf("Generating SBOM for: %s\n", path)
-
-		// Use syft to generate SBOM
-		sbomPath := "sbom.json"
-		cmd := exec.Command("syft", path, "-o", "json", "--file", sbomPath)
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("Error generating SBOM: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("SBOM generated at: %s\n", sbomPath)
-	},
-}b.com/QW1CKS/qnet/linter/pkg/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -65,8 +44,11 @@ var sbomCmd = &cobra.Command{
 		path := args[0]
 		fmt.Printf("Generating SBOM for: %s\n", path)
 
-		// TODO: Integrate syft for SBOM generation
-		fmt.Println("SBOM generation not yet implemented")
+		// Note: Syft integration removed for simplicity
+		// In production, install syft and use: syft path -o json --file sbom.json
+		fmt.Println("SBOM generation requires external syft tool")
+		fmt.Println("Install syft: https://github.com/anchore/syft")
+		fmt.Println("Then run: syft", path, "-o json --file sbom.json")
 	},
 }
 

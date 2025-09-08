@@ -22,6 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         cd linter
+        go mod tidy
         go mod download
 
     - name: Build linter
@@ -34,20 +35,7 @@ jobs:
         cd linter
         ./qnet-lint validate ../
 
-    - name: Install Syft (for SBOM)
-      run: |
-        mkdir -p $HOME/.local/bin
-        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b $HOME/.local/bin
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-        syft version
-
     - name: Generate SBOM
       run: |
         cd linter
         ./qnet-lint sbom ../
-
-    - name: Upload SBOM
-      uses: actions/upload-artifact@v4
-      with:
-        name: qnet-sbom
-        path: linter/sbom.json

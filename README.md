@@ -340,7 +340,12 @@ go build -o qnet-lint ./cmd/qnet-lint
 ./qnet-lint validate /path/to/qnet/project
 
 # Generate SBOM
+### Generate SBOM
+```bash
 ./qnet-lint sbom /path/to/qnet/project
+```
+
+Note: SBOM generation requires the external Syft tool. Install it separately for full functionality.
 ```
 
 #### Features

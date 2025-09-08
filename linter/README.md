@@ -52,4 +52,4 @@ The linter is integrated into the CI pipeline via `.github/workflows/qnet-lint.y
 ## Dependencies
 
 - [Cobra](https://github.com/spf13/cobra) - CLI framework
-- [Syft](https://github.com/anchore/syft) - SBOM generation
+- [Syft](https://github.com/anchore/syft) - SBOM generation (external tool)
