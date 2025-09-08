@@ -1,6 +1,7 @@
 #[cfg(feature = "with-libp2p")]
 pub mod impls {
     use futures::prelude::*;
+    use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     use libp2p::{
         identity,
         mdns,
@@ -9,12 +10,14 @@ pub mod impls {
         tcp,
         yamux,
         core::upgrade,
-        request_response::{self, ProtocolSupport, RequestResponse, RequestResponseCodec, RequestResponseConfig, RequestResponseEvent, RequestResponseMessage, ResponseChannel},
+        request_response::{self, ProtocolSupport},
         gossipsub::{self, IdentTopic as Topic, MessageAuthenticity, ValidationMode},
-        Multiaddr, PeerId, SwarmBuilder, swarm::SwarmEvent, Transport,
+    Multiaddr, PeerId, swarm::{SwarmEvent, Config as SwarmConfig, StreamProtocol}, Transport, Swarm,
     };
+    use libp2p::request_response::{Behaviour as RrBehaviour, Codec as RrCodec, Config as RrConfig, Event as RrEvent, Message as RrMessage};
     use serde::{Serialize, Deserialize};
     use std::{collections::{HashMap, VecDeque}, io, time::{Duration, SystemTime, UNIX_EPOCH}};
+    use std::pin::Pin;
     use sha2::{Digest, Sha256};
 
     #[derive(Debug, thiserror::Error)]
@@ -35,30 +38,99 @@ pub mod impls {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CapMsg { pub version: String, pub caps: Vec<String> }
 
-    #[derive(Clone)]
-    struct CapProtocol;
-
-    #[derive(Clone)]
+    #[derive(Clone, Default)]
     struct CapCodec;
 
-    impl RequestResponseCodec for CapCodec {
-        type Protocol = CapProtocol;
+    impl RrCodec for CapCodec {
+    type Protocol = StreamProtocol;
         type Request = CapMsg;
         type Response = CapMsg;
+        fn read_request<'life0, 'life1, 'life2, 'async_trait, T>(
+            &'life0 mut self,
+            _p: &'life1 Self::Protocol,
+            io: &'life2 mut T,
+        ) -> Pin<Box<dyn futures::Future<Output = Result<Self::Request, io::Error>> + Send + 'async_trait>>
+        where
+            T: AsyncRead + Unpin + Send + 'async_trait,
+            Self: 'async_trait,
+            'life0: 'async_trait,
+            'life1: 'async_trait,
+            'life2: 'async_trait,
+        {
+            Box::pin(async move {
+                let mut len_buf = [0u8; 4];
+                io.read_exact(&mut len_buf).await?;
+                let len = u32::from_be_bytes(len_buf) as usize;
+                let mut buf = vec![0u8; len];
+                io.read_exact(&mut buf).await?;
+                serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            })
+        }
 
-        fn protocol_name(&self, _p: &Self::Protocol) -> &[u8] { b"/qnet/cap/1.0.0" }
+        fn read_response<'life0, 'life1, 'life2, 'async_trait, T>(
+            &'life0 mut self,
+            _p: &'life1 Self::Protocol,
+            io: &'life2 mut T,
+        ) -> Pin<Box<dyn futures::Future<Output = Result<Self::Response, io::Error>> + Send + 'async_trait>>
+        where
+            T: AsyncRead + Unpin + Send + 'async_trait,
+            Self: 'async_trait,
+            'life0: 'async_trait,
+            'life1: 'async_trait,
+            'life2: 'async_trait,
+        {
+            Box::pin(async move {
+                let mut len_buf = [0u8; 4];
+                io.read_exact(&mut len_buf).await?;
+                let len = u32::from_be_bytes(len_buf) as usize;
+                let mut buf = vec![0u8; len];
+                io.read_exact(&mut buf).await?;
+                serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            })
+        }
 
-        fn encode_request(&mut self, _p: &Self::Protocol, req: CapMsg) -> Result<Vec<u8>, io::Error> {
-            serde_json::to_vec(&req).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        fn write_request<'life0, 'life1, 'life2, 'async_trait, T>(
+            &'life0 mut self,
+            _p: &'life1 Self::Protocol,
+            io: &'life2 mut T,
+            req: Self::Request,
+        ) -> Pin<Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>>
+        where
+            T: AsyncWrite + Unpin + Send + 'async_trait,
+            Self: 'async_trait,
+            'life0: 'async_trait,
+            'life1: 'async_trait,
+            'life2: 'async_trait,
+        {
+            Box::pin(async move {
+                let data = serde_json::to_vec(&req).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let len = (data.len() as u32).to_be_bytes();
+                io.write_all(&len).await?;
+                io.write_all(&data).await?;
+                io.flush().await
+            })
         }
-        fn decode_request(&mut self, _p: &Self::Protocol, bytes: &[u8]) -> Result<CapMsg, io::Error> {
-            serde_json::from_slice(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        }
-        fn encode_response(&mut self, _p: &Self::Protocol, resp: CapMsg) -> Result<Vec<u8>, io::Error> {
-            serde_json::to_vec(&resp).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        }
-        fn decode_response(&mut self, _p: &Self::Protocol, bytes: &[u8]) -> Result<CapMsg, io::Error> {
-            serde_json::from_slice(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+
+        fn write_response<'life0, 'life1, 'life2, 'async_trait, T>(
+            &'life0 mut self,
+            _p: &'life1 Self::Protocol,
+            io: &'life2 mut T,
+            resp: Self::Response,
+        ) -> Pin<Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>>
+        where
+            T: AsyncWrite + Unpin + Send + 'async_trait,
+            Self: 'async_trait,
+            'life0: 'async_trait,
+            'life1: 'async_trait,
+            'life2: 'async_trait,
+        {
+            Box::pin(async move {
+                let data = serde_json::to_vec(&resp).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let len = (data.len() as u32).to_be_bytes();
+                io.write_all(&len).await?;
+                io.write_all(&data).await?;
+                io.flush().await
+            })
         }
     }
 
@@ -110,24 +182,24 @@ pub mod impls {
     }
 
     pub async fn start_basic_mesh(cfg: MeshConfig) -> Result<(), Error> {
-        let id_keys = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from(id_keys.public());
+    let id_keys = identity::Keypair::generate_ed25519();
+    let peer_id = PeerId::from(id_keys.public());
 
-        let noise_keys = noise::Config::new(&id_keys);
+    let noise_config = noise::Config::new(&id_keys).expect("noise");
 
-        let transport = tcp::Transport::new(tcp::Config::default().nodelay(true))
+    let transport = tcp::async_io::Transport::new(tcp::Config::default().nodelay(true))
             .upgrade(upgrade::Version::V1Lazy)
-            .authenticate(noise_keys)
+            .authenticate(noise_config)
             .multiplex(yamux::Config::default())
             .boxed();
 
         // Request/Response capability protocol
-        let protocols = std::iter::once((CapProtocol, ProtocolSupport::Full));
-        let mut rr = RequestResponse::new(CapCodec, protocols, RequestResponseConfig::default());
-        // Faster timouts for PoC
-        rr.set_request_timeout(Duration::from_secs(10));
+    let protocols = std::iter::once((StreamProtocol::new("/qnet/cap/1.0.0"), ProtocolSupport::Full));
+        let rr_cfg = RrConfig::default().with_request_timeout(Duration::from_secs(10));
+    let rr = request_response::Behaviour::<CapCodec>::new(protocols, rr_cfg);
 
-        let mdns = mdns::Behaviour::new(mdns::Config::default(), peer_id).expect("mdns");
+    // Use async-io compatible mDNS behaviour (libp2p-mdns >=0.45 uses runtime-specific modules)
+    let mdns = mdns::async_io::Behaviour::new(mdns::Config::default(), peer_id).expect("mdns");
         let ping = ping::Behaviour::default();
 
         // Gossipsub for discovery broadcasting
@@ -136,13 +208,13 @@ pub mod impls {
             .heartbeat_interval(Duration::from_secs(10))
             .build()
             .expect("gossipsub config");
-        let mut gsub = gossipsub::Behaviour::new(MessageAuthenticity::Signed(id_keys.clone()), gcfg)
+    let gsub = gossipsub::Behaviour::new(MessageAuthenticity::Signed(id_keys.clone()), gcfg)
             .map_err(|_| Error::Swarm)?;
 
         #[derive(libp2p::swarm::NetworkBehaviour)]
         struct Behaviour {
-            request_response: RequestResponse<CapCodec>,
-            mdns: mdns::Behaviour,
+            request_response: RrBehaviour<CapCodec>,
+            mdns: mdns::async_io::Behaviour,
             ping: ping::Behaviour,
             identify: libp2p::identify::Behaviour,
             gossipsub: gossipsub::Behaviour,
@@ -156,7 +228,12 @@ pub mod impls {
             gossipsub: gsub,
         };
 
-        let mut swarm = SwarmBuilder::with_async_std_executor(transport, behaviour, peer_id).build();
+        let mut swarm = Swarm::new(
+            transport,
+            behaviour,
+            peer_id,
+            SwarmConfig::with_async_std_executor(),
+        );
 
     // Dial configured seeds
         for addr in cfg.seeds.iter().cloned() { let _ = swarm.dial(addr); }
@@ -169,20 +246,20 @@ pub mod impls {
 
         loop {
             match swarm.select_next_some().await {
-                SwarmEvent::Behaviour(BehaviourEvent::request_response(ev)) => match ev {
-                    RequestResponseEvent::Message { peer, message } => match message {
-                        RequestResponseMessage::Request { request, channel, .. } => {
+                SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(ev)) => match ev {
+                    RrEvent::Message { peer: _, message } => match message {
+                        RrMessage::Request { channel, .. } => {
                             let _ = swarm.behaviour_mut().request_response.send_response(channel, local_msg.clone());
                         }
-                        RequestResponseMessage::Response { request_id: _, response } => {
+                        RrMessage::Response { request_id: _, response: _ } => {
                             // For PoC, we accept receipt silently.
                         }
                     },
-                    RequestResponseEvent::ResponseSent { .. } => {},
-                    RequestResponseEvent::InboundFailure { .. } => {},
-                    RequestResponseEvent::OutboundFailure { .. } => {},
+                    RrEvent::ResponseSent { .. } => {},
+                    RrEvent::InboundFailure { .. } => {},
+                    RrEvent::OutboundFailure { .. } => {},
                 },
-                SwarmEvent::Behaviour(BehaviourEvent::mdns(event)) => {
+                SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
                     match event {
                         mdns::Event::Discovered(list) => {
                             for (peer, _) in list {
@@ -195,7 +272,7 @@ pub mod impls {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                     let _ = swarm.behaviour_mut().request_response.send_request(&peer_id, local_msg.clone());
                 }
-                SwarmEvent::Behaviour(BehaviourEvent::gossipsub(ev)) => {
+                SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(ev)) => {
                     match ev {
                         gossipsub::Event::Message { propagation_source, message, .. } => {
                             // Verify discovery message PoW and rate limit
