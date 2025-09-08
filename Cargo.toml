@@ -6,6 +6,7 @@ members = [
     "crates/htx",
     "crates/core-routing",
     "crates/core-mesh",
+    "crates/core-mix",
     "examples/echo",
 ]
 resolver = "2"

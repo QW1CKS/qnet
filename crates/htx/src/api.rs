@@ -1,4 +1,4 @@
-use crate::inner::{Caps, TlsStream, Exporter, open_inner};
+use crate::inner::{Caps, TlsStream, Exporter, open_inner, open_inner_with_compat};
 use crate::tls_mirror::Template;
 use crate::Handshake;
 use crate::mux::{self, Mux, StreamHandle};
@@ -116,6 +116,25 @@ pub fn dial_inproc_secure() -> (Conn, Conn) {
     let tls_s = TlsStream::new(DummyTls { master });
     let ic = open_inner(&tls_c, &caps, &tpl, &init_hs).unwrap();
     let rc = open_inner(&tls_s, &caps, &tpl, &resp_hs).unwrap();
+    let (mux_c, mux_s) = mux::pair_encrypted(ic.tx_key, ic.rx_key, rc.tx_key, rc.rx_key);
+    let c = Conn { mux: mux_c, tx_key: ic.tx_key, rx_key: ic.rx_key };
+    let s = Conn { mux: mux_s, tx_key: rc.tx_key, rx_key: rc.rx_key };
+    (c, s)
+}
+
+pub fn dial_inproc_secure_compat() -> (Conn, Conn) {
+    // Same as above but binds keys with compat flag for translation interop
+    let tpl = Template { alpn: vec!["h2".into(), "http/1.1".into()], sig_algs: vec!["rsa_pss_rsae_sha256".into()], groups: vec!["x25519".into()], extensions: vec![0,11,10,35,16,23,43,51] };
+    let caps = Caps::default();
+    let (init_hs, resp_hs) = noise_xk_pair();
+    let master = {
+        let mut r = rand::rngs::StdRng::seed_from_u64(101);
+        let mut k = [0u8;32]; r.fill_bytes(&mut k); k
+    };
+    let tls_c = TlsStream::new(DummyTls { master });
+    let tls_s = TlsStream::new(DummyTls { master });
+    let ic = open_inner_with_compat(&tls_c, &caps, &tpl, &init_hs, Some("compat=1.1")).unwrap();
+    let rc = open_inner_with_compat(&tls_s, &caps, &tpl, &resp_hs, Some("compat=1.1")).unwrap();
     let (mux_c, mux_s) = mux::pair_encrypted(ic.tx_key, ic.rx_key, rc.tx_key, rc.rx_key);
     let c = Conn { mux: mux_c, tx_key: ic.tx_key, rx_key: ic.rx_key };
     let s = Conn { mux: mux_s, tx_key: rc.tx_key, rx_key: rc.rx_key };
@@ -254,6 +273,25 @@ mod tests {
         });
         let st = client.open_stream();
         let msg = b"hello-secure";
+        st.write(msg);
+        let got = st.read().expect("resp");
+        assert_eq!(got, msg);
+        t.join().unwrap();
+    }
+
+    #[test]
+    fn api_echo_e2e_compat() {
+        let (client, server) = dial_inproc_secure_compat();
+        let t = thread::spawn(move || {
+            if let Some(s) = server.accept_stream(1000) {
+                while let Some(buf) = s.read() {
+                    s.write(&buf);
+                    break;
+                }
+            }
+        });
+        let st = client.open_stream();
+        let msg = b"hello-compat";
         st.write(msg);
         let got = st.read().expect("resp");
         assert_eq!(got, msg);

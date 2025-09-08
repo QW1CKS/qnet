@@ -27,8 +27,8 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T3.2: HTX Tunneling
 - [x] T3.3: libp2p Integration
 - [x] T3.4: Bootstrap Discovery
-- [ ] T3.5: Translation Layer (v1.1 Interop)
-- [ ] T4.1: Mixnode Selection
+- [x] T3.5: Translation Layer (v1.1 Interop)
+- [x] T4.1: Mixnode Selection
 - [ ] T4.2: Nym Mixnet Integration
 - [ ] T4.3: Self-Certifying IDs
 - [ ] T4.4: Alias Ledger
@@ -219,6 +219,7 @@ Deliverables:
 - tl module; mapping tables; synthesized KEY_UPDATE policy; exporter context “compat=1.1”.
 Acceptance:
 - Interop test shows stable data exchange; logs include compat flag.
+    - Status: Added `htx::tl` with identity mapping hook and key update policy helpers; introduced `open_inner_with_compat` and exporter context binding that includes optional `compat` (e.g., "compat=1.1"). Added unit tests to ensure differing compat flags produce distinct keys. Mapping is currently identity for PoC; ready for future v1.1 on-wire differences.
 
 ---
 
@@ -231,6 +232,7 @@ Deliverables:
 - mix/select.rs with VRF selection; tests across epochs; diversity tracker.
 Acceptance:
 - Within (src,dst,epoch) reuses avoided until ≥8 sets; cross-AS hop present.
+    - Status: Implemented as `crates/core-mix` with deterministic VRF-like selection (`vrf_select`), `DiversityTracker` sliding-window reuse avoidance, and unit tests. Ready to integrate with routing once available.
 
 ### T4.2: Nym Mixnet Integration
 Objective: Sphinx processing + cover traffic padding; 25k pkt/s target on 4-core VPS.
