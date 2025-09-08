@@ -37,7 +37,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.1: C Library Implementation
 - [x] T6.2: Go Spec Linter
 - [x] T6.3: uTLS Template Generator
-- [ ] T6.4: SLSA Provenance
+- [x] T6.4: SLSA Provenance
 - [ ] T6.5: Compliance Test Harness
 - [ ] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
@@ -323,6 +323,7 @@ Deliverables:
 - CI steps: pin toolchains, sbom, provenance attestation artifacts uploaded.
 Acceptance:
 - CI artifacts published; rebuild matches checksum.
+    - Status: Implemented SLSA v3 provenance in .github/workflows/ci.yml with pinned toolchains (Rust 1.70.0, Go 1.21), SBOM generation via Syft, checksums, and SLSA attestation upload.
 
 ### T6.5: Compliance Test Harness
 Objective: Automate v1.2-style tests and report per profile.

@@ -9,16 +9,46 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.70.0  # Pinned Rust version
           override: true
-      - name: Build
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'  # Pinned Go version
+      - name: Build Rust
         run: |
           cargo build --workspace --all-targets
           cargo build -p htx --features rustls-config --examples
+      - name: Build Go Linter
+        run: |
+          cd linter
+          go build -o qnet-lint .\cmd\qnet-lint\
       - name: Test
         run: |
           cargo test --workspace --all-features
           cargo test -p htx --features rustls-config
+      - name: Generate SBOM
+        run: |
+          # Install syft for SBOM generation
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          syft packages . -o json --file sbom.json
+      - name: Generate checksums
+        run: |
+          cd target/debug
+          sha256sum * > checksums.txt
+          cd ../../linter
+          sha256sum qnet-lint >> ../target/debug/checksums.txt
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qnet-artifacts
+          path: |
+            target/debug/
+            linter/qnet-lint
+            sbom.json
+      - name: Output build artifacts
+        id: build-artifacts
+        run: |
+          echo "build-artifacts=$(find target/debug -type f -exec sha256sum {} \; | base64 -w0)" >> $GITHUB_OUTPUT
 
   fuzz-and-coverage:
     runs-on: ubuntu-latest
@@ -26,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.70.0  # Pinned Rust version
           override: true
       - uses: actions-rs/toolchain@v1
         with:
@@ -40,16 +70,16 @@ jobs:
         run: |
           cd fuzz
           cargo fuzz build
-    - name: Run fuzzers (time-boxed)
+      - name: Run fuzzers (time-boxed)
         run: |
           set -e
           cd fuzz
           # Each for ~15 minutes => ~30 minutes total
           set +e
-      timeout 15m cargo +nightly fuzz run framing_decode -- -runs=0
+          timeout 15m cargo +nightly fuzz run framing_decode -- -runs=0
           code=$?
           if [ $code -ne 0 ] && [ $code -ne 124 ]; then echo "framing_decode crashed (exit $code)"; exit $code; fi
-      timeout 15m cargo +nightly fuzz run noise_handshake -- -runs=0
+          timeout 15m cargo +nightly fuzz run noise_handshake -- -runs=0
           code=$?
           if [ $code -ne 0 ] && [ $code -ne 124 ]; then echo "noise_handshake crashed (exit $code)"; exit $code; fi
           set -e
@@ -68,3 +98,22 @@ jobs:
           cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-htx.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
           echo "htx line coverage: $cov"
           awk -v c="$cov" 'BEGIN { if (c+0 < 0.80) exit 1; }'
+
+  slsa-provenance:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: qnet-artifacts
+      - name: Generate SLSA provenance
+        uses: slsa-framework/slsa-github-generator@v1.9.0
+        with:
+          base64-subjects: "${{ needs.build.outputs.build-artifacts }}"
+          upload-assets: true
+          compile-generator: true
