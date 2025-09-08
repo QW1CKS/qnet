@@ -4,6 +4,7 @@ members = [
     "crates/core-cbor",
     "crates/core-framing",
     "crates/htx",
+    "crates/core-routing",
     "examples/echo",
 ]
 resolver = "2"

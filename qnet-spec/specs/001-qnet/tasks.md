@@ -23,7 +23,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T2.4: HTX Crate API
 - [x] T2.5: Fuzzing and Testing
 - [x] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
-- [ ] T3.1: SCION Packet Structures
+- [x] T3.1: SCION Packet Structures
 - [ ] T3.2: HTX Tunneling
 - [ ] T3.3: libp2p Integration
 - [ ] T3.4: Bootstrap Discovery
@@ -181,6 +181,7 @@ Deliverables:
 - core-routing structs; sign/verify over segment; unit tests.
 Acceptance:
 - Valid segments verify; tampered ones fail; timestamp/expiry bounds enforced.
+    - Status: Implemented in `crates/core-routing` with `Hop`, `Segment`, and `SignedSegment`. Ed25519 sign/verify over canonical JSON bytes; timestamp/expiry checks; unit tests cover positive/negative cases.
 
 ### T3.2: HTX Tunneling
 Objective: Control stream for transition across non-SCION links; replay-bound tuple cache.
