@@ -45,6 +45,8 @@ name = "core-framing"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "core-crypto",
+ "rand",
 ]
 
 [[package]]

@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 bytes = "1"
+core-crypto = { path = "../core-crypto" }
+
+[dev-dependencies]
+rand = "0.8"
