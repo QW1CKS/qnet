@@ -44,7 +44,7 @@ impl SignedControl {
         // Timestamp skew window check (±skew_secs)
         let ts = self.rec.ts as i64;
         let now = now_ts as i64;
-        if (now - ts).abs() as i64 > skew_secs { return Err(Error::Stale); }
+    if (now - ts).abs() > skew_secs { return Err(Error::Stale); }
         // Verify signature
         let msg = cbor::to_det_cbor(&self.rec).map_err(|_| Error::Invalid)?;
         crypto::ed25519::verify(pubkey, &msg, &self.sig).map_err(|_| Error::Crypto)

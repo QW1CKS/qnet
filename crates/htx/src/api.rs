@@ -265,9 +265,8 @@ mod tests {
         let (client, server) = dial_inproc_secure();
         let t = thread::spawn(move || {
             if let Some(s) = server.accept_stream(1000) {
-                while let Some(buf) = s.read() {
+                if let Some(buf) = s.read() {
                     s.write(&buf);
-                    break;
                 }
             }
         });
@@ -284,9 +283,8 @@ mod tests {
         let (client, server) = dial_inproc_secure_compat();
         let t = thread::spawn(move || {
             if let Some(s) = server.accept_stream(1000) {
-                while let Some(buf) = s.read() {
+                if let Some(buf) = s.read() {
                     s.write(&buf);
-                    break;
                 }
             }
         });
@@ -308,7 +306,7 @@ fn spawn_socket_pump(sock: TcpStream, to_net_rx: mpsc::Receiver<Bytes>, from_net
     let to_net_rx_w = to_net_rx;
     let writer = thread::spawn(move || {
         while let Ok(bytes) = to_net_rx_w.recv() {
-            if let Err(_) = sock_w.write_all(&bytes) { break; }
+            if sock_w.write_all(&bytes).is_err() { break; }
         }
     });
 
@@ -362,8 +360,7 @@ impl HtxListener {
         let listener = TcpListener::bind(addr)?;
         let (acc_tx, acc_rx) = mpsc::channel();
         thread::spawn(move || {
-            for sock in listener.incoming() {
-                if let Ok(stream) = sock {
+            for stream in listener.incoming().flatten() {
                     // Build channel pair connecting socket to Mux
                     let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
                     let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
@@ -373,7 +370,6 @@ impl HtxListener {
                     let mux = Mux::new(to_net_tx, from_net_rx);
                     let conn = HtxConn { mux };
                     let _ = acc_tx.send(conn);
-                }
             }
         });
         Ok(HtxListener { incoming: acc_rx })

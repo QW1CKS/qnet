@@ -140,7 +140,7 @@ pub mod impls {
         let epoch = now / period.max(1);
         let mut h = Sha256::new();
         h.update(salt.as_bytes());
-        h.update(&epoch.to_be_bytes());
+    h.update(epoch.to_be_bytes());
         let digest = h.finalize();
         base32::encode(base32::Alphabet::Crockford, &digest[..16]) // short but stable
     }
@@ -148,7 +148,7 @@ pub mod impls {
     fn pow_ok(payload: &[u8], nonce: u64, difficulty_bits: u8) -> bool {
         let mut h = Sha256::new();
         h.update(payload);
-        h.update(&nonce.to_le_bytes());
+    h.update(nonce.to_le_bytes());
         let d = h.finalize();
         // Count leading zero bits without early returns; always scan full digest
         let mut zeros: u16 = 0;
@@ -367,5 +367,5 @@ pub mod stub {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn compiles() { assert!(true); }
+    fn compiles() { /* smoke test placeholder */ }
 }

@@ -44,7 +44,7 @@ impl Frame {
         if src.len() < 4 { return Err(Error::TooShort); }
         let len = get_u24(&mut src)? as usize;
         if src.len() < len { return Err(Error::InvalidLen); }
-        let ty = *src.get(0).ok_or(Error::TooShort)?;
+    let ty = src.first().copied().ok_or(Error::TooShort)?;
         let ty = match ty {
             0x10 => FrameType::Stream,
             0x11 => FrameType::WindowUpdate,
@@ -102,7 +102,7 @@ pub fn decode(mut src: &[u8], key: KeyCtx, nonce: [u8; 12]) -> Result<Frame, Err
     if src.len() < 4 { return Err(Error::TooShort); }
     let wire_len = get_u24(&mut src)? as usize;
     if src.len() < wire_len { return Err(Error::InvalidLen); }
-    let typ = *src.get(0).ok_or(Error::TooShort)?;
+    let typ = src.first().copied().ok_or(Error::TooShort)?;
     let mut aad = [0u8; 4];
     aad[0] = ((wire_len as u32 >> 16) & 0xff) as u8;
     aad[1] = ((wire_len as u32 >> 8) & 0xff) as u8;
@@ -131,13 +131,13 @@ mod tests {
         let mut b = BytesMut::new();
         put_u24(&mut b, 0);
         put_u24(&mut b, 1);
-        put_u24(&mut b, 0x00FF_FF);
+    put_u24(&mut b, 0x0000_FFFF);
     let s = b.freeze();
         assert_eq!(get_u24(&mut s.as_ref()).unwrap(), 0);
         let mut s2 = &s[3..];
         assert_eq!(get_u24(&mut s2).unwrap(), 1);
         let mut s3 = &s[6..];
-        assert_eq!(get_u24(&mut s3).unwrap(), 0x00FF_FF);
+    assert_eq!(get_u24(&mut s3).unwrap(), 0x0000_FFFF);
     }
 
     #[test]

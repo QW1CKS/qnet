@@ -6,6 +6,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+type Key = [u8; 32];
+type TokenBucket = (u32, Instant);
+type Buckets = HashMap<Key, TokenBucket>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Packet {
     pub header: [u8;32],
@@ -16,7 +20,7 @@ pub struct Packet {
 pub struct RateLimiter {
     cap: u32,
     refill_per_sec: u32,
-    state: Arc<Mutex<HashMap<[u8;32], (u32, Instant)>>>,
+    state: Arc<Mutex<Buckets>>,
 }
 
 impl RateLimiter {

@@ -31,9 +31,9 @@ impl DiversityTracker {
 pub fn vrf_select(src: &NodeId, dst: &NodeId, epoch: u64, set: &BeaconSet) -> Option<usize> {
     if set.nodes.is_empty() { return None; }
     let mut h = Sha256::new();
-    h.update(&src.0);
-    h.update(&dst.0);
-    h.update(&epoch.to_le_bytes());
+    h.update(src.0);
+    h.update(dst.0);
+    h.update(epoch.to_le_bytes());
     let seed = h.finalize();
     // Derive deterministic index
     let idx = ((seed[0] as usize) << 8 | (seed[1] as usize)) % set.nodes.len();

@@ -148,7 +148,7 @@ pub fn build_client_hello(tpl: &Template) -> ClientConfig {
     #[cfg(feature = "rustls-config")]
     {
         let cfg = build_rustls_config(tpl);
-        return ClientConfig { ja3, template_id: tid, rustls: cfg };
+    ClientConfig { ja3, template_id: tid, rustls: cfg }
     }
     #[cfg(not(feature = "rustls-config"))]
     {

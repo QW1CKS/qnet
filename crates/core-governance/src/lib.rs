@@ -26,7 +26,7 @@ pub struct Score {
 
 pub fn score_nodes(nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
     // raw scores proportional to uptime
-    let raw: Vec<f64> = nodes.iter().map(|n| n.uptime_ratio.max(0.0).min(1.0)).collect();
+    let raw: Vec<f64> = nodes.iter().map(|n| n.uptime_ratio.clamp(0.0, 1.0)).collect();
     // apply caps by redistributing excess above cap proportionally
     // compute group sums
     use std::collections::HashMap;
@@ -46,7 +46,7 @@ pub fn score_nodes(nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
         let factor = org_factor.min(as_factor).min(1.0);
         capped[i] = raw[i] * factor;
     }
-    raw.into_iter().zip(capped.into_iter()).map(|(raw, capped)| Score { raw, capped }).collect()
+    raw.into_iter().zip(capped).map(|(raw, capped)| Score { raw, capped }).collect()
 }
 
 #[cfg(test)]

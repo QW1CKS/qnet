@@ -139,8 +139,7 @@ impl Mux {
                         framing::Frame::decode_plain(&bytes)
                     }
                 };
-                match frame_res {
-                    Ok(frame) => match frame.ty {
+                if let Ok(frame) = frame_res { match frame.ty {
                         framing::FrameType::Stream => {
                             // payload: stream_id (u32) || data
                             if frame.payload.len() < 4 { continue; }
@@ -206,9 +205,7 @@ impl Mux {
                             inner.credit_cv.notify_all();
                         }
                         _ => {}
-                    },
-                    Err(_) => {}
-                }
+                    } }
             }
         });
     }
@@ -245,9 +242,7 @@ impl Mux {
 
     fn send_data(&self, id: StreamId, data: &[u8]) {
         // Enforce rekey-close: if control is closed, drop data frames until reopened
-        if id != 0 {
-            if !*self.inner.control_open.lock().unwrap() { return; }
-        }
+    if id != 0 && !*self.inner.control_open.lock().unwrap() { return; }
         let mut payload = BytesMut::with_capacity(4 + data.len());
         payload.put_slice(&id.to_be_bytes());
         payload.put_slice(data);
@@ -454,7 +449,6 @@ mod tests {
 
     #[test]
     fn key_update_accepts_up_to_3_old_then_rejects() {
-        use bytes::Bytes;
         // Create encrypted pair with known keys
         let (a, b) = super::pair_encrypted([1u8;32], [2u8;32], [2u8;32], [1u8;32]);
 
@@ -471,10 +465,10 @@ mod tests {
         // 1) Send KEY_UPDATE encoded under current key ([1;32]) with ctr=0
         let key_old = [1u8;32];
         let frame_ku = framing::Frame { ty: framing::FrameType::KeyUpdate, payload: Vec::new() };
-        let bytes_ku = framing::encode(&frame_ku, framing::KeyCtx { key: key_old }, nonce_from_ctr(0));
+            let bytes_ku = framing::encode(&frame_ku, framing::KeyCtx { key: key_old }, nonce_from_ctr(0));
         {
             let tx = &a.inner.tx; // child module can access
-            tx.send(Bytes::from(bytes_ku)).unwrap();
+                tx.send(bytes_ku).unwrap();
         }
 
         // 2) Send three STREAM frames under old key with ctr 1,2,3 (accepted)
@@ -484,17 +478,17 @@ mod tests {
             payload.extend_from_slice(&[b'a' + (i as u8)]);
             let f = framing::Frame { ty: framing::FrameType::Stream, payload };
             let bytes = framing::encode(&f, framing::KeyCtx { key: key_old }, nonce_from_ctr(ctr));
-            a.inner.tx.send(Bytes::from(bytes)).unwrap();
+            a.inner.tx.send(bytes).unwrap();
         }
 
         // 3) Send a 4th STREAM under old key with ctr=4 (should be rejected)
         {
             let mut payload = Vec::new();
             payload.extend_from_slice(&stream_id.to_be_bytes());
-            payload.extend_from_slice(&[b'd']);
+            payload.extend_from_slice(b"d");
             let f = framing::Frame { ty: framing::FrameType::Stream, payload };
             let bytes = framing::encode(&f, framing::KeyCtx { key: key_old }, nonce_from_ctr(4));
-            a.inner.tx.send(Bytes::from(bytes)).unwrap();
+            a.inner.tx.send(bytes).unwrap();
         }
 
         // 4) Send a STREAM under the new key (derived as HKDF(old,"key")) with ctr=0 (accepted)
@@ -503,10 +497,10 @@ mod tests {
         {
             let mut payload = Vec::new();
             payload.extend_from_slice(&stream_id.to_be_bytes());
-            payload.extend_from_slice(&[b'n']);
+            payload.extend_from_slice(b"n");
             let f = framing::Frame { ty: framing::FrameType::Stream, payload };
             let bytes = framing::encode(&f, framing::KeyCtx { key: key_new }, nonce_from_ctr(0));
-            a.inner.tx.send(Bytes::from(bytes)).unwrap();
+            a.inner.tx.send(bytes).unwrap();
         }
 
         // Now, on B, accept the stream and read up to 5 messages; expect exactly 4 bytes: a,b,c,n
@@ -538,7 +532,7 @@ mod tests {
 
         // Client: open stream 1, send some data, then send a control message which triggers rekey-close, then send more data, then key_update to reopen
         let sh = a.open_stream();
-        sh.write(&vec![1u8; 64]); // should arrive
+    sh.write(&[1u8; 64]); // should arrive
 
         // Send control message on stream 0
         let rec = ControlRecord { prev_as: 1, next_as: 2, ts: 1_700_000_000, flow: 42, nonce: vec![0u8;16] };
@@ -547,13 +541,13 @@ mod tests {
         a.send_control(&sc);
 
         // While control is closed, data is dropped
-        sh.write(&vec![2u8; 64]);
+    sh.write(&[2u8; 64]);
 
         // Now rotate keys to reopen
         a.key_update();
 
         // Data after reopen should pass again
-        sh.write(&vec![3u8; 64]);
+    sh.write(&[3u8; 64]);
 
         let total = server.join().unwrap();
         // Expect exactly 128 bytes (64 before close + 64 after reopen)

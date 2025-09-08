@@ -3,6 +3,12 @@ use serde::{Serialize, Deserialize};
 use std::collections::{HashMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+type Signer = [u8; 32];
+type Votes = BTreeSet<Signer>;
+type Seq = u64;
+type PendingBySeq = HashMap<Seq, (Entry, Votes)>;
+type Pending = HashMap<Alias, PendingBySeq>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Alias([u8;32]);
 
@@ -19,7 +25,7 @@ pub struct Entry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuorumCert {
-    pub signers: BTreeSet<[u8;32]>,
+    pub signers: BTreeSet<[u8; 32]>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,9 +40,9 @@ pub struct Ledger {
     // per-alias latest committed entry
     committed: Mutex<HashMap<Alias, Entry>>, 
     // pending entries per alias (seq -> (entry, votes))
-    pending: Mutex<HashMap<Alias, HashMap<u64, (Entry, BTreeSet<[u8;32]>)>>>,
+    pending: Mutex<Pending>,
     // emergency lock: if set, only entries with signer in set may advance without quorum
-    emergency: Mutex<Option<BTreeSet<[u8;32]>>>,
+    emergency: Mutex<Option<BTreeSet<[u8; 32]>>>,
     quorum: usize,
 }
 
@@ -48,14 +54,14 @@ impl Ledger {
         Entry { seq, alias, target, ts }
     }
 
-    pub fn vote(&self, e: &Entry, signer: [u8;32]) -> Result<(), Error> {
+    pub fn vote(&self, e: &Entry, signer: [u8; 32]) -> Result<(), Error> {
         // reject votes for stale sequences
         if let Some(comm) = self.committed.lock().get(&e.alias) {
             if e.seq <= comm.seq { return Err(Error::OldSeq); }
         }
         let mut p = self.pending.lock();
         let by_alias = p.entry(e.alias).or_default();
-        let (entry, voters) = by_alias.entry(e.seq).or_insert_with(|| (e.clone(), BTreeSet::new()));
+    let (entry, voters) = by_alias.entry(e.seq).or_insert_with(|| (e.clone(), BTreeSet::new()));
         if entry != e { return Err(Error::Conflict); }
         voters.insert(signer);
         Ok(())
@@ -67,10 +73,10 @@ impl Ledger {
         // pick highest seq with quorum
         let mut best: Option<(u64, Entry)> = None;
         for (seq, (e, voters)) in by_seq.iter() {
-            if voters.len() >= self.quorum {
-                if best.as_ref().map(|(s, _)| seq > s).unwrap_or(true) {
-                    best = Some((*seq, e.clone()));
-                }
+            if voters.len() >= self.quorum
+                && best.as_ref().map(|(s, _)| seq > s).unwrap_or(true)
+            {
+                best = Some((*seq, e.clone()));
             }
         }
         if let Some((seq, e)) = best {
@@ -82,10 +88,10 @@ impl Ledger {
         if let Some(allow) = self.emergency.lock().clone() {
             let mut chosen: Option<(u64, Entry)> = None;
             for (seq, (e, voters)) in by_seq.iter() {
-                if voters.iter().any(|v| allow.contains(v)) {
-                    if chosen.as_ref().map(|(s, _)| seq > s).unwrap_or(true) {
-                        chosen = Some((*seq, e.clone()));
-                    }
+                if voters.iter().any(|v| allow.contains(v))
+                    && chosen.as_ref().map(|(s, _)| seq > s).unwrap_or(true)
+                {
+                    chosen = Some((*seq, e.clone()));
                 }
             }
             if let Some((seq, e)) = chosen {
@@ -97,7 +103,7 @@ impl Ledger {
         Ok(None)
     }
 
-    pub fn set_emergency(&self, allow: Option<BTreeSet<[u8;32]>>) { *self.emergency.lock() = allow; }
+    pub fn set_emergency(&self, allow: Option<BTreeSet<[u8; 32]>>) { *self.emergency.lock() = allow; }
 
     pub fn head(&self, alias: &Alias) -> Option<Entry> { self.committed.lock().get(alias).cloned() }
 }
