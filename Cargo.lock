@@ -395,6 +395,7 @@ dependencies = [
  "bytes",
  "core-cbor",
  "core-crypto",
+ "core-framing",
  "curve25519-dalek",
  "md5",
  "once_cell",

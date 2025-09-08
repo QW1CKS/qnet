@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 core-crypto = { path = "../core-crypto" }
 core-cbor = { path = "../core-cbor" }
+core-framing = { path = "../core-framing" }
 ring = "0.17"
 curve25519-dalek = "4"
 rand = { version = "0.8", features = ["std"] }

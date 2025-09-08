@@ -271,6 +271,7 @@ impl Server { pub fn accept(_bind: &str) -> Result<(), &'static str> { Ok(()) } 
 
 pub mod tls_mirror;
 pub mod inner;
+pub mod mux;
 
 #[cfg(test)]
 mod tests {
