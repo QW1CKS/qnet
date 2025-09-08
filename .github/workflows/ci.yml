@@ -130,7 +130,6 @@ jobs:
           compile-generator: true
 
 jobs:
-jobs:
   build:
     runs-on: ubuntu-latest
     steps:
