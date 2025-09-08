@@ -10,6 +10,8 @@ members = [
     "crates/mixnode",
     "crates/core-identity",
     "crates/alias-ledger",
+    "crates/voucher",
+    "crates/core-governance",
     "examples/echo",
 ]
 resolver = "2"

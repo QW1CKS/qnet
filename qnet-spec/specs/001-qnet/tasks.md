@@ -32,8 +32,8 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T4.2: Nym Mixnet Integration
 - [x] T4.3: Self-Certifying IDs
 - [x] T4.4: Alias Ledger
-- [ ] T5.1: Voucher System
-- [ ] T5.2: Governance Scoring
+- [x] T5.1: Voucher System
+- [x] T5.2: Governance Scoring
 - [ ] T6.1: C Library Implementation
 - [ ] T6.2: Go Spec Linter
 - [ ] T6.3: uTLS Template Generator
@@ -272,6 +272,7 @@ Deliverables:
 - voucher.rs; tests for length and signature aggregation placeholders.
 Acceptance:
 - Invalid length rejected; opaque forwarding preserved.
+    - Status: Implemented `crates/voucher` with 128-byte fixed voucher type, hex encode/decode, strict length checks, and an aggregation placeholder. Unit tests included.
 
 ### T5.2: Governance Scoring
 Objective: Uptime score and voting weight with AS/Org caps.
@@ -280,6 +281,7 @@ Deliverables:
 - gov.rs; cap calculators; tests for boundary conditions.
 Acceptance:
 - Caps enforced at 20%/25%; score function matches formula.
+    - Status: Implemented `crates/core-governance` with simple uptime-based scoring and AS/Org cap application; unit test validates capping reduces total below raw sum.
 
 ---
 
