@@ -9,19 +9,19 @@ int main(void) {
         fprintf(stderr, "qnet_dial_inproc failed\n");
         return 1;
     }
-    // server side: accept a stream and echo a single message
-    QnetStream ss = qnet_conn_accept_stream(&server, 1000);
-    if (ss.ptr == NULL) {
-        fprintf(stderr, "server accept failed\n");
-        return 2;
-    }
-
     // client side: open a stream and send a message
     QnetStream cs = qnet_conn_open_stream(&client);
     const char* msg = "hello-c-lib";
     if (qnet_stream_write(&cs, (const uint8_t*)msg, (size_t)strlen(msg)) != 0) {
         fprintf(stderr, "write failed\n");
         return 3;
+    }
+
+    // server side: accept a stream and echo a single message
+    QnetStream ss = qnet_conn_accept_stream(&server, 1000);
+    if (ss.ptr == NULL) {
+        fprintf(stderr, "server accept failed\n");
+        return 2;
     }
 
     // server reads and echoes back

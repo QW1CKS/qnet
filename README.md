@@ -171,7 +171,7 @@ Native Tools Command Prompt (cmd):
 
 ```cmd
 REM Change drive and directory if needed
-cd /d P:\GITHUB\qnet
+cd /d <repo-path>
 cargo build -p qnet_c -r
 
 cd crates\c-lib
@@ -184,7 +184,27 @@ echo.exe
 Troubleshooting:
 - "cl.exe not found": open the "x64 Native Tools Command Prompt for VS" and retry.
 - "kernel32.lib not found": install a Windows SDK via VS Build Tools and use the Developer shell.
+- "bcrypt.lib not found": this also comes from the Windows 10/11 SDK. Use the Visual Studio Installer to add a Windows SDK (Desktop C++), then reopen the x64 Developer shell so LIB includes `...\Windows Kits\10\Lib\<ver>\um\x64`. If already installed, ensure you're in the 64-bit Developer shell and not a plain PowerShell.
 - "cannot cd to repo": in cmd use `cd /d P:\GITHUB\qnet` (the `/d` switches drives), or `pushd P:\GITHUB\qnet`.
+- "server accept failed" in echo example: This was a sequencing issue in the C code. The client must open the stream before the server accepts it. The example has been fixed to run the client open/write first, then server accept/echo.
+- "fatal error C1083: Cannot open include file: 'stdio.h'": The MSVC environment variables are not set. In PowerShell, run these commands to set them manually (adjust paths if your SDK/MSVC versions differ):
+
+```powershell
+$env:VCToolsInstallDir = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207"
+$sdk = "10.0.26100.0"
+$sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+$vcInc = Join-Path $env:VCToolsInstallDir "include"
+$vcLib = Join-Path $env:VCToolsInstallDir "lib\x64"
+$ucrtInc = Join-Path $sdkRoot "Include\$sdk\ucrt"
+$umInc = Join-Path $sdkRoot "Include\$sdk\um"
+$shared = Join-Path $sdkRoot "Include\$sdk\shared"
+$ucrtLib = Join-Path $sdkRoot "Lib\$sdk\ucrt\x64"
+$umLib = Join-Path $sdkRoot "Lib\$sdk\um\x64"
+$env:INCLUDE = "$vcInc;$ucrtInc;$umInc;$shared"
+$env:LIB = "$vcLib;$ucrtLib;$umLib"
+```
+
+Then retry the build and run commands.
 
 ### Building
 ```bash
