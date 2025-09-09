@@ -11,34 +11,31 @@ concurrency:
 
 jobs:
   build:
-    outputs:
-      build-artifacts: ${{ steps.build-artifacts.outputs.build-artifacts }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+    - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable  # Use latest stable (supports Edition 2024 and ICU crates)
-          override: true
           components: rustfmt, clippy
       - uses: actions/setup-go@v4
         with:
           go-version: '1.21'  # Pinned Go version
+      cache-dependency-path: linter/go.sum
       - name: Build Rust
         run: |
-          cargo build --workspace --all-targets --quiet
-          cargo build -p htx --features rustls-config --examples --quiet
+          cargo build --workspace --all-targets
+          cargo build -p htx --features rustls-config --examples
       - name: Build Go Linter
         run: |
           cd linter
           go build -o qnet-lint ./cmd/qnet-lint/
       - name: Test
         run: |
-          cargo test --workspace --all-features --quiet
-          cargo test -p htx --features rustls-config --quiet
+          cargo test --workspace --all-features
+          cargo test -p htx --features rustls-config
       - name: Lint
         run: |
-          cargo clippy --workspace --all-targets --all-features -- -D warnings --quiet
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
           cargo fmt --all -- --check
       - name: Generate SBOM
         continue-on-error: true
@@ -61,23 +58,16 @@ jobs:
             target/debug/
             linter/qnet-lint
             sbom.json
-      - name: Output build artifacts
-        id: build-artifacts
-        run: |
-          echo "build-artifacts=$(find target/debug -type f -exec sha256sum {} \; | base64 -w0)" >> $GITHUB_OUTPUT
 
   fuzz-and-coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+    - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable  # Align with build; supports modern crates
-          override: true
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: false
+      # Align with build; supports modern crates
+      components: ''
+    - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz and tarpaulin
         run: |
           cargo install --locked cargo-fuzz
@@ -125,9 +115,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: qnet-artifacts
+      - name: Compute SLSA subjects (limited)
+        id: subjects
+        run: |
+          set -e
+          tmp=$(mktemp)
+          if [ -f target/debug/checksums.txt ]; then sha256sum target/debug/checksums.txt >> "$tmp"; fi
+          if [ -f linter/qnet-lint ]; then sha256sum linter/qnet-lint >> "$tmp"; fi
+          if [ -f sbom.json ]; then sha256sum sbom.json >> "$tmp"; fi
+          if [ ! -s "$tmp" ]; then echo "No subjects found"; fi
+          echo "subjects=$(base64 -w0 "$tmp")" >> "$GITHUB_OUTPUT"
       - name: Generate SLSA provenance
         uses: slsa-framework/slsa-github-generator@v1.9.0
         with:
-          base64-subjects: "${{ needs.build.outputs.build-artifacts }}"
+          base64-subjects: "${{ steps.subjects.outputs.subjects }}"
           upload-assets: true
           compile-generator: true
