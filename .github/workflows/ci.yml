@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.21'  # Pinned Go version
-      cache-dependency-path: linter/go.sum
+          go-version: '1.21'
+          cache-dependency-path: linter/go.sum
       - name: Build Rust
         run: |
           cargo build --workspace --all-targets
@@ -63,20 +63,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-        with:
-      # Align with build; supports modern crates
-      components: ''
-    - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz and tarpaulin
         run: |
           cargo install --locked cargo-fuzz
           cargo install --locked cargo-tarpaulin
       - name: Build fuzz targets
+        if: ${{ hashFiles('fuzz/**/Cargo.toml') != '' }}
         run: |
           cd fuzz
           cargo +nightly fuzz build
       - name: Run fuzzers (time-boxed)
+        if: ${{ hashFiles('fuzz/**/Cargo.toml') != '' }}
         run: |
           set -e
           cd fuzz
@@ -93,15 +91,19 @@ jobs:
         run: |
           # Focus coverage on core-framing; allow test-only instrumentation. Do not fail build on low coverage.
           cargo tarpaulin -p core-framing --engine=llvm --line --out Xml --timeout 180 --ignore-tests || true
-          mv cobertura.xml cobertura-core-framing.xml || true
-          cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-core-framing.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
-          echo "core-framing line coverage: $cov"
+          if [ -f cobertura.xml ]; then mv cobertura.xml cobertura-core-framing.xml; fi
+          if [ -f cobertura-core-framing.xml ]; then
+            cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-core-framing.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
+            echo "core-framing line coverage: $cov"
+          fi
       - name: Coverage (htx)
         run: |
           cargo tarpaulin -p htx --engine=llvm --line --out Xml --timeout 180 --ignore-tests || true
-          mv cobertura.xml cobertura-htx.xml || true
-          cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-htx.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
-          echo "htx line coverage: $cov"
+          if [ -f cobertura.xml ]; then mv cobertura.xml cobertura-htx.xml; fi
+          if [ -f cobertura-htx.xml ]; then
+            cov=$(grep -o 'line-rate="[0-9.]*"' cobertura-htx.xml | head -n1 | sed -E 's/.*="([0-9.]+)"/\1/')
+            echo "htx line coverage: $cov"
+          fi
 
   slsa-provenance:
     needs: build
@@ -128,6 +130,6 @@ jobs:
       - name: Generate SLSA provenance
         uses: slsa-framework/slsa-github-generator@v1.9.0
         with:
-          base64-subjects: "${{ steps.subjects.outputs.subjects }}"
+          base64-subjects: ${{ steps.subjects.outputs.subjects }}
           upload-assets: true
           compile-generator: true
