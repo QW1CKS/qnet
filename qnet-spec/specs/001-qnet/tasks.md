@@ -38,7 +38,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.2: Go Spec Linter
 - [x] T6.3: uTLS Template Generator
 - [x] T6.4: SLSA Provenance
- - [x] T6.5: Compliance Test Harness
+- [x] T6.5: Compliance Test Harness
 - [ ] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
 

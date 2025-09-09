@@ -28,6 +28,8 @@ Quick links:
 - [Technology Stack](#technology-stack)
 - [Implementation Phases](#implementation-phases)
 - [Progress Tracker](#progress-tracker)
+- [For Developers: Toolkit and Framework](#for-developers-toolkit-and-framework)
+- [For Users: Ready-to-Use Applications](#for-users-ready-to-use-applications)
 - [Getting Started](#getting-started)
 - [Physical Testing](#physical-testing)
 - [Contributing](#contributing)
@@ -300,6 +302,44 @@ This repository uses a structured specification kit (`qnet-spec/`) for managing 
 - `scripts/`: Helper scripts for development workflow
 
 The spec kit ensures all changes are driven by documented requirements and maintainable through modular, testable components.
+
+## For Developers: Toolkit and Framework
+
+QNet is primarily a toolkit and framework for developers to build private, censorship-resistant networks and applications. The core components are in the `crates/` directory:
+
+- **Core Crates**: `core-crypto`, `core-framing`, `htx`, etc. - Low-level primitives for building QNet-based apps.
+- **Examples**: `examples/` - Sample code showing how to integrate QNet into your applications.
+- **Libraries**: `c-lib/` - C bindings for non-Rust projects.
+
+To get started as a developer:
+```bash
+# Clone the repo
+git clone https://github.com/QW1CKS/qnet.git
+cd qnet
+
+# Build the workspace
+cargo build --workspace
+
+# Run an example
+cargo run --example echo
+```
+
+See the [Specification](qnet-spec/specs/001-qnet/spec.md) for API details and integration guides.
+
+## For Users: Ready-to-Use Applications
+
+While QNet is a developer toolkit, we also provide ready-to-use applications for day-to-day users. These are built on top of the QNet protocol stack and are designed for ease of use without requiring development knowledge.
+
+- **Stealth Browser**: A browser application that uses QNet to browse the web anonymously, mimicking normal HTTPS traffic to evade ISP tracking and censorship. Located in `apps/`.
+
+To use the stealth browser:
+```bash
+# Build the browser (when implemented)
+cargo build --release --bin stealth-browser
+./target/release/stealth-browser
+```
+
+These applications are separate from the core toolkit to keep the repository organized: developers focus on `crates/` and `examples/`, while users can download pre-built binaries or build the apps from `apps/`.
 
 ## Getting Started
 

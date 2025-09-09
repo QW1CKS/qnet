@@ -5,3 +5,10 @@
 *.swp
 .idea/
 .vscode/
+# Large assets (consider Git LFS if needed)
+*.png
+*.jpg
+*.mp4
+# Build artifacts
+Cargo.lock.bak
+*.log
