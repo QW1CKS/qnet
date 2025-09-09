@@ -2,13 +2,13 @@
   <img src="logo.png" alt="QNet Logo" width="400">
 </div>
 
-# 🚀 QNet: The Future of Decentralized, Censorship-Resistant Networking
+# QNet: Decentralized, Censorship-Resistant Networking
 
-**QNet (QuantaNet)** is a groundbreaking decentralized network protocol stack designed to replace the vulnerable public Internet with a privacy-preserving, self-sovereign alternative. Imagine a world where censorship is obsolete, privacy is guaranteed, and connectivity is truly decentralized—QNet makes this vision a reality. 🌐✨
+**QNet (QuantaNet)** is a decentralized network protocol stack designed to replace the vulnerable public Internet with a privacy-preserving, self-sovereign alternative. It enables secure, anonymous communication over any IP bearer without relying on centralized authorities or vulnerable DNS systems.
 
 **Why QNet?**  
 - **Censorship-Proof**: Route around blocks with stealthy, mixnet-powered tunnels.  
-- **Privacy-First**: Your traffic looks like normal HTTPS—undetectable by ISPs or governments.  
+- **Privacy-First**: Traffic mimics normal HTTPS, undetectable by ISPs or governments.  
 - **Decentralized**: No central authorities, no DNS vulnerabilities, no single points of failure.  
 - **Scalable & Secure**: Built for millions of users with quantum-resistant cryptography.  
 
@@ -19,27 +19,27 @@ Quick links:
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
-- [🚀 QNet: The Future of Decentralized, Censorship-Resistant Networking](#-qnet-the-future-of-decentralized-censorship-resistant-networking)
-- [🌟 Overview](#-overview)
-- [🎯 Key Features & Benefits](#-key-features--benefits)
-- [🏗️ Architecture](#️-architecture)
-- [🛠️ Technology Stack](#️-technology-stack)
-- [📅 Implementation Phases](#-implementation-phases)
-- [📊 Progress Tracker](#-progress-tracker)
-- [🚀 Getting Started](#-getting-started)
-- [🧪 Physical Testing](#-physical-testing)
-- [🤝 Contributing](#-contributing)
-- [💰 Bounties](#-bounties)
-- [🔒 Security](#-security)
-- [📜 License](#-license)
-- [🗺️ Roadmap](#️-roadmap)
-- [🌐 Community](#-community)
+- [QNet: Decentralized, Censorship-Resistant Networking](#qnet-decentralized-censorship-resistant-networking)
+- [Overview](#overview)
+- [Key Features & Benefits](#key-features--benefits)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Implementation Phases](#implementation-phases)
+- [Progress Tracker](#progress-tracker)
+- [Getting Started](#getting-started)
+- [Physical Testing](#physical-testing)
+- [Contributing](#contributing)
+- [Bounties](#bounties)
+- [Security](#security)
+- [License](#license)
+- [Roadmap](#roadmap)
+- [Community](#community)
 
 ---
 
-## 🌟 Overview
+## Overview
 
 QNet is a decentralized, censorship-resistant network designed to replace the public Internet. It provides strong user privacy, decentralized operation, and resistance to censorship through layered architecture and advanced cryptography.
 
@@ -66,9 +66,9 @@ QNet's innovative 7-layer architecture ensures seamless, secure connectivity:
 
 ---
 
-## 🎯 Key Features & Benefits
+## Key Features & Benefits
 
-### 🚀 Why Choose QNet?
+### Why Choose QNet?
 - **Origin-Mirrored TLS Handshakes**: Auto-calibrates to mimic real websites perfectly—your traffic blends in.
 - **Noise XK Inner Channels**: Mutual authentication with post-quantum hybrids for unbreakable security.
 - **SCION Packet Headers**: Validates paths to prevent routing attacks.
@@ -78,17 +78,17 @@ QNet's innovative 7-layer architecture ensures seamless, secure connectivity:
 - **Anti-Correlation Measures**: Cover traffic and fallback mechanisms.
 - **Reproducible Builds**: SLSA provenance for trust.
 
-### 🌍 Real-World Impact
+### Real-World Impact
 - **Journalists & Activists**: Access blocked sites without detection.
 - **Developers**: Build censorship-resistant apps effortlessly.
 - **Everyday Users**: Browse freely, no matter where you are.
 - **Governments & ISPs**: Can't block what they can't see!
 
-QNet isn't just better—it's a paradigm shift. Say goodbye to surveillance and hello to true digital freedom. 🔓
+QNet isn't just better—it's a paradigm shift. Say goodbye to surveillance and hello to true digital freedom.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 QNet's modular design ensures scalability and maintainability:
 
@@ -118,7 +118,7 @@ qnet/
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 ### Core Languages
 - **Rust**: Primary for HTX, mixnode, and core networking—memory-safe, performant, async-ready.
@@ -143,7 +143,7 @@ qnet/
 
 ---
 
-## 📅 Implementation Phases
+## Implementation Phases
 
 ### Phase 1: Core Infrastructure (High Priority)
 - Rust workspace setup with tokio and ring.
@@ -185,7 +185,7 @@ qnet/
 
 ---
 
-## 📊 Progress Tracker
+## Progress Tracker
 
 Track our journey to QNet's full realization:
 
