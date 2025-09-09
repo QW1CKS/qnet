@@ -196,6 +196,29 @@ qnet/
 - Performance targets met
 - Security audit passed
 
+## Repository and Ecosystem Management
+
+### Dual Audience Strategy
+QNet serves both developers (toolkit/framework users) and end users (ready-to-use applications). To balance this:
+- **Developer Focus**: Core crates in `crates/` and examples in `examples/` for integration (e.g., HTX crate for tunneling).
+- **User Focus**: Applications in `apps/` like the stealth browser for easy anonymous browsing.
+- **Documentation**: Separate guides—technical docs for devs, quick starts for users.
+
+### Repository Organization
+- Maintain modular structure: `crates/` for toolkit, `apps/` for user apps.
+- Enforce `.gitignore` for build artifacts to manage 5GB+ size.
+- Use Git LFS for large assets if needed.
+
+### CI/CD Pipelines
+- **Toolkit Pipeline**: Fast Rust builds/tests for `crates/` (unit tests, fuzzing).
+- **Apps Pipeline**: Includes browser packaging (MSI/APK/DMG), integration tests, and pre-built binaries.
+- Separate workflows: Toolkit on PRs, apps on releases for efficiency.
+
+### Long-Term Ecosystem Growth
+- Encourage third-party apps via modular crates.
+- Provide pre-built binaries via GitHub Releases.
+- Plan for separate repos if user apps grow large.
+
 ## Research & Dependencies
 
 ### External Dependencies

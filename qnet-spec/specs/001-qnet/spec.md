@@ -9,6 +9,8 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 - **As a user**, I want to connect to QNet using standard internet access so that I can access decentralized services without relying on centralized infrastructure.
 - **As a developer**, I want to build applications on QNet using self-certifying identities so that users can verify service authenticity without external authorities.
 - **As a privacy-conscious user**, I want my traffic to be routed through mixnodes so that observers cannot correlate my communications.
+- **As a developer**, I want to integrate QNet's protocol stack into my apps via modular crates (e.g., HTX for tunneling) so that I can build custom privacy tools without reinventing cryptography.
+- **As an end user**, I want a ready-to-use stealth browser that mimics normal HTTPS traffic so that I can browse anonymously without ISP tracking or technical setup.
 
 ### Layer Architecture
 - **L0 Access Media**: Support any IP bearer (fibre, 5G, satellite, LoRa, etc.)

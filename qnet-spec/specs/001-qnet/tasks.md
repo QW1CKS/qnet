@@ -41,6 +41,10 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.5: Compliance Test Harness
 - [ ] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
+- [ ] T6.8: Repository Organization for Dual Audience
+- [ ] T6.9: User Documentation and Quick Start Guides
+- [ ] T6.10: Repository Size Management
+- [ ] T6.11: Separate CI/CD Pipelines for Toolkit and Apps
 
 ## Phase 1: Core Infrastructure Setup (Priority: High)
 
@@ -370,6 +374,59 @@ Acceptance:
 - Global connection in <30s; decoy IPs logged as normal sites (e.g., google.com).
 - E2E browsing censored sites with <200ms added latency.
 Risks: Detection via advanced DPI; decoy node trust; legal concerns in restrictive regimes.
+
+### T6.8: Repository Organization for Dual Audience
+Objective: Structure the repository to clearly separate developer toolkit from user-facing applications, addressing the 5GB+ size and dual purpose.
+Priority: Medium | Dependencies: T1.1, T6.7 | Estimate: 2 days
+Deliverables:
+- Create `apps/` directory with README explaining user applications.
+- Update main README with "For Developers" and "For Users" sections.
+- Organize core crates in `crates/` for developers; examples in `examples/`.
+Interfaces:
+- Clear navigation: Developers focus on `crates/` and `examples/`; users on `apps/`.
+Acceptance:
+- README has distinct sections for developers (toolkit integration) and users (browser quick start).
+- `apps/README.md` provides build instructions for stealth browser.
+- Repository size reduced by enforcing `.gitignore` for large assets.
+
+### T6.9: User Documentation and Quick Start Guides
+Objective: Provide simple guides for non-developers to use the stealth browser, emphasizing one-click builds or pre-built binaries.
+Priority: Medium | Dependencies: T6.8 | Estimate: 1 day
+Deliverables:
+- Quick Start guide in `apps/README.md` with build commands.
+- Note in main README: "Not a developer? Check out our stealth browser in `apps/` for easy anonymous browsing."
+- Pre-built binary instructions (e.g., via GitHub Releases).
+Interfaces:
+- User-friendly docs: Focus on setup, not internals.
+Acceptance:
+- Users can build/run browser with minimal commands (e.g., `cargo build --release --bin stealth-browser`).
+- Docs highlight integration via HTX crate for developers.
+
+### T6.10: Repository Size Management
+Objective: Reduce repository size from 5GB+ by cleaning up artifacts and optimizing storage.
+Priority: Low | Dependencies: None | Estimate: 1 day
+Deliverables:
+- Run `git gc --prune=now` to clean loose objects.
+- Enhance `.gitignore` for build artifacts, large assets (images/videos).
+- Consider Git LFS for non-essential large files or move to separate repo.
+Interfaces:
+- N/A (internal repo management).
+Acceptance:
+- Repository size reduced by >50%; no large unnecessary files committed.
+- CI builds remain fast; cloning time improved.
+
+### T6.11: Separate CI/CD Pipelines for Toolkit and Apps
+Objective: Plan and implement distinct pipelines for fast Rust toolkit builds vs. app packaging (e.g., browser installers).
+Priority: Low | Dependencies: T6.8 | Estimate: 3 days
+Deliverables:
+- Toolkit pipeline: Fast Rust builds/tests for `crates/`.
+- Apps pipeline: Includes browser packaging (MSI/APK/DMG) and auto-daemon launch.
+- GitHub Actions workflows separated by triggers (e.g., toolkit on PR, apps on release).
+Interfaces:
+- CI/CD: Separate jobs for toolkit (unit tests) and apps (integration, packaging).
+Acceptance:
+- Toolkit builds in <5min; apps pipeline handles packaging without slowing core dev.
+- Pre-built binaries available via GitHub Releases for users.
 
 ## Validation Matrix (Tasks → Compliance)
 - L2 framing + KEY_UPDATE: T1.3, T2.6 → Compliance 3, 12.
