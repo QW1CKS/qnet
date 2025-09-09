@@ -41,6 +41,7 @@ jobs:
           cargo clippy --workspace --all-targets --all-features -- -D warnings
           cargo fmt --all -- --check
       - name: Generate SBOM
+        continue-on-error: true
         run: |
           # Install syft for SBOM generation
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
