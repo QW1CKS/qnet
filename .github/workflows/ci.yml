@@ -106,8 +106,8 @@ jobs:
           fi
 
   slsa-provenance:
-  # Run only for public repos, or when the owner is an Organization (feature not available for user-owned private repos)
-  if: ${{ !github.event.repository.private || github.repository_owner_type != 'User' }}
+    # Run only for public repos, or when the owner is an Organization (feature not available for user-owned private repos)
+    if: ${{ !github.event.repository.private || github.repository_owner_type != 'User' }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
