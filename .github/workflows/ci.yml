@@ -26,19 +26,19 @@ jobs:
           go-version: '1.21'  # Pinned Go version
       - name: Build Rust
         run: |
-          cargo build --workspace --all-targets
-          cargo build -p htx --features rustls-config --examples
+          cargo build --workspace --all-targets --quiet
+          cargo build -p htx --features rustls-config --examples --quiet
       - name: Build Go Linter
         run: |
           cd linter
           go build -o qnet-lint ./cmd/qnet-lint/
       - name: Test
         run: |
-          cargo test --workspace --all-features
-          cargo test -p htx --features rustls-config
+          cargo test --workspace --all-features --quiet
+          cargo test -p htx --features rustls-config --quiet
       - name: Lint
         run: |
-          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo clippy --workspace --all-targets --all-features -- -D warnings --quiet
           cargo fmt --all -- --check
       - name: Generate SBOM
         continue-on-error: true
