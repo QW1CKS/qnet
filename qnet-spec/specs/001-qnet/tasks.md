@@ -38,7 +38,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.2: Go Spec Linter
 - [x] T6.3: uTLS Template Generator
 - [x] T6.4: SLSA Provenance
-- [ ] T6.5: Compliance Test Harness
+ - [x] T6.5: Compliance Test Harness
 - [ ] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
 
@@ -332,6 +332,9 @@ Deliverables:
 - tests/compliance with scenarios: crypto/framing/key-update, discovery, routing, relays, BN-Ticket header.
 Acceptance:
 - All MINIMAL profile tests pass; STANDARD subset passes where implemented.
+    - Status: Implemented `tests/compliance` workspace crate with two profiles:
+        - MINIMAL: AEAD framing AAD/tamper/nonce tests, mux KEY_UPDATE (3-frame overlap) and rekey-close/resume behavior, and routing segment signature/expiry checks.
+        - STANDARD: BN-Ticket token derivation placeholder using HKDF exporter context binding. Discovery/mesh scenarios gated by `with-libp2p` will be added when enabled in CI.
 
 ### T6.6: Performance Optimization
 Objective: Optimize QNet for extreme speed, achieving throughput and latency superior to TCP/TLS.

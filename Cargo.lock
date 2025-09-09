@@ -564,6 +564,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "compliance"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "core-crypto",
+ "core-framing",
+ "core-mix",
+ "core-routing",
+ "htx",
+ "rand 0.8.5",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
