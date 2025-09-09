@@ -111,7 +111,7 @@ jobs:
     permissions:
       actions: read
       id-token: write
-  attestations: write
+      attestations: write
       contents: write
     steps:
       - uses: actions/checkout@v4
