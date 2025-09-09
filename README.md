@@ -2,34 +2,224 @@
   <img src="logo.png" alt="QNet Logo" width="400">
 </div>
 
-# QNet
+# 🚀 QNet: The Future of Decentralized, Censorship-Resistant Networking
 
-QNet or QuantaNet is a decentralized, censorship-resistant network protocol stack designed to replace traditional web infrastructure with a privacy-preserving, self-sovereign alternative. It enables secure, anonymous communication over any IP bearer, from fiber to satellite, without relying on centralized authorities or vulnerable DNS systems.
+**QNet (QuantaNet)** is a groundbreaking decentralized network protocol stack designed to replace the vulnerable public Internet with a privacy-preserving, self-sovereign alternative. Imagine a world where censorship is obsolete, privacy is guaranteed, and connectivity is truly decentralized—QNet makes this vision a reality. 🌐✨
 
-Quick links:
-- Live task tracker: [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md)
+**Why QNet?**  
+- **Censorship-Proof**: Route around blocks with stealthy, mixnet-powered tunnels.  
+- **Privacy-First**: Your traffic looks like normal HTTPS—undetectable by ISPs or governments.  
+- **Decentralized**: No central authorities, no DNS vulnerabilities, no single points of failure.  
+- **Scalable & Secure**: Built for millions of users with quantum-resistant cryptography.  
 
-## Overview
+Quick links:  
+- [Live Task Tracker](qnet-spec/specs/001-qnet/tasks.md)  
+- [Specification](qnet-spec/specs/001-qnet/spec.md)  
+- [Implementation Plan](qnet-spec/specs/001-qnet/plan.md)  
 
-QNet provides a layered architecture for building censorship-resistant applications:
+---
 
-- **L0 Access Media**: Agnostic to underlying transport (IP, LoRa, satellite, etc.)
-- **L1 Path Selection & Routing**: Secure routing with SCION and HTX-tunnelled transitions
-- **L2 Cover Transport**: HTX over TLS/QUIC on standard ports (443) with origin mirroring
-- **L3 Overlay Mesh**: Peer-to-peer connections via libp2p
-- **L4 Privacy Hops**: Optional anonymity through Nym mixnet
-- **L5 Naming & Trust**: Self-certifying identities and alias ledger
-- **L6 Payments**: Voucher-based micro-payments with Lightning integration
+## 📋 Table of Contents
+
+- [🚀 QNet: The Future of Decentralized, Censorship-Resistant Networking](#-qnet-the-future-of-decentralized-censorship-resistant-networking)
+- [🌟 Overview](#-overview)
+- [🎯 Key Features & Benefits](#-key-features--benefits)
+- [🏗️ Architecture](#️-architecture)
+- [🛠️ Technology Stack](#️-technology-stack)
+- [📅 Implementation Phases](#-implementation-phases)
+- [📊 Progress Tracker](#-progress-tracker)
+- [🚀 Getting Started](#-getting-started)
+- [🧪 Physical Testing](#-physical-testing)
+- [🤝 Contributing](#-contributing)
+- [💰 Bounties](#-bounties)
+- [🔒 Security](#-security)
+- [📜 License](#-license)
+- [🗺️ Roadmap](#️-roadmap)
+- [🌐 Community](#-community)
+
+---
+
+## 🌟 Overview
+
+QNet is a decentralized, censorship-resistant network designed to replace the public Internet. It provides strong user privacy, decentralized operation, and resistance to censorship through layered architecture and advanced cryptography.
+
+### User Stories
+- **As a user**, I want to connect to QNet using standard internet access so that I can access decentralized services without relying on centralized infrastructure.
+- **As a developer**, I want to build applications on QNet using self-certifying identities so that users can verify service authenticity without external authorities.
+- **As a privacy-conscious user**, I want my traffic to be routed through mixnodes so that observers cannot correlate my communications.
+
+### Layered Architecture
+QNet's innovative 7-layer architecture ensures seamless, secure connectivity:
+
+- **L0 Access Media**: Agnostic to any IP bearer (fiber, 5G, satellite, LoRa, etc.)
+- **L1 Path Selection & Routing**: Secure routing with SCION + HTX-tunnelled transitions
+- **L2 Cover Transport**: HTX over TCP-443/QUIC-443 with origin-mirrored TLS
+- **L3 Overlay Mesh**: libp2p-v2 object relay for peer-to-peer connections
+- **L4 Privacy Hops**: Nym mixnet for optional anonymity
+- **L5 Naming & Trust**: Self-certifying IDs + 3-chain alias ledger
+- **L6 Payments**: Federated Cashu + Lightning for micro-payments
 - **L7 Applications**: Web-layer replacement services
 
-Key features include:
-- Origin-mirrored TLS handshakes for indistinguishability
-- Noise XK inner channel with post-quantum hybrid cryptography
-- Deterministic CBOR encoding for reproducible serialization
-- SCION-based path validation and routing
-- Mixnode selection with diversity constraints
-- Anti-correlation measures and cover traffic
-- Reproducible builds with SLSA provenance
+### Cryptography & Security
+- **As a security engineer**, I want all communications encrypted with ChaCha20-Poly1305, Ed25519 signatures, X25519 DH, and HKDF-SHA256 so that data is protected against eavesdropping and tampering.
+- **As a future-proof system**, I want post-quantum hybrid X25519-Kyber768 from 2027 so that the network remains secure against quantum attacks.
+
+---
+
+## 🎯 Key Features & Benefits
+
+### 🚀 Why Choose QNet?
+- **Origin-Mirrored TLS Handshakes**: Auto-calibrates to mimic real websites perfectly—your traffic blends in.
+- **Noise XK Inner Channels**: Mutual authentication with post-quantum hybrids for unbreakable security.
+- **SCION Packet Headers**: Validates paths to prevent routing attacks.
+- **Mixnode Selection**: Uses BeaconSet randomness for diverse, uncorrelated hops.
+- **Alias Ledger**: 2-of-3 finality for decentralized naming.
+- **Voucher-Based Payments**: Micro-payments via Lightning integration.
+- **Anti-Correlation Measures**: Cover traffic and fallback mechanisms.
+- **Reproducible Builds**: SLSA provenance for trust.
+
+### 🌍 Real-World Impact
+- **Journalists & Activists**: Access blocked sites without detection.
+- **Developers**: Build censorship-resistant apps effortlessly.
+- **Everyday Users**: Browse freely, no matter where you are.
+- **Governments & ISPs**: Can't block what they can't see!
+
+QNet isn't just better—it's a paradigm shift. Say goodbye to surveillance and hello to true digital freedom. 🔓
+
+---
+
+## 🏗️ Architecture
+
+QNet's modular design ensures scalability and maintainability:
+
+```
+qnet/
+├── core-crypto/        # Cryptographic primitives (ChaCha20, Ed25519, etc.)
+├── core-cbor/          # Deterministic CBOR encoding
+├── core-framing/       # L2 frame handling
+├── htx/                # HTX client/server implementation
+├── mixnode/            # Nym mixnet integration
+├── c-lib/              # C library wrapper
+├── linter/             # Go-based compliance checker
+├── utls-gen/           # uTLS template generator
+├── docs/               # Documentation and guides
+└── examples/           # Sample applications
+```
+
+### Layer Mapping
+- **L0**: OS/system libraries handle access media.
+- **L1**: `routing/` with SCION and HTX tunneling.
+- **L2**: `htx/` with Noise XK and framing.
+- **L3**: `mesh/` with libp2p transports.
+- **L4**: `mixnode/` with Nym integration.
+- **L5**: `naming/` with alias ledger.
+- **L6**: Voucher handling in core.
+- **L7**: Application examples.
+
+---
+
+## 🛠️ Technology Stack
+
+### Core Languages
+- **Rust**: Primary for HTX, mixnode, and core networking—memory-safe, performant, async-ready.
+- **C**: For cross-platform C library bounty.
+- **Go**: For spec-compliance linter CLI tools.
+
+### Key Libraries & Frameworks
+- **tokio**: Async runtime for high-performance concurrency.
+- **ring**: Cryptography (ChaCha20-Poly1305, Ed25519, X25519, HKDF).
+- **libp2p**: P2P overlay mesh and peer discovery.
+- **rustls**: TLS handling with origin mirroring.
+- **quinn**: QUIC for UDP-443 support.
+- **scion-rust**: SCION protocol for secure routing.
+- **nym-sdk**: Mixnet for privacy hops.
+- **sled**: Embedded database for state.
+- **serde**: Serialization for CBOR and more.
+
+### Infrastructure
+- **Docker**: Reproducible builds and deployment.
+- **Linux**: Primary OS for servers.
+- **GitHub Actions**: CI/CD with SLSA provenance.
+
+---
+
+## 📅 Implementation Phases
+
+### Phase 1: Core Infrastructure (High Priority)
+- Rust workspace setup with tokio and ring.
+- Crypto primitives (ChaCha20, Ed25519, etc.).
+- L2 framing and AEAD handling.
+- Noise XK handshake.
+- SCION packet structures.
+
+### Phase 2: HTX Proof-of-Concept (High Priority)
+- TLS origin mirroring with rustls.
+- QUIC support.
+- Inner channel establishment.
+- Frame multiplexing and flow control.
+- Fuzzing for 80% coverage.
+
+### Phase 3: Routing & Mesh (Medium Priority)
+- SCION path construction and validation.
+- HTX tunneling for non-SCION links.
+- libp2p integration for peer discovery.
+- Bootstrap with rotating DHT and adaptive PoW.
+
+### Phase 4: Privacy & Naming (Medium Priority)
+- Mixnode selection with BeaconSet.
+- Nym mixnet integration.
+- Self-certifying ID implementation.
+- Alias ledger with 2-of-3 finality.
+
+### Phase 5: Payments & Governance (Low Priority)
+- Voucher format and validation.
+- Lightning integration.
+- Governance scoring and voting.
+
+### Phase 6: Tools & Compliance (Medium Priority)
+- C library implementation.
+- Go spec linter.
+- uTLS template generator.
+- SLSA provenance pipeline.
+- Stealth browser application.
+
+---
+
+## 📊 Progress Tracker
+
+Track our journey to QNet's full realization:
+
+- [x] T1.1: Project Structure Setup
+- [x] T1.2: Crypto Primitives Implementation
+- [x] T1.3: L2 Frame Handling
+- [x] T1.4: Noise XK Handshake
+- [x] T1.5: Deterministic CBOR & TemplateID
+- [x] T2.1: TLS Origin Mirroring
+- [x] T2.2: Inner Channel Establishment
+- [x] T2.3: Frame Multiplexing
+- [x] T2.4: HTX Crate API
+- [x] T2.5: Fuzzing and Testing
+- [x] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
+- [x] T3.1: SCION Packet Structures
+- [x] T3.2: HTX Tunneling
+- [x] T3.3: libp2p Integration
+- [x] T3.4: Bootstrap Discovery
+- [x] T3.5: Translation Layer (v1.1 Interop)
+- [x] T4.1: Mixnode Selection
+- [x] T4.2: Nym Mixnet Integration
+- [x] T4.3: Self-Certifying IDs
+- [x] T4.4: Alias Ledger
+- [x] T5.1: Voucher System
+- [x] T5.2: Governance Scoring
+- [x] T6.1: C Library Implementation
+- [x] T6.2: Go Spec Linter
+- [x] T6.3: uTLS Template Generator
+- [x] T6.4: SLSA Provenance
+- [ ] T6.5: Compliance Test Harness
+- [ ] T6.6: Performance Optimization
+- [ ] T6.7: Stealth Browser Application
+
+For full details, see [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md).
 
 ## Goals
 
@@ -39,15 +229,6 @@ Key features include:
 - **Interoperability**: Compatible with existing internet infrastructure
 - **Scalability**: Support millions of users and services
 - **Security**: Quantum-resistant cryptography and formal verification
-
-## Architecture
-
-QNet is implemented as a modular Rust workspace with shared crates:
-
-```
-qnet/
-├── core-crypto/        # Cryptographic primitives (ChaCha20, Ed25519, etc.)
-├── core-cbor/          # Deterministic CBOR encoding
 ├── core-framing/       # L2 frame handling
 ├── htx/                # HTX client/server implementation
 ├── mixnode/            # Nym mixnet integration
@@ -445,7 +626,7 @@ For the full detailed table with inputs, outputs, and tracking, see [qnet-spec/s
 | Latency Benchmarking | Run iperf over tunnel. | Latency <50ms; throughput >100Mbps. | Pending |
 | Censorship Bypass Simulation | Block IP; route via QNet. | Traffic bypasses block. | Pending |
 | Browser Extension Prototype | Install extension; route .qnet domains. | Requests tunneled successfully. | Pending |
-| Multi-Hop Routing Test | Add third node; route through it. | Successful multi-hop tunnel. | Pending |
+| Stealth Browser Application Test | Build full stealth browser with QNet; browse censored sites. | Auto-connects; traffic mimics HTTPS; content loads. | Pending |
 | Performance Under Load | Simulate high traffic. | No crashes; stable performance. | Pending |
 | Edge Case: Network Disruption | Disconnect/reconnect during tunnel. | Automatic recovery; no data loss. | Pending |
 | Advanced Stealth: Decoy Routing | Configure decoy domains; route through them. | Real destination hidden. | Pending |
