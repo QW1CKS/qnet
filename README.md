@@ -346,7 +346,6 @@ go build -o qnet-lint ./cmd/qnet-lint
 ```
 
 Note: SBOM generation requires the external Syft tool. Install it separately for full functionality.
-```
 
 #### Features
 - **L2 Framing Validation**: Ensures AEAD protection and length checks
@@ -426,5 +425,29 @@ QNet is licensed under the MIT License. See LICENSE file for details.
 - **Wiki**: Documentation and guides
 - **Matrix/Rocket.Chat**: Real-time chat (TBD)
 
-Join us in building the future of decentralized networking!</content>
-<parameter name="filePath">p:\GITHUB\qnet\README.md
+Join us in building the future of decentralized networking!
+
+## Physical Testing
+
+QNet includes hands-on testing tasks using physical setups (e.g., multiple computers) to validate functionality, performance, and stealth. These tests progress from basic connectivity to advanced scenarios like censorship bypass and multi-hop routing.
+
+For the full detailed table with inputs, outputs, and tracking, see [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md#physical-testing-tasks).
+
+| Task Description | Inputs | Expected Outputs | Status |
+|------------------|--------|------------------|--------|
+| Network Setup and Connectivity | Connect computers via local network; assign static IPs. | Successful ping between devices. | Pending |
+| QNet Daemon Build and Launch | Build and run daemons on each computer with local config. | Daemons start; logs show peer discovery. | Pending |
+| Basic Peer Discovery | Enable gossipsub; check logs for connections. | Mutual peer discovery without timeouts. | Pending |
+| Simple HTTP Tunnel Test | Run client/server daemons; curl via tunnel. | HTTP response received. | Pending |
+| Frame Encoding/Decoding Validation | Send test frames; inspect with Wireshark. | Frames decode correctly; no corruption. | Pending |
+| Noise Handshake Verification | Initiate handshake; log secrets. | Handshake completes; keys match. | Pending |
+| Stealth Mode Packet Mimicry | Enable TLS mimicry; capture traffic. | Packets look like standard HTTPS. | Pending |
+| Latency Benchmarking | Run iperf over tunnel. | Latency <50ms; throughput >100Mbps. | Pending |
+| Censorship Bypass Simulation | Block IP; route via QNet. | Traffic bypasses block. | Pending |
+| Browser Extension Prototype | Install extension; route .qnet domains. | Requests tunneled successfully. | Pending |
+| Multi-Hop Routing Test | Add third node; route through it. | Successful multi-hop tunnel. | Pending |
+| Performance Under Load | Simulate high traffic. | No crashes; stable performance. | Pending |
+| Edge Case: Network Disruption | Disconnect/reconnect during tunnel. | Automatic recovery; no data loss. | Pending |
+| Advanced Stealth: Decoy Routing | Configure decoy domains; route through them. | Real destination hidden. | Pending |
+
+Update the full table in tasks.md after each test run.

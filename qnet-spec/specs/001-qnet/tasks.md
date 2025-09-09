@@ -446,3 +446,25 @@ T1.1
 ## Success Criteria
 - All High tasks delivered; E2E HTX echo demo; compliance MINIMAL profile passes.
 - Modular crates ready for bounty components and future extension.
+
+## Physical Testing Tasks
+This section tracks hands-on testing of QNet using physical setups (e.g., two local computers). Use the table below to log inputs, outputs, notes, and failure reasons for each test. Tasks progress from basic setup to advanced scenarios.
+
+| Task Description | Inputs | Expected Outputs | Actual Outputs | Notes/Failure Reason | Status |
+|------------------|--------|------------------|----------------|----------------------|--------|
+| Network Setup and Connectivity | Connect two computers via Ethernet/Wi-Fi on same subnet (e.g., 192.168.1.x). Assign static IPs. Verify ping between them. | Both computers can ping each other successfully (<1ms latency). No firewall blocks. | | | Pending |
+| QNet Daemon Build and Launch | On both computers: Clone repo, run `cargo build --release`, launch `./target/release/qnet-daemon --config local-config.toml` (with local IPs as seeds). | Daemons start without errors; logs show successful libp2p bootstrap and peer discovery. | | | Pending |
+| Basic Peer Discovery | Run daemons on both computers with gossipsub enabled. Check logs for peer connections. | Logs show mutual peer discovery; no connection timeouts. | | | Pending |
+| Simple HTTP Tunnel Test | Computer 1: Run QNet client daemon. Computer 2: Run daemon + `python -m http.server 8080`. From Computer 1, curl `http://computer2-ip:8080` via QNet proxy. | HTTP response received (e.g., directory listing); tunnel established without errors. | | | Pending |
+| Frame Encoding/Decoding Validation | Send test frames (STREAM, PING) between daemons. Use Wireshark to capture and inspect raw packets. | Frames decode correctly; AEAD tags verify; no corruption. | | | Pending |
+| Noise Handshake Verification | Initiate handshake between daemons. Log transcript hashes and transport secrets. | Handshake completes; derived keys match expected values; decryption succeeds. | | | Pending |
+| Stealth Mode Packet Mimicry | Enable TLS mimicry in htx/core-framing. Capture traffic with Wireshark; analyze for HTTPS-like patterns (e.g., spoofed SNI). | Packets indistinguishable from standard HTTPS; no QNet-specific headers or patterns detectable. | | | Pending |
+| Latency Benchmarking | Run `iperf` or custom ping tool over QNet tunnel (10MB transfer). Measure round-trip time. | Latency <50ms for local network; throughput >100Mbps. | | | Pending |
+| Censorship Bypass Simulation | On Computer 1, block Computer 2's IP/port via firewall (e.g., `iptables`). Attempt QNet routing to bypass. | Traffic routes successfully via mixnet; HTTP response received despite block. | | | Pending |
+| Browser Extension Prototype | Build and install WebExtension on Computer 1. Set QNet daemon as proxy. Browse `test.qnet` (redirects to Computer 2's server). | Extension intercepts request; tunnels via QNet; page loads. | | | Pending |
+| Multi-Hop Routing Test | Add a third computer/node. Route traffic Computer 1 → Node 2 → Computer 3. | Successful multi-hop tunnel; data reaches final destination. | | | Pending |
+| Performance Under Load | Simulate high traffic (e.g., 100 concurrent connections) using tools like `wrk` or `ab` over QNet. | No crashes; latency <100ms; CPU/memory usage stable. | | | Pending |
+| Edge Case: Network Disruption | Disconnect/reconnect network cable during active tunnel. Test recovery. | Tunnel resumes automatically; no data loss; logs show graceful handling. | | | Pending |
+| Advanced Stealth: Decoy Routing | Configure decoy domains (e.g., google.com). Route through decoy node first, then to real destination. | ISP-like logs show decoy IP; real destination hidden. | | | Pending |
+
+- **Instructions**: Update "Actual Outputs" and "Notes/Failure Reason" after each test. Mark "Status" as Pass, Fail, or Pending. Add new rows for additional tests as needed.
