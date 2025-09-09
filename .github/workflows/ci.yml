@@ -117,19 +117,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: qnet-artifacts
-      - name: Compute SLSA subjects (limited)
-        id: subjects
-        run: |
-          set -e
-          tmp=$(mktemp)
-          if [ -f target/debug/checksums.txt ]; then sha256sum target/debug/checksums.txt >> "$tmp"; fi
-          if [ -f linter/qnet-lint ]; then sha256sum linter/qnet-lint >> "$tmp"; fi
-          if [ -f sbom.json ]; then sha256sum sbom.json >> "$tmp"; fi
-          if [ ! -s "$tmp" ]; then echo "No subjects found"; fi
-          echo "subjects=$(base64 -w0 "$tmp")" >> "$GITHUB_OUTPUT"
-      - name: Generate SLSA provenance
-        uses: slsa-framework/slsa-github-generator@v1.9.0
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
         with:
-          base64-subjects: ${{ steps.subjects.outputs.subjects }}
-          upload-assets: true
-          compile-generator: true
+          subject-path: |
+            target/debug/checksums.txt
+            linter/qnet-lint
+            sbom.json
