@@ -105,25 +105,3 @@ jobs:
             echo "htx line coverage: $cov"
           fi
 
-  slsa-provenance:
-    # Run only for public repos, or when the owner is an Organization (feature not available for user-owned private repos)
-    if: ${{ !github.event.repository.private || github.repository_owner_type != 'User' }}
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      id-token: write
-      attestations: write
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: qnet-artifacts
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: |
-            target/debug/checksums.txt
-            linter/qnet-lint
-            sbom.json
