@@ -1,8 +1,8 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct NodeId(pub [u8;32]);
+pub struct NodeId(pub [u8; 32]);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BeaconSet {
@@ -18,18 +18,30 @@ pub struct DiversityTracker {
 }
 
 impl DiversityTracker {
-    pub fn new(max_keep: usize) -> Self { Self { recent: std::collections::VecDeque::new(), max_keep } }
+    pub fn new(max_keep: usize) -> Self {
+        Self {
+            recent: std::collections::VecDeque::new(),
+            max_keep,
+        }
+    }
     pub fn record(&mut self, src: &NodeId, dst: &NodeId, epoch: u64, idx: usize) {
-        self.recent.push_back((src.clone(), dst.clone(), epoch, idx));
-        while self.recent.len() > self.max_keep { self.recent.pop_front(); }
+        self.recent
+            .push_back((src.clone(), dst.clone(), epoch, idx));
+        while self.recent.len() > self.max_keep {
+            self.recent.pop_front();
+        }
     }
     pub fn seen(&self, src: &NodeId, dst: &NodeId, epoch: u64, idx: usize) -> bool {
-        self.recent.iter().any(|(s,d,e,i)| s==src && d==dst && *e==epoch && *i==idx)
+        self.recent
+            .iter()
+            .any(|(s, d, e, i)| s == src && d == dst && *e == epoch && *i == idx)
     }
 }
 
 pub fn vrf_select(src: &NodeId, dst: &NodeId, epoch: u64, set: &BeaconSet) -> Option<usize> {
-    if set.nodes.is_empty() { return None; }
+    if set.nodes.is_empty() {
+        return None;
+    }
     let mut h = Sha256::new();
     h.update(src.0);
     h.update(dst.0);
@@ -44,12 +56,20 @@ pub fn vrf_select(src: &NodeId, dst: &NodeId, epoch: u64, set: &BeaconSet) -> Op
 mod tests {
     use super::*;
 
-    fn id(n: u8) -> NodeId { let mut a=[0u8;32]; a[0]=n; NodeId(a) }
+    fn id(n: u8) -> NodeId {
+        let mut a = [0u8; 32];
+        a[0] = n;
+        NodeId(a)
+    }
 
     #[test]
     fn deterministic_selection() {
-        let set = BeaconSet { epoch: 1, nodes: vec![id(1), id(2), id(3), id(4)] };
-        let a = id(9); let b = id(5);
+        let set = BeaconSet {
+            epoch: 1,
+            nodes: vec![id(1), id(2), id(3), id(4)],
+        };
+        let a = id(9);
+        let b = id(5);
         let i1 = vrf_select(&a, &b, 42, &set).unwrap();
         let i2 = vrf_select(&a, &b, 42, &set).unwrap();
         assert_eq!(i1, i2);
@@ -58,11 +78,15 @@ mod tests {
     #[test]
     fn diversity_tracking() {
         let mut dt = DiversityTracker::new(8);
-        let set = BeaconSet { epoch: 7, nodes: vec![id(1), id(2), id(3)] };
-        let a = id(10); let b = id(11);
+        let set = BeaconSet {
+            epoch: 7,
+            nodes: vec![id(1), id(2), id(3)],
+        };
+        let a = id(10);
+        let b = id(11);
         let idx = vrf_select(&a, &b, set.epoch, &set).unwrap();
-        assert!(!dt.seen(&a,&b,set.epoch,idx));
-        dt.record(&a,&b,set.epoch,idx);
-        assert!(dt.seen(&a,&b,set.epoch,idx));
+        assert!(!dt.seen(&a, &b, set.epoch, idx));
+        dt.record(&a, &b, set.epoch, idx);
+        assert!(dt.seen(&a, &b, set.epoch, idx));
     }
 }

@@ -1,27 +1,33 @@
 #[cfg(feature = "with-libp2p")]
 pub mod impls {
-    use futures::prelude::*;
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-    use libp2p::{
-        identity,
-        mdns,
-        ping,
-        noise,
-        tcp,
-        yamux,
-        core::upgrade,
-        request_response::{self, ProtocolSupport},
-        gossipsub::{self, IdentTopic as Topic, MessageAuthenticity, ValidationMode},
-    Multiaddr, PeerId, swarm::{SwarmEvent, Config as SwarmConfig, StreamProtocol}, Transport, Swarm,
+    use futures::prelude::*;
+    use libp2p::request_response::{
+        Behaviour as RrBehaviour, Codec as RrCodec, Config as RrConfig, Event as RrEvent,
+        Message as RrMessage,
     };
-    use libp2p::request_response::{Behaviour as RrBehaviour, Codec as RrCodec, Config as RrConfig, Event as RrEvent, Message as RrMessage};
-    use serde::{Serialize, Deserialize};
-    use std::{collections::{HashMap, VecDeque}, io, time::{Duration, SystemTime, UNIX_EPOCH}};
-    use std::pin::Pin;
+    use libp2p::{
+        core::upgrade,
+        gossipsub::{self, IdentTopic as Topic, MessageAuthenticity, ValidationMode},
+        identity, mdns, noise, ping,
+        request_response::{self, ProtocolSupport},
+        swarm::{Config as SwarmConfig, StreamProtocol, SwarmEvent},
+        tcp, yamux, Multiaddr, PeerId, Swarm, Transport,
+    };
+    use serde::{Deserialize, Serialize};
     use sha2::{Digest, Sha256};
+    use std::pin::Pin;
+    use std::{
+        collections::{HashMap, VecDeque},
+        io,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
 
     #[derive(Debug, thiserror::Error)]
-    pub enum Error { #[error("swarm error")] Swarm }
+    pub enum Error {
+        #[error("swarm error")]
+        Swarm,
+    }
 
     #[derive(Clone, Debug)]
     pub struct MeshConfig {
@@ -29,27 +35,36 @@ pub mod impls {
         pub version: String,
         pub caps: Vec<String>,
         // Discovery parameters
-        pub rendezvous_salt: String,  // salt to derive rotating rendezvous
+        pub rendezvous_salt: String, // salt to derive rotating rendezvous
         pub rendezvous_period_secs: u64, // rotation period
         pub pow_difficulty_prefix_zeros: u8, // number of leading zero bits required in PoW
         pub rate_limit_per_minute: u32, // per-peer rate limit for discovery msgs
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CapMsg { pub version: String, pub caps: Vec<String> }
+    pub struct CapMsg {
+        pub version: String,
+        pub caps: Vec<String>,
+    }
 
     #[derive(Clone, Default)]
     struct CapCodec;
 
     impl RrCodec for CapCodec {
-    type Protocol = StreamProtocol;
+        type Protocol = StreamProtocol;
         type Request = CapMsg;
         type Response = CapMsg;
         fn read_request<'life0, 'life1, 'life2, 'async_trait, T>(
             &'life0 mut self,
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
-        ) -> Pin<Box<dyn futures::Future<Output = Result<Self::Request, io::Error>> + Send + 'async_trait>>
+        ) -> Pin<
+            Box<
+                dyn futures::Future<Output = Result<Self::Request, io::Error>>
+                    + Send
+                    + 'async_trait,
+            >,
+        >
         where
             T: AsyncRead + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -63,7 +78,8 @@ pub mod impls {
                 let len = u32::from_be_bytes(len_buf) as usize;
                 let mut buf = vec![0u8; len];
                 io.read_exact(&mut buf).await?;
-                serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                serde_json::from_slice(&buf)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
             })
         }
 
@@ -71,7 +87,13 @@ pub mod impls {
             &'life0 mut self,
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
-        ) -> Pin<Box<dyn futures::Future<Output = Result<Self::Response, io::Error>> + Send + 'async_trait>>
+        ) -> Pin<
+            Box<
+                dyn futures::Future<Output = Result<Self::Response, io::Error>>
+                    + Send
+                    + 'async_trait,
+            >,
+        >
         where
             T: AsyncRead + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -85,7 +107,8 @@ pub mod impls {
                 let len = u32::from_be_bytes(len_buf) as usize;
                 let mut buf = vec![0u8; len];
                 io.read_exact(&mut buf).await?;
-                serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                serde_json::from_slice(&buf)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
             })
         }
 
@@ -103,7 +126,8 @@ pub mod impls {
             'life2: 'async_trait,
         {
             Box::pin(async move {
-                let data = serde_json::to_vec(&req).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let data = serde_json::to_vec(&req)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                 let len = (data.len() as u32).to_be_bytes();
                 io.write_all(&len).await?;
                 io.write_all(&data).await?;
@@ -125,7 +149,8 @@ pub mod impls {
             'life2: 'async_trait,
         {
             Box::pin(async move {
-                let data = serde_json::to_vec(&resp).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let data = serde_json::to_vec(&resp)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                 let len = (data.len() as u32).to_be_bytes();
                 io.write_all(&len).await?;
                 io.write_all(&data).await?;
@@ -134,13 +159,18 @@ pub mod impls {
         }
     }
 
-    fn current_unix() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() }
+    fn current_unix() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }
 
     fn derive_topic(salt: &str, period: u64, now: u64) -> String {
         let epoch = now / period.max(1);
         let mut h = Sha256::new();
         h.update(salt.as_bytes());
-    h.update(epoch.to_be_bytes());
+        h.update(epoch.to_be_bytes());
         let digest = h.finalize();
         base32::encode(base32::Alphabet::Crockford, &digest[..16]) // short but stable
     }
@@ -148,14 +178,19 @@ pub mod impls {
     fn pow_ok(payload: &[u8], nonce: u64, difficulty_bits: u8) -> bool {
         let mut h = Sha256::new();
         h.update(payload);
-    h.update(nonce.to_le_bytes());
+        h.update(nonce.to_le_bytes());
         let d = h.finalize();
         // Count leading zero bits without early returns; always scan full digest
         let mut zeros: u16 = 0;
         let mut seen_nonzero = 0u8;
         for b in d {
             if seen_nonzero == 0 {
-                if b == 0 { zeros += 8; } else { zeros += b.leading_zeros() as u16; seen_nonzero = 1; }
+                if b == 0 {
+                    zeros += 8;
+                } else {
+                    zeros += b.leading_zeros() as u16;
+                    seen_nonzero = 1;
+                }
             } else {
                 // no-op to keep constant loop body
                 let _ = b;
@@ -165,7 +200,13 @@ pub mod impls {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    struct DiscoMsg { ts: u64, nonce: u64, peer: String, ver: String, caps: Vec<String> }
+    struct DiscoMsg {
+        ts: u64,
+        nonce: u64,
+        peer: String,
+        ver: String,
+        caps: Vec<String>,
+    }
 
     struct RateLimiter {
         // sliding window per peer of timestamps (secs)
@@ -173,33 +214,52 @@ pub mod impls {
         limit: u32,
     }
     impl RateLimiter {
-        fn new(limit: u32) -> Self { Self { per_peer: HashMap::new(), limit } }
+        fn new(limit: u32) -> Self {
+            Self {
+                per_peer: HashMap::new(),
+                limit,
+            }
+        }
         fn allow(&mut self, peer: PeerId, now: u64) -> bool {
             let q = self.per_peer.entry(peer).or_default();
-            while let Some(&t) = q.front() { if now.saturating_sub(t) > 60 { q.pop_front(); } else { break; } }
-            if (q.len() as u32) < self.limit { q.push_back(now); true } else { false }
+            while let Some(&t) = q.front() {
+                if now.saturating_sub(t) > 60 {
+                    q.pop_front();
+                } else {
+                    break;
+                }
+            }
+            if (q.len() as u32) < self.limit {
+                q.push_back(now);
+                true
+            } else {
+                false
+            }
         }
     }
 
     pub async fn start_basic_mesh(cfg: MeshConfig) -> Result<(), Error> {
-    let id_keys = identity::Keypair::generate_ed25519();
-    let peer_id = PeerId::from(id_keys.public());
+        let id_keys = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(id_keys.public());
 
-    let noise_config = noise::Config::new(&id_keys).expect("noise");
+        let noise_config = noise::Config::new(&id_keys).expect("noise");
 
-    let transport = tcp::async_io::Transport::new(tcp::Config::default().nodelay(true))
+        let transport = tcp::async_io::Transport::new(tcp::Config::default().nodelay(true))
             .upgrade(upgrade::Version::V1Lazy)
             .authenticate(noise_config)
             .multiplex(yamux::Config::default())
             .boxed();
 
         // Request/Response capability protocol
-    let protocols = std::iter::once((StreamProtocol::new("/qnet/cap/1.0.0"), ProtocolSupport::Full));
+        let protocols = std::iter::once((
+            StreamProtocol::new("/qnet/cap/1.0.0"),
+            ProtocolSupport::Full,
+        ));
         let rr_cfg = RrConfig::default().with_request_timeout(Duration::from_secs(10));
-    let rr = request_response::Behaviour::<CapCodec>::new(protocols, rr_cfg);
+        let rr = request_response::Behaviour::<CapCodec>::new(protocols, rr_cfg);
 
-    // Use async-io compatible mDNS behaviour (libp2p-mdns >=0.45 uses runtime-specific modules)
-    let mdns = mdns::async_io::Behaviour::new(mdns::Config::default(), peer_id).expect("mdns");
+        // Use async-io compatible mDNS behaviour (libp2p-mdns >=0.45 uses runtime-specific modules)
+        let mdns = mdns::async_io::Behaviour::new(mdns::Config::default(), peer_id).expect("mdns");
         let ping = ping::Behaviour::default();
 
         // Gossipsub for discovery broadcasting
@@ -208,7 +268,7 @@ pub mod impls {
             .heartbeat_interval(Duration::from_secs(10))
             .build()
             .expect("gossipsub config");
-    let gsub = gossipsub::Behaviour::new(MessageAuthenticity::Signed(id_keys.clone()), gcfg)
+        let gsub = gossipsub::Behaviour::new(MessageAuthenticity::Signed(id_keys.clone()), gcfg)
             .map_err(|_| Error::Swarm)?;
 
         #[derive(libp2p::swarm::NetworkBehaviour)]
@@ -224,7 +284,10 @@ pub mod impls {
             request_response: rr,
             mdns,
             ping,
-            identify: libp2p::identify::Behaviour::new(libp2p::identify::Config::new("qnet/0.1".into(), id_keys.public())),
+            identify: libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+                "qnet/0.1".into(),
+                id_keys.public(),
+            )),
             gossipsub: gsub,
         };
 
@@ -235,58 +298,75 @@ pub mod impls {
             SwarmConfig::with_async_std_executor(),
         );
 
-    // Dial configured seeds
-        for addr in cfg.seeds.iter().cloned() { let _ = swarm.dial(addr); }
+        // Dial configured seeds
+        for addr in cfg.seeds.iter().cloned() {
+            let _ = swarm.dial(addr);
+        }
 
-    let local_msg = CapMsg { version: cfg.version.clone(), caps: cfg.caps.clone() };
+        let local_msg = CapMsg {
+            version: cfg.version.clone(),
+            caps: cfg.caps.clone(),
+        };
 
-    // Discovery setup
-    let mut rate = RateLimiter::new(cfg.rate_limit_per_minute);
-    let mut last_topic = String::new();
+        // Discovery setup
+        let mut rate = RateLimiter::new(cfg.rate_limit_per_minute);
+        let mut last_topic = String::new();
 
         loop {
             match swarm.select_next_some().await {
                 SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(ev)) => match ev {
                     RrEvent::Message { peer: _, message } => match message {
                         RrMessage::Request { channel, .. } => {
-                            let _ = swarm.behaviour_mut().request_response.send_response(channel, local_msg.clone());
+                            let _ = swarm
+                                .behaviour_mut()
+                                .request_response
+                                .send_response(channel, local_msg.clone());
                         }
-                        RrMessage::Response { request_id: _, response: _ } => {
+                        RrMessage::Response {
+                            request_id: _,
+                            response: _,
+                        } => {
                             // For PoC, we accept receipt silently.
                         }
                     },
-                    RrEvent::ResponseSent { .. } => {},
-                    RrEvent::InboundFailure { .. } => {},
-                    RrEvent::OutboundFailure { .. } => {},
+                    RrEvent::ResponseSent { .. } => {}
+                    RrEvent::InboundFailure { .. } => {}
+                    RrEvent::OutboundFailure { .. } => {}
                 },
-                SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
-                    match event {
-                        mdns::Event::Discovered(list) => {
-                            for (peer, _) in list {
-                                let _ = swarm.behaviour_mut().request_response.send_request(&peer, local_msg.clone());
-                            }
+                SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => match event {
+                    mdns::Event::Discovered(list) => {
+                        for (peer, _) in list {
+                            let _ = swarm
+                                .behaviour_mut()
+                                .request_response
+                                .send_request(&peer, local_msg.clone());
                         }
-                        mdns::Event::Expired(_) => {}
                     }
+                    mdns::Event::Expired(_) => {}
                 },
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                    let _ = swarm.behaviour_mut().request_response.send_request(&peer_id, local_msg.clone());
+                    let _ = swarm
+                        .behaviour_mut()
+                        .request_response
+                        .send_request(&peer_id, local_msg.clone());
                 }
-                SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(
-                    gossipsub::Event::Message { propagation_source, message, .. }
-                )) => {
+                SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                    propagation_source,
+                    message,
+                    ..
+                })) => {
                     // Verify discovery message PoW and rate limit
                     if let Ok(dmsg) = serde_json::from_slice::<DiscoMsg>(&message.data) {
                         let now = current_unix();
                         // Timestamp within 120s skew
-                        if now.abs_diff(dmsg.ts) <= 120
-                            && rate.allow(propagation_source, now)
-                        {
+                        if now.abs_diff(dmsg.ts) <= 120 && rate.allow(propagation_source, now) {
                             let payload = {
                                 let mut v = Vec::new();
                                 v.extend_from_slice(dmsg.peer.as_bytes());
                                 v.extend_from_slice(dmsg.ver.as_bytes());
-                                for c in &dmsg.caps { v.extend_from_slice(c.as_bytes()); }
+                                for c in &dmsg.caps {
+                                    v.extend_from_slice(c.as_bytes());
+                                }
                                 v.extend_from_slice(&dmsg.ts.to_le_bytes());
                                 v
                             };
@@ -297,7 +377,9 @@ pub mod impls {
                         }
                     }
                 }
-                SwarmEvent::NewListenAddr { .. } | SwarmEvent::ListenerClosed { .. } | SwarmEvent::OutgoingConnectionError { .. } => {}
+                SwarmEvent::NewListenAddr { .. }
+                | SwarmEvent::ListenerClosed { .. }
+                | SwarmEvent::OutgoingConnectionError { .. } => {}
                 _ => {}
             }
 
@@ -307,7 +389,10 @@ pub mod impls {
             if topic_str != last_topic {
                 // Unsubscribe previous, subscribe new
                 if !last_topic.is_empty() {
-                    let _ = swarm.behaviour_mut().gossipsub.unsubscribe(&Topic::new(last_topic.clone()));
+                    let _ = swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .unsubscribe(&Topic::new(last_topic.clone()));
                 }
                 let topic = Topic::new(topic_str.clone());
                 let _ = swarm.behaviour_mut().gossipsub.subscribe(&topic);
@@ -326,19 +411,32 @@ pub mod impls {
                     let mut v = Vec::new();
                     v.extend_from_slice(peer.as_bytes());
                     v.extend_from_slice(ver.as_bytes());
-                    for c in &caps { v.extend_from_slice(c.as_bytes()); }
+                    for c in &caps {
+                        v.extend_from_slice(c.as_bytes());
+                    }
                     v.extend_from_slice(&ts.to_le_bytes());
                     v
                 };
                 while nonce < 10_000 {
-                    if pow_ok(&pre, nonce, cfg.pow_difficulty_prefix_zeros) { break; }
+                    if pow_ok(&pre, nonce, cfg.pow_difficulty_prefix_zeros) {
+                        break;
+                    }
                     nonce += 1;
                 }
-                let msg = DiscoMsg { ts, nonce, peer, ver, caps };
+                let msg = DiscoMsg {
+                    ts,
+                    nonce,
+                    peer,
+                    ver,
+                    caps,
+                };
                 serde_json::to_vec(&msg).unwrap_or_default()
             };
             if !last_topic.is_empty() {
-                let _ = swarm.behaviour_mut().gossipsub.publish(Topic::new(last_topic.clone()), payload);
+                let _ = swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .publish(Topic::new(last_topic.clone()), payload);
             }
         }
     }
@@ -347,7 +445,10 @@ pub mod impls {
 #[cfg(not(feature = "with-libp2p"))]
 pub mod stub {
     #[derive(Debug, thiserror::Error)]
-    pub enum Error { #[error("libp2p disabled")] Disabled }
+    pub enum Error {
+        #[error("libp2p disabled")]
+        Disabled,
+    }
     #[derive(Clone, Debug)]
     pub struct MeshConfig {
         pub seeds: Vec<String>,
@@ -358,11 +459,14 @@ pub mod stub {
         pub pow_difficulty_prefix_zeros: u8,
         pub rate_limit_per_minute: u32,
     }
-    pub async fn start_basic_mesh(_cfg: MeshConfig) -> Result<(), Error> { Err(Error::Disabled) }
+    pub async fn start_basic_mesh(_cfg: MeshConfig) -> Result<(), Error> {
+        Err(Error::Disabled)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn compiles() { /* smoke test placeholder */ }
+    fn compiles() { /* smoke test placeholder */
+    }
 }

@@ -6,7 +6,9 @@ fn main() {
     use std::env;
     // No I/O against the remote since it won't speak HTX; we just demo connecting.
 
-    let origin = env::args().nth(1).unwrap_or_else(|| "https://example.com".to_string());
+    let origin = env::args()
+        .nth(1)
+        .unwrap_or_else(|| "https://example.com".to_string());
     println!("dialing {origin} ...");
     let conn = match api::dial(&origin) {
         Ok(c) => c,

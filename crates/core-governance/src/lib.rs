@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct OrgId(pub String);
@@ -26,7 +26,10 @@ pub struct Score {
 
 pub fn score_nodes(nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
     // raw scores proportional to uptime
-    let raw: Vec<f64> = nodes.iter().map(|n| n.uptime_ratio.clamp(0.0, 1.0)).collect();
+    let raw: Vec<f64> = nodes
+        .iter()
+        .map(|n| n.uptime_ratio.clamp(0.0, 1.0))
+        .collect();
     // apply caps by redistributing excess above cap proportionally
     // compute group sums
     use std::collections::HashMap;
@@ -41,12 +44,23 @@ pub fn score_nodes(nodes: Vec<Node>, caps: Caps) -> Vec<Score> {
     for (i, n) in nodes.iter().enumerate() {
         let org_total = by_org.get(&n.org).copied().unwrap_or(0.0);
         let as_total = by_as.get(&n.asn).copied().unwrap_or(0.0);
-        let org_factor = if org_total > 0.0 { (caps.org_cap * org_total) / org_total } else { 1.0 };
-        let as_factor = if as_total > 0.0 { (caps.as_cap * as_total) / as_total } else { 1.0 };
+        let org_factor = if org_total > 0.0 {
+            (caps.org_cap * org_total) / org_total
+        } else {
+            1.0
+        };
+        let as_factor = if as_total > 0.0 {
+            (caps.as_cap * as_total) / as_total
+        } else {
+            1.0
+        };
         let factor = org_factor.min(as_factor).min(1.0);
         capped[i] = raw[i] * factor;
     }
-    raw.into_iter().zip(capped).map(|(raw, capped)| Score { raw, capped }).collect()
+    raw.into_iter()
+        .zip(capped)
+        .map(|(raw, capped)| Score { raw, capped })
+        .collect()
 }
 
 #[cfg(test)]
@@ -56,12 +70,31 @@ mod tests {
     #[test]
     fn caps_bound_scores() {
         let nodes = vec![
-            Node { uptime_ratio: 1.0, org: OrgId("A".into()), asn: AsId("AS1".into()) },
-            Node { uptime_ratio: 1.0, org: OrgId("A".into()), asn: AsId("AS1".into()) },
-            Node { uptime_ratio: 1.0, org: OrgId("B".into()), asn: AsId("AS2".into()) },
-            Node { uptime_ratio: 0.5, org: OrgId("B".into()), asn: AsId("AS2".into()) },
+            Node {
+                uptime_ratio: 1.0,
+                org: OrgId("A".into()),
+                asn: AsId("AS1".into()),
+            },
+            Node {
+                uptime_ratio: 1.0,
+                org: OrgId("A".into()),
+                asn: AsId("AS1".into()),
+            },
+            Node {
+                uptime_ratio: 1.0,
+                org: OrgId("B".into()),
+                asn: AsId("AS2".into()),
+            },
+            Node {
+                uptime_ratio: 0.5,
+                org: OrgId("B".into()),
+                asn: AsId("AS2".into()),
+            },
         ];
-        let caps = Caps { org_cap: 0.20, as_cap: 0.25 };
+        let caps = Caps {
+            org_cap: 0.20,
+            as_cap: 0.25,
+        };
         let scores = score_nodes(nodes, caps);
         // raw
         assert_eq!(scores.iter().map(|s| s.raw).sum::<f64>(), 3.5);

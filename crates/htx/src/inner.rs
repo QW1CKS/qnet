@@ -1,8 +1,8 @@
-use crate::Handshake;
 use crate::tls_mirror::Template;
-use core_crypto as crypto;
+use crate::Handshake;
 use core_cbor as cbor;
-use serde::{Serialize, Deserialize};
+use core_crypto as crypto;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub enum Error {
@@ -28,7 +28,9 @@ pub struct TlsStream {
 
 impl TlsStream {
     pub fn new<E: Exporter + Send + Sync + 'static>(exp: E) -> Self {
-        Self { inner: std::sync::Arc::new(exp) }
+        Self {
+            inner: std::sync::Arc::new(exp),
+        }
     }
     pub fn export(&self, label: &[u8], context: &[u8], len: usize) -> Result<Vec<u8>, Error> {
         self.inner.export(label, context, len)
@@ -37,8 +39,8 @@ impl TlsStream {
 
 #[derive(Debug, Clone)]
 pub struct InnerConn {
-    pub tx_key: [u8;32],
-    pub rx_key: [u8;32],
+    pub tx_key: [u8; 32],
+    pub rx_key: [u8; 32],
 }
 
 #[derive(Serialize)]
@@ -49,9 +51,17 @@ struct BindCtx<'a> {
     compat: Option<&'a str>,
 }
 
-pub fn exporter_context_with_compat(template: &Template, caps: &Caps, compat: Option<&str>) -> Vec<u8> {
+pub fn exporter_context_with_compat(
+    template: &Template,
+    caps: &Caps,
+    compat: Option<&str>,
+) -> Vec<u8> {
     let tid = crate::tls_mirror::compute_template_id(template);
-    let ctx = BindCtx { template_id: &tid.0, caps, compat };
+    let ctx = BindCtx {
+        template_id: &tid.0,
+        caps,
+        compat,
+    };
     cbor::to_det_cbor(&ctx).expect("det-cbor")
 }
 
@@ -59,7 +69,7 @@ fn exporter_context(template: &Template, caps: &Caps) -> Vec<u8> {
     exporter_context_with_compat(template, caps, None)
 }
 
-fn bind_key(base_key: &[u8;32], exporter: &[u8], ctx: &[u8]) -> [u8;32] {
+fn bind_key(base_key: &[u8; 32], exporter: &[u8], ctx: &[u8]) -> [u8; 32] {
     // prk = HKDF-Extract(salt=exporter, ikm=base_key)
     let prk = crypto::hkdf::extract(exporter, base_key);
     // info = "qnet/inner/v1|key|" + ctx (constant label ensures both ends match per base key)
@@ -112,7 +122,9 @@ mod tests {
     use curve25519_dalek::scalar::Scalar;
 
     // Dummy TLS exporter for tests using HKDF over a fixed secret
-    struct DummyTls { master: [u8;32] }
+    struct DummyTls {
+        master: [u8; 32],
+    }
     impl Exporter for DummyTls {
         fn export(&self, label: &[u8], context: &[u8], len: usize) -> Result<Vec<u8>, Error> {
             // prk = HKDF-Extract(salt=master, ikm=label||context)
@@ -120,7 +132,7 @@ mod tests {
             ikm.extend_from_slice(label);
             ikm.extend_from_slice(context);
             let prk = crypto::hkdf::extract(&self.master, &ikm);
-            let out: [u8;32] = crypto::hkdf::expand(&prk, b"inner-exporter");
+            let out: [u8; 32] = crypto::hkdf::expand(&prk, b"inner-exporter");
             Ok(out[..len.min(32)].to_vec())
         }
     }
@@ -136,8 +148,8 @@ mod tests {
 
     fn do_noise_xk() -> (Handshake, Handshake) {
         // Deterministic statics
-        let si = Scalar::from_bytes_mod_order([1u8;32]);
-        let sr = Scalar::from_bytes_mod_order([2u8;32]);
+        let si = Scalar::from_bytes_mod_order([1u8; 32]);
+        let sr = Scalar::from_bytes_mod_order([2u8; 32]);
         let rs = (sr * X25519_BASEPOINT).to_bytes();
         let mut init = Handshake::init_initiator(si, rs);
         let mut resp = Handshake::init_responder(sr);
@@ -153,7 +165,7 @@ mod tests {
     #[test]
     fn bound_keys_match_and_work() {
         let (init, resp) = do_noise_xk();
-        let tls = TlsStream::new(DummyTls { master: [7u8;32] });
+        let tls = TlsStream::new(DummyTls { master: [7u8; 32] });
         let caps = Caps::default();
         let tpl = mk_tpl();
         let ic = open_inner(&tls, &caps, &tpl, &init).unwrap();
@@ -162,7 +174,7 @@ mod tests {
         assert_eq!(ic.tx_key, rc.rx_key);
         assert_eq!(ic.rx_key, rc.tx_key);
         // Seal/decrypt
-        let n = [0u8;12];
+        let n = [0u8; 12];
         let aad = b"aad";
         let pt = b"hello";
         let ct = crypto::aead::seal(&ic.tx_key, &n, aad, pt);
@@ -172,7 +184,7 @@ mod tests {
     #[test]
     fn mismatch_context_breaks_decryption() {
         let (init, resp) = do_noise_xk();
-        let tls = TlsStream::new(DummyTls { master: [7u8;32] });
+        let tls = TlsStream::new(DummyTls { master: [7u8; 32] });
         let caps1 = Caps::default();
         let mut caps2 = Caps::default();
         caps2.features.push("no_h2".into()); // mismatch
@@ -180,7 +192,7 @@ mod tests {
         let ic = open_inner(&tls, &caps1, &tpl, &init).unwrap();
         let rc = open_inner(&tls, &caps2, &tpl, &resp).unwrap();
         // Seal with initiator, try open with responder (mismatch caps)
-        let n = [0u8;12];
+        let n = [0u8; 12];
         let aad = b"aad";
         let pt = b"hello";
         let ct = crypto::aead::seal(&ic.tx_key, &n, aad, pt);
@@ -190,12 +202,12 @@ mod tests {
     #[test]
     fn compat_flag_changes_binding_context() {
         let (init, resp) = do_noise_xk();
-        let tls = TlsStream::new(DummyTls { master: [7u8;32] });
+        let tls = TlsStream::new(DummyTls { master: [7u8; 32] });
         let caps = Caps::default();
         let tpl = mk_tpl();
         let ic = open_inner_with_compat(&tls, &caps, &tpl, &init, Some("compat=1.1")).unwrap();
         let rc = open_inner_with_compat(&tls, &caps, &tpl, &resp, None).unwrap();
-        let n = [0u8;12];
+        let n = [0u8; 12];
         let aad = b"aad";
         let pt = b"hello";
         let ct = crypto::aead::seal(&ic.tx_key, &n, aad, pt);

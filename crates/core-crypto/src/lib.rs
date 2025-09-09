@@ -6,17 +6,20 @@ pub enum Error {
 }
 
 pub mod aead {
-    use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
     use crate::Error;
+    use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 
     // ChaCha20-Poly1305 AEAD (IETF 12-byte nonce)
     pub fn seal(key: &[u8; 32], nonce: &[u8; 12], aad: &[u8], pt: &[u8]) -> Vec<u8> {
         let unbound = UnboundKey::new(&aead::CHACHA20_POLY1305, key).expect("aead key");
         let key = LessSafeKey::new(unbound);
         let mut buf = pt.to_vec();
-        key
-            .seal_in_place_append_tag(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), &mut buf)
-            .expect("aead seal");
+        key.seal_in_place_append_tag(
+            Nonce::assume_unique_for_key(*nonce),
+            Aad::from(aad),
+            &mut buf,
+        )
+        .expect("aead seal");
         buf
     }
 
@@ -25,7 +28,11 @@ pub mod aead {
         let key = LessSafeKey::new(unbound);
         let mut buf = ct.to_vec();
         let out = key
-            .open_in_place(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), &mut buf)
+            .open_in_place(
+                Nonce::assume_unique_for_key(*nonce),
+                Aad::from(aad),
+                &mut buf,
+            )
             .map_err(|_| Error::Crypto)?;
         Ok(out.to_vec())
     }
@@ -41,7 +48,9 @@ pub mod hkdf {
     // Local length marker to request arbitrary-length OKM from ring's HKDF.
     pub struct Len<const N: usize>;
     impl<const N: usize> KeyType for Len<N> {
-        fn len(&self) -> usize { N }
+        fn len(&self) -> usize {
+            N
+        }
     }
 
     pub fn expand<const N: usize>(prk: &Prk, info: &[u8]) -> [u8; N] {
@@ -102,7 +111,10 @@ pub mod x25519 {
         KeyPair { priv_key, pubkey }
     }
 
-    pub fn dh(priv_key: agreement::EphemeralPrivateKey, peer_public: &[u8; 32]) -> Result<[u8; 32], Error> {
+    pub fn dh(
+        priv_key: agreement::EphemeralPrivateKey,
+        peer_public: &[u8; 32],
+    ) -> Result<[u8; 32], Error> {
         let peer = agreement::UnparsedPublicKey::new(&agreement::X25519, peer_public);
         agreement::agree_ephemeral(priv_key, &peer, |km: &[u8]| {
             let mut out = [0u8; 32];
@@ -160,9 +172,9 @@ mod tests {
         let salt = b"salt";
         let ikm = b"input keying material";
         let prk = hkdf::extract(salt, ikm);
-    let okm: [u8; 42] = hkdf::expand(&prk, b"info");
-    // Just basic sanity: not all-zero and stable length
-    assert_eq!(okm.len(), 42);
+        let okm: [u8; 42] = hkdf::expand(&prk, b"info");
+        // Just basic sanity: not all-zero and stable length
+        assert_eq!(okm.len(), 42);
         assert!(okm.iter().any(|&b| b != 0));
     }
 
@@ -172,7 +184,7 @@ mod tests {
         let msg = b"qnet";
         let sig = ed25519::sign(&seed, msg);
         // Build public key from seed via KeyPair for verification
-    use ring::signature::{Ed25519KeyPair, KeyPair};
+        use ring::signature::{Ed25519KeyPair, KeyPair};
         let kp = Ed25519KeyPair::from_seed_unchecked(&seed).unwrap();
         let pk = kp.public_key().as_ref().to_vec();
         ed25519::verify(&pk, msg, &sig).expect("verify ok");

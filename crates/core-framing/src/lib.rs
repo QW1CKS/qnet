@@ -41,10 +41,14 @@ impl Frame {
 
     /// Decode a single frame without encryption from a buffer slice.
     pub fn decode_plain(mut src: &[u8]) -> Result<Frame, Error> {
-        if src.len() < 4 { return Err(Error::TooShort); }
+        if src.len() < 4 {
+            return Err(Error::TooShort);
+        }
         let len = get_u24(&mut src)? as usize;
-        if src.len() < len { return Err(Error::InvalidLen); }
-    let ty = src.first().copied().ok_or(Error::TooShort)?;
+        if src.len() < len {
+            return Err(Error::InvalidLen);
+        }
+        let ty = src.first().copied().ok_or(Error::TooShort)?;
         let ty = match ty {
             0x10 => FrameType::Stream,
             0x11 => FrameType::WindowUpdate,
@@ -65,7 +69,9 @@ fn put_u24(b: &mut BytesMut, v: u32) {
 }
 
 fn get_u24(src: &mut &[u8]) -> Result<u32, Error> {
-    if src.len() < 3 { return Err(Error::TooShort); }
+    if src.len() < 3 {
+        return Err(Error::TooShort);
+    }
     let v = ((src[0] as u32) << 16) | ((src[1] as u32) << 8) | (src[2] as u32);
     *src = &src[3..];
     Ok(v)
@@ -99,9 +105,13 @@ pub fn encode(frame: &Frame, key: KeyCtx, nonce: [u8; 12]) -> Bytes {
 }
 
 pub fn decode(mut src: &[u8], key: KeyCtx, nonce: [u8; 12]) -> Result<Frame, Error> {
-    if src.len() < 4 { return Err(Error::TooShort); }
+    if src.len() < 4 {
+        return Err(Error::TooShort);
+    }
     let wire_len = get_u24(&mut src)? as usize;
-    if src.len() < wire_len { return Err(Error::InvalidLen); }
+    if src.len() < wire_len {
+        return Err(Error::InvalidLen);
+    }
     let typ = src.first().copied().ok_or(Error::TooShort)?;
     let mut aad = [0u8; 4];
     aad[0] = ((wire_len as u32 >> 16) & 0xff) as u8;
@@ -131,18 +141,21 @@ mod tests {
         let mut b = BytesMut::new();
         put_u24(&mut b, 0);
         put_u24(&mut b, 1);
-    put_u24(&mut b, 0x0000_FFFF);
-    let s = b.freeze();
+        put_u24(&mut b, 0x0000_FFFF);
+        let s = b.freeze();
         assert_eq!(get_u24(&mut s.as_ref()).unwrap(), 0);
         let mut s2 = &s[3..];
         assert_eq!(get_u24(&mut s2).unwrap(), 1);
         let mut s3 = &s[6..];
-    assert_eq!(get_u24(&mut s3).unwrap(), 0x0000_FFFF);
+        assert_eq!(get_u24(&mut s3).unwrap(), 0x0000_FFFF);
     }
 
     #[test]
     fn plain_encode_decode() {
-        let f = Frame { ty: FrameType::Stream, payload: b"hello".to_vec() };
+        let f = Frame {
+            ty: FrameType::Stream,
+            payload: b"hello".to_vec(),
+        };
         let w = f.encode_plain();
         let g = Frame::decode_plain(&w).unwrap();
         assert_eq!(f, g);
@@ -175,7 +188,8 @@ mod tests {
 
             // Tamper ciphertext -> fail
             let mut bad = w.to_vec();
-            if bad.len() > 8 { // ensure there's ct to flip
+            if bad.len() > 8 {
+                // ensure there's ct to flip
                 let last = bad.len() - 1;
                 bad[last] ^= 1;
                 assert!(decode(&bad, keyctx, nonce).is_err());
