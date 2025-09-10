@@ -4,13 +4,9 @@ This directory contains ready-to-use applications built on top of QNet, such as 
 
 ## For Users
 
-- **Stealth Browser**: A browser that uses QNet's protocol stack to browse the web anonymously, mimicking normal HTTPS traffic to evade ISP tracking.
+- **Stealth Browser**: A desktop app (Tauri-based) that uses QNet's protocol stack to browse the web anonymously, mimicking normal HTTPS traffic to evade ISP tracking.
 
-To build and run:
-```bash
-cargo build --release --bin stealth-browser
-./target/release/stealth-browser
-```
+Status: Planning. The app will live under `apps/stealth-browser/` with a Rust backend and WebView UI. Installers for Windows/macOS/Linux will be produced in CI once implemented. Build/run instructions will be added when the scaffold lands.
 
 ## Note
 

@@ -427,11 +427,12 @@ Exit criteria mapping:
 Objective: Create a browser-based QNet app that mimics TCP/TLS traffic for plausible deniability, auto-connects globally, and routes via decoy IPs.
 Priority: High | Dependencies: T6.1-T6.6 | Estimate: 8 weeks
 Deliverables:
-- qnet-browser crate/binary (fork of Chromium/Firefox with QNet proxy).
-- Stealth framing in core-framing (TLS-like packet mimicry, padding for DPI evasion).
+- apps/stealth-browser (Tauri-based desktop app with Rust backend + WebView UI).
+- Stealth-mode in core-framing/htx (TLS-like record sizing, padding, timing jitter; ALPN/JA3 shaping).
 - Decoy routing in htx/core-mesh (configurable list of benign IPs/domains for ISP logs).
-- Global bootstrap seeds in core-mesh (public nodes for auto-discovery).
-- Installer (MSI/APK/DMG) with auto-daemon launch.
+- Global bootstrap seeds in core-mesh (public nodes for auto-discovery, health checks, fallback/backoff + caching).
+- Desktop installers: Windows MSI, macOS DMG, Linux AppImage with auto-daemon launch.
+- CI: build matrix for installers and DPI test artifacts (pcap parity vs Chrome baseline).
 Interfaces:
 - Browser UI: Simple address bar for .qnet domains; settings for decoy list/latency mode.
 - API: SOCKS proxy for routing; feature flag: stealth-mode.

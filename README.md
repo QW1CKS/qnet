@@ -187,39 +187,7 @@ qnet/
 
 ---
 
-## Progress Tracker
-
-Track our journey to QNet's full realization:
-
-- [x] T1.1: Project Structure Setup
-- [x] T1.2: Crypto Primitives Implementation
-- [x] T1.3: L2 Frame Handling
-- [x] T1.4: Noise XK Handshake
-- [x] T1.5: Deterministic CBOR & TemplateID
-- [x] T2.1: TLS Origin Mirroring
-- [x] T2.2: Inner Channel Establishment
-- [x] T2.3: Frame Multiplexing
-- [x] T2.4: HTX Crate API
-- [x] T2.5: Fuzzing and Testing
-- [x] T2.6: L2 Frame Semantics & KEY_UPDATE Behavior
-- [x] T3.1: SCION Packet Structures
-- [x] T3.2: HTX Tunneling
-- [x] T3.3: libp2p Integration
-- [x] T3.4: Bootstrap Discovery
-- [x] T3.5: Translation Layer (v1.1 Interop)
-- [x] T4.1: Mixnode Selection
-- [x] T4.2: Nym Mixnet Integration
-- [x] T4.3: Self-Certifying IDs
-- [x] T4.4: Alias Ledger
-- [x] T5.1: Voucher System
-- [x] T5.2: Governance Scoring
-- [x] T6.1: C Library Implementation
-- [x] T6.2: Go Spec Linter
-- [x] T6.3: uTLS Template Generator
-- [x] T6.4: SLSA Provenance
-- [ ] T6.5: Compliance Test Harness
-- [x] T6.6: Performance Optimization
-- [ ] T6.7: Stealth Browser Application
+## Implementation Details
 
 For full details, see [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md).
 
