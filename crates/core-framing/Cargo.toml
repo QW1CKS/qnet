@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 bytes = "1"
 core-crypto = { path = "../core-crypto" }
+rand = { version = "0.8", features = ["std"] }
 
 [dev-dependencies]
 rand = "0.8"
@@ -14,6 +15,7 @@ criterion = { version = "0.5", default-features = false }
 [features]
 default = []
 perf-bench = []
+stealth-mode = []
 
 [[bench]]
 name = "framing"

@@ -4,6 +4,9 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(feature = "stealth-mode")]
+use core_framing::{jitter as jitter_mod, sizing as sizing_mod};
+
 use crate::transition::SignedControl;
 use core_crypto as crypto;
 use core_framing as framing;
@@ -40,12 +43,23 @@ struct Inner {
     next_id: Mutex<StreamId>,
     // Control stream state (ID 0); when closed during rekey-close, data writes are ignored until resumed
     control_open: Mutex<bool>,
+
+    #[cfg(feature = "stealth-mode")]
+    shaper: Mutex<Option<StealthShaper>>, // record sizing + jitter
 }
 
 pub struct StreamHandle {
     id: StreamId,
     mux: Mux,
     rx: mpsc::Receiver<Vec<u8>>, // data chunks arriving for this stream
+}
+
+#[cfg(feature = "stealth-mode")]
+struct StealthShaper {
+    sizer: sizing_mod::Sizer,
+    jitter: jitter_mod::Jitter,
+    // Clamp target record to sane bounds
+    max_record: usize,
 }
 
 #[derive(Clone)]
@@ -82,6 +96,8 @@ impl Mux {
             credit_cv: Condvar::new(),
             next_id: Mutex::new(1),
             control_open: Mutex::new(true),
+            #[cfg(feature = "stealth-mode")]
+            shaper: Mutex::new(init_stealth_shaper_from_env()),
         });
 
         let mux = Mux {
@@ -331,6 +347,22 @@ impl Mux {
             rem = self.inner.credit_cv.wait(rem).unwrap();
         }
     }
+
+    // Same as take_credit_blocking but also returns whether we blocked waiting for credit.
+    fn take_credit_blocking_with_flag(&self, id: StreamId, needed: usize) -> (usize, bool) {
+        let mut rem = self.inner.remote_credit.lock().unwrap();
+        let mut blocked = false;
+        loop {
+            let avail = *rem.get(&id).unwrap_or(&0);
+            if avail > 0 {
+                let take = avail.min(needed);
+                rem.insert(id, avail - take);
+                return (take, blocked);
+            }
+            blocked = true;
+            rem = self.inner.credit_cv.wait(rem).unwrap();
+        }
+    }
 }
 
 impl StreamHandle {
@@ -341,9 +373,39 @@ impl StreamHandle {
     // Write all data, respecting remote credit and chunking.
     pub fn write(&self, mut data: &[u8]) {
         while !data.is_empty() {
-            let need = data.len().min(CHUNK);
-            let take = self.mux.take_credit_blocking(self.id, need);
+            // Decide target record size
+            #[cfg(feature = "stealth-mode")]
+            let target = {
+                // Default fallback
+                let mut t = CHUNK;
+                let mut guard = self.mux.stealth_shaper_lock();
+                if let Some(sh) = guard.as_mut() {
+                    let maxr = sh.max_record.min(64 * 1024);
+                    // Draw a target from the profile distribution; bound by remaining
+                    let draw = sh.sizer.choose_len(data.len()).max(1).min(maxr);
+                    t = draw.max(1);
+                }
+                t
+            };
+            #[cfg(not(feature = "stealth-mode"))]
+            let target = CHUNK;
+
+            let need = data.len().min(target);
+            let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, need);
             let (chunk, rest) = data.split_at(take);
+
+            // Apply bounded jitter only if we didn't just block on credit
+            #[cfg(feature = "stealth-mode")]
+            if !blocked {
+                let mut guard = self.mux.stealth_shaper_lock();
+                if let Some(sh) = guard.as_mut() {
+                    let d = sh.jitter.delay();
+                    if d > Duration::from_millis(0) {
+                        thread::sleep(d);
+                    }
+                }
+            }
+
             self.mux.send_data(self.id, chunk);
             data = rest;
         }
@@ -372,6 +434,38 @@ impl StreamHandle {
             Err(_) => None,
         }
     }
+}
+
+#[cfg(feature = "stealth-mode")]
+impl Mux {
+    fn stealth_shaper_lock(&self) -> std::sync::MutexGuard<'_, Option<StealthShaper>> {
+        self.inner.shaper.lock().unwrap()
+    }
+}
+
+#[cfg(feature = "stealth-mode")]
+fn init_stealth_shaper_from_env() -> Option<StealthShaper> {
+    use std::env;
+    // Profiles
+    let s_prof = match env::var("STEALTH_SIZING_PROFILE").unwrap_or_else(|_| "webby".into()).to_lowercase().as_str() {
+        "small" => sizing_mod::Profile::Small,
+        "bursty" => sizing_mod::Profile::Bursty,
+        _ => sizing_mod::Profile::Webby,
+    };
+    let j_prof = match env::var("STEALTH_JITTER_PROFILE").unwrap_or_else(|_| "webby".into()).to_lowercase().as_str() {
+        "small" => jitter_mod::Profile::Small,
+        _ => jitter_mod::Profile::Webby,
+    };
+    let s_seed = env::var("STEALTH_SIZER_SEED").ok().and_then(|v| v.parse::<u64>().ok());
+    let j_seed = env::var("STEALTH_JITTER_SEED").ok().and_then(|v| v.parse::<u64>().ok());
+
+    let sizer = sizing_mod::Sizer::new(s_prof, s_seed);
+    let jitter = jitter_mod::Jitter::new(j_prof, j_seed);
+    Some(StealthShaper {
+        sizer,
+        jitter,
+        max_record: 64 * 1024 - 8, // leave headroom for headers/tags
+    })
 }
 
 pub fn pair() -> (Mux, Mux) {

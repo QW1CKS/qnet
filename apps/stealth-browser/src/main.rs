@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     info!("stealth-browser stub starting");
 
     let cfg = Config::load_default()?;
-    info!(port = cfg.socks_port, "config loaded");
+    info!(port = cfg.socks_port, mode=?cfg.mode, "config loaded");
 
     // Placeholder: print planned feature flags
     #[cfg(feature = "stealth-mode")]
@@ -107,7 +107,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum Mode {
@@ -236,45 +235,74 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
 }
 
 async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -> Result<()> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
     // Split TCP stream
     let (mut ri, mut wi) = stream.split();
-    // Channel for SecureStream -> TCP writer
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
 
-    // Reader from SecureStream (blocking) -> channel
-    let reader = tokio::task::spawn_blocking(move || {
+    // Channels:
+    //  - to_tcp (tokio mpsc): from HTX thread -> async writer
+    //  - to_htx (std mpsc): from async reader -> HTX thread
+    let (to_tcp_tx, mut to_tcp_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+    let (to_htx_tx, to_htx_rx) = mpsc::channel::<Vec<u8>>();
+
+    // Spawn HTX thread owning the SecureStream
+    let h = std::thread::spawn(move || {
+        let mut idle = 0u32;
         loop {
-            match ss.read() {
-                Some(buf) => {
-                    if tx.blocking_send(buf).is_err() { break; }
-                }
-                None => break,
+            let mut progressed = false;
+
+            // Drain writes from TCP -> HTX
+            while let Ok(buf) = to_htx_rx.try_recv() {
+                ss.write(&buf);
+                progressed = true;
+            }
+
+            // Read from HTX -> TCP
+            if let Some(buf) = ss.try_read() {
+                // If receiver gone, exit
+                if to_tcp_tx.blocking_send(buf).is_err() { break; }
+                progressed = true;
+            }
+
+            if !progressed {
+                idle = idle.saturating_add(1);
+                // Back off a bit when idle
+                std::thread::sleep(Duration::from_millis(2.min(idle as u64)));
+            } else {
+                idle = 0;
             }
         }
     });
 
-    // Writer: channel -> TCP write half
-    let mut write_task = tokio::spawn(async move {
-        while let Some(buf) = rx.recv().await {
-            if wi.write_all(&buf).await.is_err() { break; }
-        }
-    });
-
-    // TCP reader: TCP read half -> SecureStream.write (sync)
+    // Single async loop to forward in both directions without spawning 'static tasks
     let mut tmp = vec![0u8; 8192];
     loop {
-        let n = match ri.read(&mut tmp).await {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(_) => break,
-        };
-        ss.write(&tmp[..n]);
+        tokio::select! {
+            maybe = to_tcp_rx.recv() => {
+                match maybe {
+                    Some(buf) => {
+                        if wi.write_all(&buf).await.is_err() { break; }
+                    }
+                    None => { break; }
+                }
+            }
+            res = ri.read(&mut tmp) => {
+                match res {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if to_htx_tx.send(tmp[..n].to_vec()).is_err() { break; }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
     }
-    // Close path: drop sender to stop writer; wait for tasks
-    drop(tmp);
-    // Wait for writer task to finish consuming
-    let _ = write_task.await;
-    let _ = reader.await;
+
+    // Drop sender to signal HTX thread completion
+    drop(to_htx_tx);
+    let _ = h.join();
     Ok(())
 }
 

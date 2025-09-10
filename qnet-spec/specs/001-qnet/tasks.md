@@ -41,6 +41,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.5: Compliance Test Harness
 - [x] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
+    - Status: M1 complete. M2 in progress — stealth-mode feature plumbed; variable record sizing and bounded jitter integrated in HTX mux behind feature flag; padding and ALPN/JA3 shaping next. Env toggles: STEALTH_SIZING_PROFILE, STEALTH_JITTER_PROFILE, STEALTH_SIZER_SEED, STEALTH_JITTER_SEED.
 - [ ] T6.8: Repository Organization for Dual Audience
 - [ ] T6.9: User Documentation and Quick Start Guides
 - [ ] T6.10: Repository Size Management
