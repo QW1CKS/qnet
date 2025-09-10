@@ -1,5 +1,5 @@
-use anyhow::{bail, Context, Result};
-use tracing::info;
+use anyhow::{anyhow, bail, Context, Result};
+use tracing::{info, warn};
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::EnvFilter;
 use tokio::{
@@ -33,10 +33,48 @@ async fn main() -> Result<()> {
     #[cfg(feature = "stealth-mode")]
     info!("stealth-mode feature enabled");
 
-    // Start minimal SOCKS5 server and wait for shutdown
+    // Optional HTX loopback HTTP echo mode
+    let htx_client = if cfg.mode == Mode::HtxHttpEcho {
+        let (client, server) = htx::api::dial_inproc_secure();
+        // Spawn a server thread that accepts streams and replies with a minimal HTTP 200
+        std::thread::spawn(move || {
+            loop {
+                if let Some(s) = server.accept_stream(5_000) {
+                    std::thread::spawn(move || {
+                        // Read until we see end of headers ("\r\n\r\n") then reply
+                        let mut data = Vec::new();
+                        // Cap total bytes to avoid unbounded growth
+                        let cap = 64 * 1024;
+                        while data.len() < cap {
+                            if let Some(buf) = s.read() {
+                                data.extend_from_slice(&buf);
+                                if data.windows(4).any(|w| w == b"\r\n\r\n") {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                        let body = b"Hello QNet!\n";
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        );
+                        s.write(resp.as_bytes());
+                        s.write(body);
+                    });
+                }
+            }
+        });
+        Some(client)
+    } else {
+        None
+    };
+
+    // Start SOCKS5 server and wait for shutdown
     let addr = format!("127.0.0.1:{}", cfg.socks_port);
-    info!(%addr, "starting SOCKS5 server");
-    let server = tokio::spawn(async move { run_socks5(&addr).await });
+    info!(%addr, mode = ?cfg.mode, "starting SOCKS5 server");
+    let server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client).await });
 
     // Optional: start a tiny Tauri window when built with `--features with-tauri`
     #[cfg(feature = "with-tauri")]
@@ -70,38 +108,62 @@ async fn main() -> Result<()> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Mode {
+    Direct,
+    HtxHttpEcho,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Config {
     socks_port: u16,
+    mode: Mode,
+    bootstrap: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { socks_port: 1080 }
+    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false }
     }
 }
 
 impl Config {
     fn load_default() -> Result<Self> {
-        // In M1, load from file/env; for now, return defaults
-        Ok(Self::default())
+        // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP
+        let mut cfg = Self::default();
+        if let Ok(p) = std::env::var("STEALTH_SOCKS_PORT") {
+            if let Ok(n) = p.parse::<u16>() { cfg.socks_port = n; }
+        }
+        if let Ok(m) = std::env::var("STEALTH_MODE") {
+            cfg.mode = match m.to_ascii_lowercase().as_str() {
+                "direct" => Mode::Direct,
+                "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
+                other => { warn!(%other, "unknown STEALTH_MODE; defaulting to direct"); Mode::Direct }
+            };
+        }
+        if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") { cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true"); }
+        Ok(cfg)
     }
 }
 
 // Minimal SOCKS5 (RFC 1928) — supports CONNECT, ATYP IPv4 & DOMAIN, no auth
-async fn run_socks5(bind: &str) -> Result<()> {
+async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>) -> Result<()> {
     let listener = TcpListener::bind(bind).await
         .with_context(|| format!("bind {}", bind))?;
     loop {
         let (mut inbound, peer) = listener.accept().await?;
+        let mode_c = mode;
+        let htx_c = htx_client.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(&mut inbound).await {
+            if let Err(e) = handle_client(&mut inbound, mode_c, htx_c).await {
                 eprintln!("socks client {} error: {e:?}", peer);
             }
         });
     }
 }
 
-async fn handle_client(stream: &mut TcpStream) -> Result<()> {
+async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<htx::api::Conn>) -> Result<()> {
     // Handshake: VER, NMETHODS, METHODS...
     let ver = read_u8(stream).await?;
     if ver != 0x05 { bail!("unsupported ver {ver}"); }
@@ -151,15 +213,68 @@ async fn handle_client(stream: &mut TcpStream) -> Result<()> {
         }
     };
 
-    // Connect out (direct for M1; will route via HTX next)
-    let mut outbound = TcpStream::connect(&target).await
-        .with_context(|| format!("connect {target}"))?;
+    match mode {
+        Mode::Direct => {
+            // Connect out directly
+            let mut outbound = TcpStream::connect(&target).await
+                .with_context(|| format!("connect {target}"))?;
+            // Success reply
+            send_reply(stream, 0x00).await?;
+            let _bytes = tokio::io::copy_bidirectional(stream, &mut outbound).await?;
+            Ok(())
+        }
+        Mode::HtxHttpEcho => {
+            let client = htx_client.ok_or_else(|| anyhow!("htx client missing"))?;
+            // Open a new HTX stream for this SOCKS connection
+            let ss = client.open_stream();
+            // Success reply to SOCKS client
+            send_reply(stream, 0x00).await?;
+            // Bridge TCP <-> SecureStream
+            bridge_tcp_secure(stream, ss).await
+        }
+    }
+}
 
-    // Success reply
-    send_reply(stream, 0x00).await?;
+async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -> Result<()> {
+    // Split TCP stream
+    let (mut ri, mut wi) = stream.split();
+    // Channel for SecureStream -> TCP writer
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
 
-    // Pipe data both ways (bidirectional copy)
-    let _bytes = tokio::io::copy_bidirectional(stream, &mut outbound).await?;
+    // Reader from SecureStream (blocking) -> channel
+    let reader = tokio::task::spawn_blocking(move || {
+        loop {
+            match ss.read() {
+                Some(buf) => {
+                    if tx.blocking_send(buf).is_err() { break; }
+                }
+                None => break,
+            }
+        }
+    });
+
+    // Writer: channel -> TCP write half
+    let mut write_task = tokio::spawn(async move {
+        while let Some(buf) = rx.recv().await {
+            if wi.write_all(&buf).await.is_err() { break; }
+        }
+    });
+
+    // TCP reader: TCP read half -> SecureStream.write (sync)
+    let mut tmp = vec![0u8; 8192];
+    loop {
+        let n = match ri.read(&mut tmp).await {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => break,
+        };
+        ss.write(&tmp[..n]);
+    }
+    // Close path: drop sender to stop writer; wait for tasks
+    drop(tmp);
+    // Wait for writer task to finish consuming
+    let _ = write_task.await;
+    let _ = reader.await;
     Ok(())
 }
 

@@ -443,7 +443,7 @@ Acceptance:
 Risks: Detection via advanced DPI; decoy node trust; legal concerns in restrictive regimes.
 
 Status (current):
-- M1 in progress: app scaffold added under `apps/stealth-browser`, backend with tokio/tracing in place, daily rotating logs configured, and a working SOCKS5 CONNECT proxy bound to 127.0.0.1:1080 verified via curl. Next: wire SOCKS → HTX loopback echo.
+- M1: app scaffold under `apps/stealth-browser`, backend with tokio/tracing, daily rotating logs, working SOCKS5 CONNECT proxy on 127.0.0.1:1080, and SOCKS → HTX (in-proc) loopback HTTP 200 echo path integrated for validation. Next: minimal UI surface for port/status.
 
 ## Repository Management
 
