@@ -6,9 +6,24 @@ use url::Url;
 
 use core_cbor as cbor; // for TemplateID (DET-CBOR)
 use once_cell::sync::Lazy;
+use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex};
 
 static GLOBAL_CACHE: Lazy<std::sync::Mutex<MirrorCache>> =
     Lazy::new(|| std::sync::Mutex::new(MirrorCache::new(Duration::from_secs(24 * 60 * 60))));
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AllowEntry {
+    pub host_pattern: String, // exact, "*" or "*.suffix"
+    pub template: Template,
+    #[serde(default)]
+    pub weight: Option<u32>, // unused in simple RR
+}
+
+static ROT_IDX: AtomicUsize = AtomicUsize::new(0);
+static ALLOWLIST: Lazy<Mutex<Option<Vec<AllowEntry>>>> = Lazy::new(|| {
+    let v = std::env::var("STEALTH_TPL_ALLOWLIST").ok().and_then(|s| serde_json::from_str::<Vec<AllowEntry>>(&s).ok());
+    Mutex::new(v)
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Template {
@@ -87,6 +102,47 @@ pub fn compute_ja3(tpl: &Template) -> String {
 pub struct Config {
     pub prefer_h2: bool,
     pub host_overrides: HashMap<String, Template>,
+}
+
+fn host_matches(pattern: &str, host: &str) -> bool {
+    if pattern == "*" || pattern == host { return true; }
+    if let Some(sfx) = pattern.strip_prefix("*.") {
+        return host.ends_with(sfx);
+    }
+    false
+}
+
+pub fn choose_template_rotating(origin: &str, cfg: Option<&Config>) -> Result<(TemplateId, Template), String> {
+    let url = Url::parse(origin).map_err(|_| "bad origin url")?;
+    let host = url.host_str().ok_or("no host")?.to_string();
+    // overrides
+    if let Some(c) = cfg {
+        if let Some(t) = c.host_overrides.get(&host) {
+            let id = compute_template_id(t);
+            return Ok((id, t.clone()));
+        }
+    }
+    // allow-list env
+    if let Ok(guard) = ALLOWLIST.lock() {
+        if let Some(list) = guard.as_ref() {
+            let matches: Vec<&AllowEntry> = list.iter().filter(|e| host_matches(&e.host_pattern, &host)).collect();
+            if !matches.is_empty() {
+                let idx = ROT_IDX.fetch_add(1, Ordering::Relaxed);
+                let pick = matches[idx % matches.len()].template.clone();
+                let id = compute_template_id(&pick);
+                return Ok((id, pick));
+            }
+        }
+    }
+    // fallback to calibrate+cache
+    calibrate(origin, None, cfg)
+}
+
+#[cfg(test)]
+pub fn __test_set_allowlist(json: &str) {
+    if let Ok(mut g) = ALLOWLIST.lock() {
+        *g = serde_json::from_str::<Vec<AllowEntry>>(json).ok();
+    }
 }
 
 pub fn calibrate(
@@ -216,4 +272,21 @@ mod tests {
         assert_eq!(cfg.template_id, id1);
         assert!(!cfg.ja3.is_empty());
     }
+
+        #[test]
+        fn allowlist_rotation_and_ja3() {
+                // two entries for example.com, rotate between them
+                __test_set_allowlist(r#"[
+                    {"host_pattern":"example.com","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
+                    {"host_pattern":"example.com","template":{"alpn":["http/1.1"],"sig_algs":["ecdsa_secp256r1_sha256"],"groups":["secp256r1"],"extensions":[0,10,11,35,16,23,43,51]}}
+                ]"#);
+                let (id1, tpl1) = choose_template_rotating("https://example.com", None).unwrap();
+                let (id2, tpl2) = choose_template_rotating("https://example.com", None).unwrap();
+                assert_ne!(id1, id2);
+                assert_ne!(tpl1.alpn, tpl2.alpn);
+                let ja3_1 = compute_ja3(&tpl1);
+                let ja3_2 = compute_ja3(&tpl2);
+                assert!(!ja3_1.is_empty());
+                assert!(!ja3_2.is_empty());
+        }
 }

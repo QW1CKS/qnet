@@ -554,15 +554,27 @@ impl Mux {
         self.send_data(0, &data);
     }
     fn send_frame(&self, frame: framing::Frame) {
+        // We may mutate a local copy to zeroize sensitive plaintext after encoding
+        let mut frame = frame;
         let mut enc = self.inner.enc.lock().unwrap();
         if let Some(st) = enc.as_mut() {
             let nonce = Self::ctr_to_nonce(st.tx_ctr);
             let keyctx = framing::KeyCtx { key: st.tx_key };
             let out = framing::encode(&frame, keyctx, nonce);
             st.tx_ctr = st.tx_ctr.saturating_add(1);
+            // Zeroize plaintext payload for STREAM frames (stealth builds)
+            #[cfg(feature = "stealth-mode")]
+            if matches!(frame.ty, framing::FrameType::Stream) {
+                frame.payload.fill(0);
+            }
             let _ = self.inner.tx.send(out);
         } else {
             let out = frame.encode_plain();
+            // Zeroize plaintext payload for STREAM frames (stealth builds)
+            #[cfg(feature = "stealth-mode")]
+            if matches!(frame.ty, framing::FrameType::Stream) {
+                frame.payload.fill(0);
+            }
             let _ = self.inner.tx.send(out);
         }
     }
@@ -834,5 +846,47 @@ mod tests {
         let total = server.join().unwrap();
         // Expect exactly 128 bytes (64 before close + 64 after reopen)
         assert_eq!(total, 128);
+    }
+
+    #[cfg(feature = "stealth-mode")]
+    #[test]
+    fn padded_stream_decode_backward_compat_plain() {
+        // Build a plain (unencrypted) mux pair
+        let (a, b) = super::pair();
+        let sh = a.open_stream();
+        // Manually send a padded frame using internal API
+        let data = b"hi";
+        // Choose a small pad
+        a.send_data_padded(sh.id(), data, 5);
+
+        // On the other side, read and ensure payload == data
+        if let Some(accepted) = b.accept_stream(Duration::from_secs(1)) {
+            if let Some(buf) = accepted.read() {
+                assert_eq!(buf, data);
+            } else {
+                panic!("no data");
+            }
+        } else {
+            panic!("no accept");
+        }
+    }
+
+    #[cfg(feature = "stealth-mode")]
+    #[test]
+    fn padded_stream_decode_backward_compat_encrypted() {
+        // Encrypted pair
+        let (a, b) = super::pair_encrypted([1u8; 32], [2u8; 32], [2u8; 32], [1u8; 32]);
+        let sh = a.open_stream();
+        let data = b"hello-world";
+        a.send_data_padded(sh.id(), data, 17);
+        if let Some(accepted) = b.accept_stream(Duration::from_secs(1)) {
+            if let Some(buf) = accepted.read() {
+                assert_eq!(buf, data);
+            } else {
+                panic!("no data");
+            }
+        } else {
+            panic!("no accept");
+        }
     }
 }

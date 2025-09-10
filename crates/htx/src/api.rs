@@ -261,7 +261,7 @@ fn spawn_tls_pump<S: Read + Write + Send + 'static>(
 #[cfg(feature = "rustls-config")]
 pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     use crate::inner::Caps;
-    use crate::tls_mirror::{build_client_hello, calibrate, Config as TlsCfg};
+    use crate::tls_mirror::{build_client_hello, choose_template_rotating, Config as TlsCfg};
     use std::time::Duration;
     use url::Url;
 
@@ -269,9 +269,9 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     let url = Url::parse(origin).map_err(|_| ApiError::Url)?;
     let host = url.host_str().ok_or(ApiError::Url)?.to_string();
     let port = url.port().unwrap_or(443);
-    let mut cache = crate::tls_mirror::MirrorCache::new(Duration::from_secs(24 * 60 * 60));
-    let (_tid, tpl) =
-        calibrate(origin, Some(&mut cache), Some(&TlsCfg::default())).map_err(|_| ApiError::Tls)?;
+    // Choose template via allow-list rotation when provided; otherwise fall back
+    let (_tid, tpl) = choose_template_rotating(origin, Some(&TlsCfg::default()))
+        .map_err(|_| ApiError::Tls)?;
     let client = build_client_hello(&tpl);
 
     // Build rustls client
