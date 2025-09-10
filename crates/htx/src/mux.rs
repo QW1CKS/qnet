@@ -361,6 +361,17 @@ impl StreamHandle {
             Err(_) => None,
         }
     }
+
+    pub fn try_read(&self) -> Option<Vec<u8>> {
+        match self.rx.try_recv() {
+            Ok(buf) => {
+                let len = buf.len();
+                self.mux.send_window_update(self.id, len);
+                Some(buf)
+            }
+            Err(_) => None,
+        }
+    }
 }
 
 pub fn pair() -> (Mux, Mux) {

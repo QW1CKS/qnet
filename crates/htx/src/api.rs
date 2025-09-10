@@ -85,6 +85,15 @@ impl SecureStream {
         let nonce = Self::next_nonce(ctr);
         crypto::aead::open(&self.rx_key, &nonce, b"", &ct).ok()
     }
+
+    pub fn try_read(&self) -> Option<Vec<u8>> {
+        let ct = self.inner.try_read()?;
+        let ctr = self
+            .recv_ctr
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let nonce = Self::next_nonce(ctr);
+        crypto::aead::open(&self.rx_key, &nonce, b"", &ct).ok()
+    }
 }
 
 // Dummy TLS exporter for in-proc demo; both sides share the same master secret

@@ -82,11 +82,23 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 - Bounties deliverable
 - Better than Betanet in key areas
 
+## Performance Targets and Methodology (for T6.6)
+- Micro-benchmarks:
+	- AEAD (ChaCha20-Poly1305) ≥2 GB/s per core for ≥16KiB payloads (x86_64 AVX2 reference).
+	- L2 frame encode/decode shows no more than 1 allocation per frame; padding overhead within 5%.
+	- HTX handshake median latency <50ms on loopback; CPU time reduced vs baseline.
+- Transport comparison:
+	- QUIC path p50 latency improves by ≥50ms vs TCP under 20ms RTT/1% loss simulation.
+- Mixnet latency:
+	- With latency-mode=low and 3 hops, added p95 latency <100ms vs direct connection in a local testbed.
+- Methodology:
+	- Use Criterion benches, fixed hardware profile, and CI trend tracking with 10–15% regression thresholds.
+
 ## Review & Acceptance Checklist
-- [ ] Spec covers all layers L0-L7
-- [ ] Cryptography requirements specified
-- [ ] Privacy features detailed
-- [ ] Governance and payments included
-- [ ] Improvements over Betanet identified
-- [ ] Bounties clearly defined
-- [ ] Compliance points enumerated
+- [x] Spec covers all layers L0-L7
+- [x] Cryptography requirements specified
+- [x] Privacy features detailed
+- [x] Governance and payments included
+- [x] Improvements over Betanet identified
+- [x] Bounties clearly defined
+- [x] Compliance points enumerated

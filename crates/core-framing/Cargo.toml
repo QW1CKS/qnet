@@ -9,3 +9,13 @@ core-crypto = { path = "../core-crypto" }
 
 [dev-dependencies]
 rand = "0.8"
+criterion = { version = "0.5", default-features = false }
+
+[features]
+default = []
+perf-bench = []
+
+[[bench]]
+name = "framing"
+harness = false
+required-features = ["perf-bench"]

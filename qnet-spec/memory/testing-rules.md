@@ -16,7 +16,7 @@ All code changes (implementation, addition, improvement, deletion) MUST follow t
 - Improvements/Refactors:
   - Existing tests must remain green without loosening assertions.
   - Add regression tests when fixing bugs.
-  - If performance claim: include a minimal benchmark or before/after metric.
+  - If performance claim: include a minimal benchmark or before/after metric (attach Criterion report and `perf-summary.md`).
 - Deletions:
   - Verify unused (dead) code only; remove all references/imports.
   - Ensure builds and tests pass across workspace.

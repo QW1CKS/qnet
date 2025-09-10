@@ -25,3 +25,17 @@ serde_cbor = { version = "0.11", features = ["std"] }
 
 [features]
 rustls-config = []
+perf-bench = []
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+
+[[bench]]
+name = "handshake"
+harness = false
+required-features = ["perf-bench"]
+
+[[bench]]
+name = "stream"
+harness = false
+required-features = ["perf-bench"]

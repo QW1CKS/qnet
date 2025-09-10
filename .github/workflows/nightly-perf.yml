@@ -1,0 +1,135 @@
+name: nightly-perf
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  perf:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Hardware profile
+        run: |
+          mkdir -p artifacts
+          {
+            echo "== uname -a ==";
+            uname -a || true;
+            echo;
+            echo "== lscpu ==";
+            lscpu || true;
+            echo;
+            echo "== free -h ==";
+            free -h || true;
+          } > artifacts/hw-profile.txt
+
+      - name: Run benches (perf-bench)
+        env:
+          RUSTFLAGS: "-C target-cpu=native"
+        run: |
+          cargo bench --features perf-bench --no-default-features || true
+          # Mesh echo (TCP)
+          cargo bench -p core-mesh --bench echo --no-default-features --features with-libp2p || true
+          # Mesh echo (QUIC)
+          cargo bench -p core-mesh --bench echo --no-default-features --features "with-libp2p quic" || true
+      - name: Extract perf summary
+        if: always()
+        run: |
+          python3 - << 'PY'
+          import os, json
+          base = 'target/criterion'
+          results = {}
+          for root, dirs, files in os.walk(base):
+            # Find estimates.json anywhere under criterion
+            for est_file in ['estimates.json', os.path.join('new', 'estimates.json'), os.path.join('base', 'estimates.json')]:
+              est_path = os.path.join(root, est_file)
+              if os.path.exists(est_path):
+                try:
+                  with open(est_path, 'r') as f:
+                    data = json.load(f)
+                  bench = os.path.relpath(root, base)
+                  results[bench] = data
+                except Exception:
+                  pass
+          os.makedirs('artifacts', exist_ok=True)
+          with open('artifacts/perf-summary.json', 'w') as f:
+            json.dump(results, f, indent=2)
+          PY
+
+      - name: Enforce thresholds (warn-only)
+        if: always()
+        run: |
+          python3 - << 'PY'
+          import json, os, sys
+          path = 'artifacts/perf-summary.json'
+          if not os.path.exists(path):
+            print('no summary found; skipping thresholds')
+            sys.exit(0)
+          with open(path) as f:
+            data = json.load(f)
+          max_latency_regress = 1.15  # 15% slower allowed
+          regressions = []
+          # Treat mean time as latency; throughput check would be inverse
+          for bench, est in data.items():
+            try:
+              base_mean = est.get('base', {}).get('mean', {}).get('point_estimate')
+              new_mean = est.get('new', {}).get('mean', {}).get('point_estimate')
+            except AttributeError:
+              base_mean = None; new_mean = None
+            if base_mean and new_mean:
+              ratio = new_mean / base_mean if base_mean > 0 else 1.0
+              if ratio > max_latency_regress:
+                regressions.append((bench, ratio))
+          if regressions:
+            print('PERF REGRESSIONS (>15% slower):')
+            for b, r in regressions:
+              print(f'  {b}: {r:.2f}x slower')
+          else:
+            print('No significant regressions')
+          PY
+
+      - name: Collect Criterion reports
+        if: always()
+        run: |
+          mkdir -p artifacts/criterion
+          [ -d target/criterion ] && cp -r target/criterion/* artifacts/criterion/ || true
+
+      - name: Perf summary template
+        if: always()
+        run: |
+          mkdir -p artifacts
+          [ -f qnet-spec/templates/perf-summary-template.md ] && cp qnet-spec/templates/perf-summary-template.md artifacts/perf-summary.md || true
+
+      - name: Generate perf summary (markdown)
+        if: always()
+        run: |
+          python3 - << 'PY'
+          import json, os
+          path = 'artifacts/perf-summary.json'
+          out = 'artifacts/perf-summary.md'
+          if not os.path.exists(path):
+            print('no summary json; skip markdown generation')
+          else:
+            data = json.load(open(path))
+            with open(out, 'a') as f:
+              f.write('\n\n## Auto Summary\n\n')
+              for bench, est in sorted(data.items()):
+                # Prefer 'new' mean if present; fall back to top-level
+                try:
+                  new_mean = est.get('new', {}).get('mean', {}).get('point_estimate') or est['mean']['point_estimate']
+                  f.write(f'- {bench}: mean={new_mean:.3f} ns/op (approx)\n')
+                except Exception:
+                  f.write(f'- {bench}: (no mean)\n')
+          PY
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-reports
+          path: artifacts

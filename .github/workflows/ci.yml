@@ -59,6 +59,109 @@ jobs:
             linter/qnet-lint
             sbom.json
 
+  perf-guard:
+    name: Perf guard (quick benches)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Prepare base checkout
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          echo "Base SHA: $BASE_SHA"
+          git clone . _base
+          cd _base
+          git checkout $BASE_SHA
+      - name: Run benches (base)
+        env:
+          RUSTFLAGS: "-C target-cpu=native"
+        run: |
+          cd _base
+          cargo bench --features perf-bench --no-default-features || true
+          mkdir -p ../artifacts/base-criterion
+          [ -d target/criterion ] && cp -r target/criterion/* ../artifacts/base-criterion/ || true
+      - name: Run benches (PR)
+        env:
+          RUSTFLAGS: "-C target-cpu=native"
+        run: |
+          cargo bench --features perf-bench --no-default-features || true
+          mkdir -p artifacts/criterion
+          [ -d target/criterion ] && cp -r target/criterion/* artifacts/criterion/ || true
+      - name: Check perf override
+        id: override
+        run: |
+          python3 - << 'PY'
+          import json, os
+          evt = json.load(open(os.environ['GITHUB_EVENT_PATH']))
+          labels = [l.get('name','').lower() for l in evt.get('pull_request',{}).get('labels',[])]
+          body = (evt.get('pull_request',{}).get('body') or '').lower()
+          override = ('perf-override' in labels) or ('perf-override:' in body)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"enabled={'true' if override else 'false'}\n")
+          print('Perf override:', override)
+          PY
+      - name: Compare and enforce thresholds
+        env:
+          PERF_OVERRIDE: ${{ steps.override.outputs.enabled }}
+        run: |
+          python3 - << 'PY'
+          import os, json
+          base_root = 'artifacts/base-criterion'
+          new_root = 'artifacts/criterion'
+          max_latency_regress = 1.15
+          min_throughput_ratio = 0.90
+          regressions = []
+          for root, dirs, files in os.walk(new_root):
+              for d in dirs:
+                  # look for estimates.json in new and base of same bench
+                  bench_path = os.path.join(root, d)
+                  if not os.path.isdir(bench_path):
+                      continue
+                  est_new = os.path.join(bench_path, 'new', 'estimates.json')
+                  if not os.path.exists(est_new):
+                      # Criterion quick run may not have 'new', use estimates.json at bench root
+                      est_new = os.path.join(bench_path, 'estimates.json')
+                  # find corresponding base estimates by relative path
+                  rel = os.path.relpath(bench_path, new_root)
+                  base_path = os.path.join(base_root, rel)
+                  est_base = os.path.join(base_path, 'base', 'estimates.json')
+                  if not os.path.exists(est_base):
+                      est_base = os.path.join(base_path, 'estimates.json')
+                  if os.path.exists(est_new) and os.path.exists(est_base):
+                      try:
+                          bn = json.load(open(est_new))
+                          bb = json.load(open(est_base))
+              new_mean = bn['mean']['point_estimate']
+              base_mean = bb['mean']['point_estimate']
+              # latency regression (>15% slower)
+              lat_ratio = new_mean / base_mean if base_mean > 0 else 1.0
+              if lat_ratio > max_latency_regress:
+                regressions.append((rel, lat_ratio, 'latency'))
+              # throughput drop (>10%)
+              thr_ratio = base_mean / new_mean if new_mean > 0 else 1.0
+              if thr_ratio < min_throughput_ratio:
+                regressions.append((rel, thr_ratio, 'throughput'))
+                      except Exception as e:
+                          pass
+      if regressions:
+        print('Performance regressions detected:')
+        for name, ratio, kind in regressions:
+          if kind == 'latency':
+            print(f'  {name}: {ratio:.2f}x slower (latency)')
+          else:
+            print(f'  {name}: throughput ratio {ratio:.2f} (< 0.90)')
+        import os
+        if os.environ.get('PERF_OVERRIDE','false').lower() == 'true':
+          print('PERF OVERRIDE active — not failing build.')
+        else:
+          raise SystemExit(1)
+          else:
+              print('Perf guard passed')
+          PY
+
   fuzz-and-coverage:
     runs-on: ubuntu-latest
     steps:

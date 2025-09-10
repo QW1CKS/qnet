@@ -104,6 +104,31 @@ pub fn encode(frame: &Frame, key: KeyCtx, nonce: [u8; 12]) -> Bytes {
     out.freeze()
 }
 
+/// Zero-copy-oriented encode: encrypt payload in place and append tag, minimizing allocations.
+/// Returns the full wire frame [Len|Type|Ciphertext||Tag].
+pub fn encode_zerocopy(frame: &Frame, key: KeyCtx, nonce: [u8; 12]) -> Bytes {
+    let wire_len = 1u32 + (frame.payload.len() + TAG_LEN) as u32;
+    let typ = frame.ty as u8;
+    // Prepare AAD matching header
+    let mut aad = [0u8; 4];
+    aad[0] = ((wire_len >> 16) & 0xff) as u8;
+    aad[1] = ((wire_len >> 8) & 0xff) as u8;
+    aad[2] = (wire_len & 0xff) as u8;
+    aad[3] = typ;
+
+    // Allocate once for header + payload + tag
+    let mut out = BytesMut::with_capacity(4 + 1 + frame.payload.len() + TAG_LEN);
+    put_u24(&mut out, wire_len);
+    out.put_u8(typ);
+    // Append plaintext payload which will be encrypted in place
+    let start = out.len();
+    out.extend_from_slice(&frame.payload);
+    // Encrypt in place over the payload slice
+    let tag = crypto::aead::seal_in_place_detached(&key.key, &nonce, &aad, &mut out[start..]);
+    out.extend_from_slice(&tag);
+    out.freeze()
+}
+
 pub fn decode(mut src: &[u8], key: KeyCtx, nonce: [u8; 12]) -> Result<Frame, Error> {
     if src.len() < 4 {
         return Err(Error::TooShort);

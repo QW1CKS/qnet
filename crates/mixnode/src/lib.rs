@@ -4,7 +4,7 @@ use rand::{Rng, RngCore, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 type Key = [u8; 32];
 type TokenBucket = (u32, Instant);
@@ -50,12 +50,19 @@ impl RateLimiter {
 #[derive(Debug, Clone)]
 pub struct MixConfig {
     pub cover_rate_hz: f64,
+    pub latency_mode: LatencyMode,
 }
 
 pub struct MixNode {
     rl: RateLimiter,
     rng: Arc<Mutex<rand::rngs::StdRng>>,
     cfg: MixConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum LatencyMode {
+    Low,
+    Standard,
 }
 
 impl MixNode {
@@ -72,6 +79,16 @@ impl MixNode {
         if !self.rl.allow(src) {
             return None;
         }
+        // Simulate latency shaping based on mode (PoC):
+        // - Low: 5-30ms random
+        // - Standard: 100-300ms random
+        let mut rng = self.rng.lock();
+        let delay_ms: u64 = match self.cfg.latency_mode {
+            LatencyMode::Low => rng.gen_range(5..=30),
+            LatencyMode::Standard => rng.gen_range(100..=300),
+        };
+        drop(rng);
+        std::thread::sleep(Duration::from_millis(delay_ms));
         // Placeholder Sphinx-like step: XOR first 32 bytes of body with header
         let mut body = pkt.body.clone();
         for i in 0..body.len().min(32) {
@@ -107,7 +124,13 @@ mod tests {
     #[test]
     fn rate_limits() {
         let rl = RateLimiter::new(2, 10);
-        let node = MixNode::new(rl, MixConfig { cover_rate_hz: 0.0 });
+        let node = MixNode::new(
+            rl,
+            MixConfig {
+                cover_rate_hz: 0.0,
+                latency_mode: LatencyMode::Low,
+            },
+        );
         let src = [1u8; 32];
         let pkt = Packet {
             header: [0u8; 32],
@@ -121,12 +144,52 @@ mod tests {
     #[test]
     fn transforms_body() {
         let rl = RateLimiter::new(100, 100);
-        let node = MixNode::new(rl, MixConfig { cover_rate_hz: 0.0 });
+        let node = MixNode::new(
+            rl,
+            MixConfig {
+                cover_rate_hz: 0.0,
+                latency_mode: LatencyMode::Low,
+            },
+        );
         let pkt = Packet {
             header: [7u8; 32],
             body: vec![1, 2, 3, 4],
         };
         let out = node.process([0u8; 32], pkt.clone()).unwrap();
         assert_ne!(out.body, pkt.body);
+    }
+
+    #[test]
+    fn latency_mode_low_p95_under_100ms_three_hops() {
+        let rl = RateLimiter::new(1_000_000, 1_000_000);
+        let mk = |mode| {
+            MixNode::new(
+                rl.clone(),
+                MixConfig {
+                    cover_rate_hz: 0.0,
+                    latency_mode: mode,
+                },
+            )
+        };
+        let n1 = mk(LatencyMode::Low);
+        let n2 = mk(LatencyMode::Low);
+        let n3 = mk(LatencyMode::Low);
+        let mut samples = Vec::new();
+        let src = [9u8; 32];
+        for _ in 0..50 {
+            let pkt = Packet {
+                header: [0u8; 32],
+                body: vec![0u8; 64],
+            };
+            let t0 = Instant::now();
+            let p1 = n1.process(src, pkt).unwrap();
+            let p2 = n2.process(src, p1).unwrap();
+            let _p3 = n3.process(src, p2).unwrap();
+            let dt = t0.elapsed();
+            samples.push(dt);
+        }
+        samples.sort();
+        let p95 = samples[(samples.len() as f64 * 0.95).ceil() as usize - 1];
+        assert!(p95 < Duration::from_millis(100), "p95 {:?} too high", p95);
     }
 }

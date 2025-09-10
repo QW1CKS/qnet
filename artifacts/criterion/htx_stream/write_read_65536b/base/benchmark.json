@@ -1,0 +1,1 @@
+{"group_id":"htx_stream","function_id":"write_read_65536b","value_str":null,"throughput":{"Bytes":65536},"full_id":"htx_stream/write_read_65536b","directory_name":"htx_stream/write_read_65536b","title":"htx_stream/write_read_65536b"}

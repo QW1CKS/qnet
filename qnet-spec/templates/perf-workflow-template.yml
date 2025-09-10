@@ -1,0 +1,59 @@
+# Nightly performance workflow template for T6.6
+# Copy to .github/workflows/nightly-perf.yml in the code repo and adjust paths as needed.
+
+name: nightly-perf
+on:
+  schedule:
+    - cron: '0 2 * * *' # daily at 02:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  perf:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-common linux-tools-generic
+          rustup component add rustfmt
+
+      - name: Print hardware profile
+        run: |
+          uname -a
+          lscpu || true
+          free -h || true
+
+      - name: Run benches (perf-bench)
+        env:
+          RUSTFLAGS: "-C target-cpu=native"
+        run: |
+          cargo bench --features perf-bench --no-default-features || true
+
+      - name: Collect Criterion reports
+        if: always()
+        run: |
+          mkdir -p artifacts/criterion
+          cp -r target/criterion artifacts/criterion || true
+
+      - name: Perf summary
+        if: always()
+        run: |
+          mkdir -p artifacts
+          cp qnet-spec/templates/perf-summary-template.md artifacts/perf-summary.md || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-reports
+          path: artifacts
+
+      # Optional: add a step here to compare against prior baselines and fail on regression thresholds

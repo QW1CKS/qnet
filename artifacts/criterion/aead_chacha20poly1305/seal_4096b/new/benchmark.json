@@ -1,0 +1,1 @@
+{"group_id":"aead_chacha20poly1305","function_id":"seal_4096b","value_str":null,"throughput":{"Bytes":4096},"full_id":"aead_chacha20poly1305/seal_4096b","directory_name":"aead_chacha20poly1305/seal_4096b","title":"aead_chacha20poly1305/seal_4096b"}

@@ -36,6 +36,26 @@ pub mod aead {
             .map_err(|_| Error::Crypto)?;
         Ok(out.to_vec())
     }
+
+    /// Zero-copy: seal in place and return detached tag (16 bytes).
+    ///
+    /// The `in_out` buffer must contain the plaintext and will be overwritten with ciphertext.
+    /// The returned tag must be appended by the caller.
+    pub fn seal_in_place_detached(
+        key: &[u8; 32],
+        nonce: &[u8; 12],
+        aad: &[u8],
+        in_out: &mut [u8],
+    ) -> [u8; 16] {
+        let unbound = UnboundKey::new(&aead::CHACHA20_POLY1305, key).expect("aead key");
+    let key = LessSafeKey::new(unbound);
+        let tag = key
+            .seal_in_place_separate_tag(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), in_out)
+            .expect("aead seal in place");
+        let mut out = [0u8; 16];
+        out.copy_from_slice(tag.as_ref());
+        out
+    }
 }
 
 pub mod hkdf {

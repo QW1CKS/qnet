@@ -8,3 +8,13 @@ ring = "0.17"
 
 [dev-dependencies]
 rand = "0.8"
+criterion = { version = "0.5", default-features = false }
+
+[features]
+default = []
+perf-bench = []
+
+[[bench]]
+name = "aead"
+harness = false
+required-features = ["perf-bench"]

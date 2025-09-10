@@ -293,6 +293,8 @@ Acceptance:
 
 ## Phase 6: Tools & Compliance (Priority: Medium)
 
+## Tools
+
 ### T6.1: C Library Implementation
 Objective: C wrapper over HTX dial/accept/stream APIs.
 Priority: Medium | Dependencies: T2.4 | Estimate: 5 days
@@ -329,6 +331,8 @@ Acceptance:
 - CI artifacts published; rebuild matches checksum.
     - Status: Implemented SLSA v3 provenance in .github/workflows/ci.yml with pinned toolchains (Rust 1.70.0, Go 1.21), SBOM generation via Syft, checksums, and SLSA attestation upload.
 
+## Compliance and Optimization
+
 ### T6.5: Compliance Test Harness
 Objective: Automate v1.2-style tests and report per profile.
 Priority: High | Dependencies: T2.5, T2.6, T3.3 | Estimate: 6 days
@@ -356,6 +360,68 @@ Acceptance:
 - AEAD throughput >2GB/s; handshake latency <50ms; mixnet p95 <100ms.
 - QUIC builds pass E2E echo with <50ms improvement over TCP.
 Risks: QUIC adds UDP complexity; optimizations may trade privacy for speed.
+    - Status:
+        - [x] Spec complete in `qnet-spec` (playbook, CI workflow, bench skeletons, perf summary template)
+        - [x] Code repo implementation (partial):
+            - [x] Feature flags: `perf-bench` across benches; `quic` toggle added in core-mesh
+            - [x] Zero-copy helpers: AEAD in-place helper; framing zero-copy encode path
+            - [x] Benches: core-crypto (AEAD), core-framing (encode/decode), HTX (handshake + stream)
+            - [x] Mixnet: `latency-mode` (low/standard) with 3-hop p95 unit test
+            - [x] QUIC integration and mesh TCP/QUIC echo bench (added persistent-connection variant and simulated RTT/loss)
+        - [ ] CI perf:
+            - [x] Nightly perf workflow added in code repo to run Criterion and upload artifacts
+            - [x] Regression thresholds wired and enforced (nightly warn-only; PR perf-guard enforces 15% latency, 10% throughput with override)
+        - [ ] Acceptance metrics achieved on target hardware
+
+Work breakdown:
+1) Benchmark scaffolding and baselines
+    - Add Criterion-based benches:
+      - core-crypto: chacha20poly1305 seal/open on 1KiB, 4KiB, 16KiB, 64KiB, 1MiB.
+      - core-framing: encode/decode L2 frames (with/without padding) on same sizes.
+      - htx: client/server handshake RTT and CPU time; stream open/write/read throughput.
+      - mesh (feature quic): echo throughput TCP vs QUIC on localhost and over a simulated 20ms/1% loss link.
+    - Baseline run and store JSON summaries under artifacts/perf-baseline/<date>.json.
+    - Acceptance: benches compile under perf-bench; baselines archived in CI artifacts.
+
+2) Zero-copy crypto and framing
+    - Refactor AEAD to operate on BytesMut slices in-place; avoid intermediate Vec allocations.
+    - Reuse per-connection buffers; pool large buffers (≥64KiB) to cap allocations.
+    - Acceptance: core-crypto bench shows ≥2GB/s per core on x86_64 (AVX2) for ≥16KiB payloads; allocations/frame ≤1.
+
+3) HTX handshake and stream fast path
+    - Cache parsed templates and key schedule artifacts; reduce syscalls, coalesce writes with writev where applicable.
+    - Acceptance: handshake latency median <50ms on loopback; CPU time reduced ≥20% vs baseline; htx stream throughput +15%.
+
+4) QUIC integration (feature: quic)
+    - Integrate quinn; add libp2p transport feature toggle "quic" (off by default).
+    - Implement E2E echo path for QUIC and benchmark vs TCP.
+    - Acceptance: QUIC echo improves p50 latency by ≥50ms vs TCP in simulated 20ms RTT; stability verified over 5-minute soak.
+
+5) Mixnet latency tuning
+    - Add "latency-mode" (low/standard) that adjusts hop count and batching interval; tune token buckets.
+    - Acceptance: with latency-mode=low on a local 3-hop testbed, p95 end-to-end added latency <100ms vs direct.
+
+6) Profiling and hot-spot remediation
+    - Provide profiles using cargo-flamegraph (Linux) and Windows alternatives (e.g., perfetto, ETW) with docs.
+    - Identify top 3 hot spots; remediate with targeted changes (branchless parsing, precomputed AAD, fewer atomics).
+    - Acceptance: each change validated by benches; no regression >3% in other areas.
+
+Benchmark methodology:
+- Hardware matrix: document CPU model, cores, RAM, OS, kernel; prefer Linux x86_64 AVX2 for canonical numbers.
+- Data sizes: 1KiB, 4KiB, 16KiB, 64KiB, 1MiB; concurrency levels: 1, 8, 64 streams.
+- Environment: disable CPU scaling; pin to performance governor; isolate cores when possible.
+- Reporting: Criterion reports committed; summarize throughputs/latencies in artifacts/perf-summary.md.
+
+CI performance guardrails:
+- Nightly performance job (non-blocking) runs benches on a fixed-size runner; uploads baselines and trend chart.
+- Regression thresholds: fail if throughput drops >10% or latency increases >15% vs moving median of last 7 runs.
+- Manual override label for known external changes; store justification in CI annotations.
+
+Exit criteria mapping:
+- Micro (T6.6 Acceptance): AEAD ≥2GB/s (≥16KiB), handshake <50ms median, QUIC gains ≥50ms, mixnet p95 <100ms.
+- Macro (Plan targets): track HTX 10Gbps end-to-end goal separately in M7/M8 large-node tests; not blocking T6.6.
+
+## Applications
 
 ### T6.7: Stealth Browser Application
 Objective: Create a browser-based QNet app that mimics TCP/TLS traffic for plausible deniability, auto-connects globally, and routes via decoy IPs.
@@ -374,6 +440,8 @@ Acceptance:
 - Global connection in <30s; decoy IPs logged as normal sites (e.g., google.com).
 - E2E browsing censored sites with <200ms added latency.
 Risks: Detection via advanced DPI; decoy node trust; legal concerns in restrictive regimes.
+
+## Repository Management
 
 ### T6.8: Repository Organization for Dual Audience
 Objective: Structure the repository to clearly separate developer toolkit from user-facing applications, addressing the 5GB+ size and dual purpose.

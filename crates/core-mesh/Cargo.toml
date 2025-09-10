@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 with-libp2p = ["dep:libp2p", "dep:libp2p-mdns"]
+quic = ["with-libp2p", "libp2p/quic"]
 
 [dependencies]
 futures = "0.3"
@@ -27,3 +28,12 @@ default-features = false
 features = [
     "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros", "request-response", "async-std"
 ]
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["async_std"] }
+async-std = { version = "1", features = ["attributes"] }
+rand = "0.8"
+
+[[bench]]
+name = "echo"
+harness = false

@@ -20,3 +20,6 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+
+[workspace.metadata]
+perf = { feature = "perf-bench" }
