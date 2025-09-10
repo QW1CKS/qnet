@@ -193,7 +193,26 @@ impl Mux {
                                 frame.payload[2],
                                 frame.payload[3],
                             ]);
-                            let data = frame.payload[4..].to_vec();
+                            // Backward-compatible decode: prefer new format with data_len (u32) if sane; else treat rest as data
+                            let data = {
+                                if frame.payload.len() >= 8 {
+                                    let declared = u32::from_be_bytes([
+                                        frame.payload[4],
+                                        frame.payload[5],
+                                        frame.payload[6],
+                                        frame.payload[7],
+                                    ]) as usize;
+                                    let total_needed = 8 + declared;
+                                    if total_needed <= frame.payload.len() {
+                                        frame.payload[8..8 + declared].to_vec()
+                                    } else {
+                                        // Fallback to legacy layout
+                                        frame.payload[4..].to_vec()
+                                    }
+                                } else {
+                                    frame.payload[4..].to_vec()
+                                }
+                            };
 
                             // Stream 0 is reserved for control messages (CBOR-encoded)
                             if id == 0 {
@@ -335,6 +354,27 @@ impl Mux {
         self.send_frame(frame);
     }
 
+    #[cfg(feature = "stealth-mode")]
+    fn send_data_padded(&self, id: StreamId, data: &[u8], pad_len: usize) {
+        if id != 0 && !*self.inner.control_open.lock().unwrap() {
+            return;
+        }
+        // payload: stream_id (u32) || data_len (u32) || data || padding(zeros)
+        let data_len = data.len();
+        let mut payload = BytesMut::with_capacity(8 + data_len + pad_len);
+        payload.put_slice(&id.to_be_bytes());
+        payload.put_slice(&(data_len as u32).to_be_bytes());
+        payload.put_slice(data);
+        if pad_len > 0 {
+            payload.resize(8 + data_len + pad_len, 0);
+        }
+        let frame = framing::Frame {
+            ty: framing::FrameType::Stream,
+            payload: payload.to_vec(),
+        };
+        self.send_frame(frame);
+    }
+
     fn take_credit_blocking(&self, id: StreamId, needed: usize) -> usize {
         let mut rem = self.inner.remote_credit.lock().unwrap();
         loop {
@@ -390,8 +430,19 @@ impl StreamHandle {
             #[cfg(not(feature = "stealth-mode"))]
             let target = CHUNK;
 
-            let need = data.len().min(target);
-            let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, need);
+            // For stealth-mode, interpret target as desired full STREAM payload (id+len+data+pad). Otherwise, it's just data chunk size.
+            #[cfg(feature = "stealth-mode")]
+            let (data_budget, pad_len) = {
+                // Reserve 8 bytes for (id+data_len)
+                let budget = target.saturating_sub(8);
+                let data_budget = data.len().min(budget);
+                let pad = budget.saturating_sub(data_budget);
+                (data_budget.max(0), pad)
+            };
+            #[cfg(not(feature = "stealth-mode"))]
+            let (data_budget, pad_len) = (data.len().min(target), 0usize);
+
+            let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
             let (chunk, rest) = data.split_at(take);
 
             // Apply bounded jitter only if we didn't just block on credit
@@ -406,7 +457,14 @@ impl StreamHandle {
                 }
             }
 
-            self.mux.send_data(self.id, chunk);
+            #[cfg(feature = "stealth-mode")]
+            {
+                self.mux.send_data_padded(self.id, chunk, pad_len);
+            }
+            #[cfg(not(feature = "stealth-mode"))]
+            {
+                self.mux.send_data(self.id, chunk);
+            }
             data = rest;
         }
     }
