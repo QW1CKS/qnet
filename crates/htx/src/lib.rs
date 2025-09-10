@@ -1,5 +1,7 @@
 //! HTX Noise XK handshake primitives and placeholders for future APIs.
 
+pub mod decoy;
+
 use core_crypto as crypto;
 use curve25519_dalek::constants::X25519_BASEPOINT;
 use curve25519_dalek::montgomery::MontgomeryPoint;

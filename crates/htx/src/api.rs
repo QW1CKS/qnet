@@ -261,16 +261,34 @@ fn spawn_tls_pump<S: Read + Write + Send + 'static>(
 #[cfg(feature = "rustls-config")]
 pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     use crate::inner::Caps;
-    use crate::tls_mirror::{build_client_hello, choose_template_rotating, Config as TlsCfg};
+    use crate::tls_mirror::{build_client_hello, choose_template_rotating, Config as TlsCfg, Template};
+    use crate::decoy;
     use std::time::Duration;
     use url::Url;
 
     // Calibrate and build client config
     let url = Url::parse(origin).map_err(|_| ApiError::Url)?;
-    let host = url.host_str().ok_or(ApiError::Url)?.to_string();
-    let port = url.port().unwrap_or(443);
+    let mut host = url.host_str().ok_or(ApiError::Url)?.to_string();
+    let mut port = url.port().unwrap_or(443);
+    let mut alpn_override: Option<Vec<String>> = None;
+    // If decoy catalog is present and verifies, route to decoy host/port
+    if let Some(cat) = decoy::load_from_env() {
+        if let Some((dhost, dport, alpn)) = decoy::resolve(origin, &cat) {
+            host = dhost;
+            port = dport;
+            alpn_override = alpn;
+        }
+    }
     // Choose template via allow-list rotation when provided; otherwise fall back
-    let (_tid, tpl) = choose_template_rotating(origin, Some(&TlsCfg::default()))
+    // Allow ALPN override when decoy policy requires it
+    let mut tcfg = TlsCfg::default();
+    if let Some(alpn) = &alpn_override {
+        tcfg.host_overrides.insert(
+            host.clone(),
+            Template { alpn: alpn.clone(), sig_algs: vec!["rsa_pss_rsae_sha256".into()], groups: vec!["x25519".into()], extensions: vec![0, 11, 10, 35, 16, 23, 43, 51] },
+        );
+    }
+    let (_tid, tpl) = choose_template_rotating(&format!("https://{}:{}", host, port), Some(&tcfg))
         .map_err(|_| ApiError::Tls)?;
     let client = build_client_hello(&tpl);
 
