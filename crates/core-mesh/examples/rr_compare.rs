@@ -142,7 +142,7 @@ mod with_libp2p {
         sorted_ms[idx]
     }
 
-    async fn measure(proto: &str, n: usize, sim: SimCfg) -> Result<Stats, String> {
+    async fn measure(proto: &str, n: usize, inflight: usize, sim: SimCfg) -> Result<Stats, String> {
     // rng not needed here; randomness handled inside tasks before await.
     // Server
     let server_keys = identity::Keypair::generate_ed25519();
@@ -233,9 +233,12 @@ mod with_libp2p {
     use futures::channel::mpsc;
     let (resp_tx, mut resp_rx) = mpsc::unbounded::<(request_response::ResponseChannel<String>, String, bool)>();
 
+    use std::collections::{HashMap, VecDeque};
     let mut rtts = Vec::with_capacity(n);
-    let mut in_flight = false;
-    let mut last_send = std::time::Instant::now();
+    let mut outstanding: HashMap<String, std::time::Instant> = HashMap::new();
+    let mut send_queue: VecDeque<String> = VecDeque::new();
+    let mut next_seq: usize = 0;
+    let mut total_sent: usize = 0;
     let mut connected = false;
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(120);
@@ -287,16 +290,19 @@ mod with_libp2p {
                             if peer_id == server_peer {
                                 eprintln!("[rr] connected to server");
                                 connected = true;
-                // Give the connection a brief moment before opening the first substream.
-                sleep(Duration::from_millis(20)).await;
-                                if !in_flight && rtts.len() < n {
+                                // small warm-up
+                                sleep(Duration::from_millis(20)).await;
+                                // kick off initial window up to inflight
+                                while total_sent < n && outstanding.len() < inflight {
+                                    let id = format!("hello-{}", next_seq);
+                                    next_seq += 1;
+                                    total_sent += 1;
+                                    outstanding.insert(id.clone(), std::time::Instant::now());
                                     let _ = client
                                         .behaviour_mut()
                                         .request_response
-                                        .send_request(&server_peer, "hello".to_string());
-                                    last_send = std::time::Instant::now();
-                                    in_flight = true;
-                                    eprintln!("[rr] sent request #{}", rtts.len() + 1);
+                                        .send_request(&server_peer, id.clone());
+                                    eprintln!("[rr] sent {} (total_sent={})", id, total_sent);
                                 }
                             }
                         }
@@ -307,20 +313,31 @@ mod with_libp2p {
                         SwarmEvent::Behaviour(EchoBehaviourEvent::RequestResponse(ev)) => {
                             match ev {
                                 RrEvent::Message { message, .. } => {
-                                    if let RrMessage::Response { .. } = message {
-                                        if in_flight {
-                                            let dt = last_send.elapsed();
-                                            rtts.push(dt.as_secs_f64() * 1000.0);
-                                            in_flight = false;
-                                            eprintln!("[rr] got response #{}: {:.3} ms", rtts.len(), *rtts.last().unwrap());
+                                    if let RrMessage::Response { response, .. } = message {
+                                        // response is the echoed id
+                                        if let Some(started) = outstanding.remove(&response) {
+                                            let dt_ms = started.elapsed().as_secs_f64() * 1000.0;
+                                            rtts.push(dt_ms);
+                                            eprintln!("[rr] got {} -> {:.3} ms (count={})", response, dt_ms, rtts.len());
                                             if rtts.len() >= n { break 'outer; }
+                                            // refill window
+                                            while total_sent < n && outstanding.len() < inflight {
+                                                let id = format!("hello-{}", next_seq);
+                                                next_seq += 1;
+                                                total_sent += 1;
+                                                outstanding.insert(id.clone(), std::time::Instant::now());
+                                                let _ = client
+                                                    .behaviour_mut()
+                                                    .request_response
+                                                    .send_request(&server_peer, id.clone());
+                                                eprintln!("[rr] sent {} (total_sent={})", id, total_sent);
+                                            }
                                         }
                                     }
                                 }
                                 RrEvent::OutboundFailure { request_id: _, error, .. } => {
                                     eprintln!("[rr] outbound failure: {:?}", error);
-                                    // Retry by allowing the loop to send again on the next tick.
-                                    in_flight = false;
+                                    // no direct mapping without id; allow window refill timer to compensate
                                 }
                                 RrEvent::InboundFailure { peer: _, error, .. } => {
                                     eprintln!("[rr] inbound failure: {:?}", error);
@@ -337,14 +354,19 @@ mod with_libp2p {
                 let _ = server.behaviour_mut().request_response.send_response(channel, payload);
             }
             _ = sleep(Duration::from_millis(5)).fuse() => {
-                if connected && !in_flight && rtts.len() < n {
-                    let _ = client
-                        .behaviour_mut()
-                        .request_response
-                        .send_request(&server_peer, "hello".to_string());
-                    last_send = std::time::Instant::now();
-                    in_flight = true;
-                    eprintln!("[rr] sent request #{}", rtts.len() + 1);
+                if connected && rtts.len() < n {
+                    // periodic refill in case of failures
+                    while total_sent < n && outstanding.len() < inflight {
+                        let id = format!("hello-{}", next_seq);
+                        next_seq += 1;
+                        total_sent += 1;
+                        outstanding.insert(id.clone(), std::time::Instant::now());
+                        let _ = client
+                            .behaviour_mut()
+                            .request_response
+                            .send_request(&server_peer, id.clone());
+                        eprintln!("[rr] sent {} (total_sent={})", id, total_sent);
+                    }
                 }
             }
         }
@@ -374,7 +396,8 @@ mod with_libp2p {
     pub async fn run() {
         // Minimal CLI parsing
         let mut proto = String::from("tcp");
-        let mut n: usize = 200;
+    let mut n: usize = 200;
+    let mut inflight: usize = 1;
         let mut rtt_ms: u64 = 20;
         let mut loss_pct: f32 = 0.01;
         let mut it = std::env::args().skip(1);
@@ -382,13 +405,14 @@ mod with_libp2p {
             match k.as_str() {
                 "--proto" => if let Some(v) = it.next() { proto = v; },
                 "--n" => if let Some(v) = it.next() { n = v.parse().unwrap_or(n); },
+        "--inflight" => if let Some(v) = it.next() { inflight = v.parse().unwrap_or(inflight); },
                 "--sim-rtt" => if let Some(v) = it.next() { rtt_ms = v.parse().unwrap_or(rtt_ms); },
                 "--sim-loss" => if let Some(v) = it.next() { loss_pct = v.parse().unwrap_or(loss_pct); },
                 _ => {}
             }
         }
         let sim = SimCfg { rtt_ms, loss_pct };
-        match measure(&proto, n, sim).await {
+    match measure(&proto, n, inflight, sim).await {
             Ok(s) => {
                 // Print simple JSON line
                 println!("{{\"proto\":\"{}\",\"n\":{},\"rtt_ms\":{},\"loss_pct\":{},\"p50_ms\":{:.3},\"p95_ms\":{:.3},\"mean_ms\":{:.3}}}",
