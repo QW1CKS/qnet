@@ -1,0 +1,8 @@
+[2m2025-09-10T22:49:28.176765Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-10T22:49:28.176812Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080
+[2m2025-09-10T22:49:28.176838Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080
+[2m2025-09-10T22:53:53.783868Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-10T22:53:53.783947Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-10T22:55:49.264232Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-10T22:55:49.264289Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080
+[2m2025-09-10T22:55:49.264315Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080

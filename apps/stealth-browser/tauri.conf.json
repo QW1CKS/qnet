@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "QNet Stealth Browser",
+  "version": "0.0.1",
+  "identifier": "net.qnet.stealth",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "./ui-dist"
+  },
+  "app": {
+    "windows": [{
+      "title": "QNet Stealth Browser (Dev)",
+      "width": 800,
+      "height": 600
+    }]
+  }
+}

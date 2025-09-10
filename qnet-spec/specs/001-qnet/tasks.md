@@ -442,6 +442,9 @@ Acceptance:
 - E2E browsing censored sites with <200ms added latency.
 Risks: Detection via advanced DPI; decoy node trust; legal concerns in restrictive regimes.
 
+Status (current):
+- M1 in progress: app scaffold added under `apps/stealth-browser`, backend with tokio/tracing in place, daily rotating logs configured, and a working SOCKS5 CONNECT proxy bound to 127.0.0.1:1080 verified via curl. Next: wire SOCKS → HTX loopback echo.
+
 ## Repository Management
 
 ### T6.8: Repository Organization for Dual Audience

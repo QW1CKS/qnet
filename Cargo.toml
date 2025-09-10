@@ -14,6 +14,7 @@ members = [
     "crates/core-governance",
     "crates/c-lib",
     "examples/echo",
+    "apps/stealth-browser",
     "tests/compliance",
 ]
 resolver = "2"

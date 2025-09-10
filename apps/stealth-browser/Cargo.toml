@@ -1,0 +1,32 @@
+[package]
+name = "stealth-browser"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+tracing-appender = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal"] }
+
+# Placeholders for future integration
+htx = { path = "../../crates/htx" }
+core-framing = { path = "../../crates/core-framing" }
+
+# Optional UI shell (enabled with `--features with-tauri`) — not default to keep builds green on CI without GUI deps
+tauri = { version = "2.3.0", optional = true, default-features = false, features = ["wry"] }
+tauri-plugin-shell = { version = "2.3.1", optional = true }
+
+[features]
+default = []
+stealth-mode = []
+with-tauri = ["dep:tauri", "dep:tauri-plugin-shell"]
+
+[[bin]]
+name = "stealth-browser"
+path = "src/main.rs"
