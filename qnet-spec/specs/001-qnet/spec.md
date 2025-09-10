@@ -93,6 +93,7 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 	- With latency-mode=low and 3 hops, added p95 latency <100ms vs direct connection in a local testbed.
 - Methodology:
 	- Use Criterion benches, fixed hardware profile, and CI trend tracking with 10–15% regression thresholds.
+- Status: Complete with caveats (VM results on DigitalOcean droplet documented; bare metal optional for future).
 
 ## Review & Acceptance Checklist
 - [x] Spec covers all layers L0-L7

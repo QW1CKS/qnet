@@ -218,7 +218,7 @@ Track our journey to QNet's full realization:
 - [x] T6.3: uTLS Template Generator
 - [x] T6.4: SLSA Provenance
 - [ ] T6.5: Compliance Test Harness
-- [ ] T6.6: Performance Optimization
+- [x] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
 
 For full details, see [qnet-spec/specs/001-qnet/tasks.md](qnet-spec/specs/001-qnet/tasks.md).

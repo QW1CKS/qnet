@@ -171,7 +171,7 @@ qnet/
 - Bootstrap time: < 30 seconds
 - Path switch time: < 300ms
 
-See Phase 6 Task T6.6 for detailed micro-benchmarks, zero-copy refactors, QUIC integration toggles, and CI guardrails (nightly perf job, regression thresholds).
+See Phase 6 Task T6.6 for detailed micro-benchmarks, zero-copy refactors, QUIC integration toggles, and CI guardrails (nightly perf job, regression thresholds). **Status: Complete**.
 
 ### Resource Requirements
 - Minimum: 1 CPU core, 512MB RAM for client
