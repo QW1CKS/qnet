@@ -298,13 +298,48 @@ See the [Specification](qnet-spec/specs/001-qnet/spec.md) for API details and in
 
 While QNet is a developer toolkit, we also provide ready-to-use applications for day-to-day users. These are built on top of the QNet protocol stack and are designed for ease of use without requiring development knowledge.
 
-- **Stealth Browser**: A browser application that uses QNet to browse the web anonymously, mimicking normal HTTPS traffic to evade ISP tracking and censorship. Located in `apps/`.
+- **Stealth Browser**: A Tauri-based desktop app with an embedded SOCKS5 proxy. It currently launches an empty window (demo) and starts a local SOCKS5 proxy at `127.0.0.1:1080`. Located in `apps/stealth-browser`.
 
-To use the stealth browser:
+Demo run (empty window):
+
+Windows (PowerShell):
+```powershell
+# From repo root
+cargo run -p stealth-browser --features with-tauri
+```
+
+Linux/macOS (Bash):
 ```bash
-# Build the browser (when implemented)
-cargo build --release --bin stealth-browser
-./target/release/stealth-browser
+# From repo root
+cargo run -p stealth-browser --features with-tauri
+```
+
+Notes:
+- Logs are written daily to `logs/stealth-browser.log.YYYY-MM-DD`.
+- The minimal UI is served from `apps/stealth-browser/ui/index.html`.
+- On Windows, a WebView2 runtime is typically required (present by default on Windows 11).
+- Headless mode (no window) is available; it still runs the SOCKS5 proxy:
+
+  Windows (PowerShell):
+  ```powershell
+  cargo run -p stealth-browser
+  ```
+
+  Linux/macOS (Bash):
+  ```bash
+  cargo run -p stealth-browser
+  ```
+
+Optional smoke test of the proxy (from another shell):
+
+Windows (PowerShell):
+```powershell
+curl.exe -I http://example.com --socks5-hostname 127.0.0.1:1080
+```
+
+Linux/macOS (Bash):
+```bash
+curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 ```
 
 These applications are separate from the core toolkit to keep the repository organized: developers focus on `crates/` and `examples/`, while users can download pre-built binaries or build the apps from `apps/`.

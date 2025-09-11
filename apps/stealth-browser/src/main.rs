@@ -74,22 +74,27 @@ async fn main() -> Result<()> {
     // Start SOCKS5 server and wait for shutdown
     let addr = format!("127.0.0.1:{}", cfg.socks_port);
     info!(%addr, mode = ?cfg.mode, "starting SOCKS5 server");
+    #[cfg(feature = "with-tauri")]
+    let _server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client).await });
+
+    #[cfg(not(feature = "with-tauri"))]
     let server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client).await });
 
-    // Optional: start a tiny Tauri window when built with `--features with-tauri`
+    // Optional: start a tiny Tauri window when built with `--features with-tauri`.
+    // IMPORTANT: the Tauri/tao event loop must be created on the main thread.
     #[cfg(feature = "with-tauri")]
     {
         use tauri::{Builder, generate_context};
         info!("launching tauri window (dev)");
-        // Run in a blocking thread so tokio runtime keeps alive; in real app we’ll integrate loops.
-        std::thread::spawn(|| {
-            let _ = Builder::default()
-                .run(generate_context!())
-                .map_err(|e| eprintln!("tauri error: {}", e));
-        });
+        if let Err(e) = Builder::default().run(generate_context!()) {
+            eprintln!("tauri error: {}", e);
+        }
+        info!("tauri window closed; exiting app");
+        return Ok(());
     }
 
-    // Wait for Ctrl-C or server termination
+    // Headless mode (no Tauri): Wait for Ctrl-C or server termination
+    #[cfg(not(feature = "with-tauri"))]
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("shutdown signal received");
@@ -103,7 +108,14 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!("OK: M1 SOCKS5 server running");
+    #[cfg(not(feature = "with-tauri"))]
+    {
+        info!("OK: M1 SOCKS5 server running");
+        return Ok(());
+    }
+
+    // Should be unreachable; all cfg branches above return.
+    #[allow(unreachable_code)]
     Ok(())
 }
 

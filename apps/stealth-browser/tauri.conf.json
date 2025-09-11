@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "frontendDist": "./ui-dist"
+    "frontendDist": "./ui"
   },
   "app": {
     "windows": [{
@@ -14,5 +14,11 @@
       "width": 800,
       "height": 600
     }]
+  },
+  "bundle": {
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
   }
 }
