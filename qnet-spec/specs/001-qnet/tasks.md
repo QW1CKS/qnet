@@ -41,7 +41,7 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.5: Compliance Test Harness
 - [x] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
-    - Status: M1 complete. M2 in progress — stealth-mode feature plumbed; variable record sizing and bounded jitter integrated; STREAM padding applied pre-AEAD with back-compat decoder; plaintext zeroization after encode; ALPN/JA3 template rotation via env allow-list with 24h cache; targeted tests added (sizing/jitter determinism, padded AEAD round-trip, JA3 variance). Pending: decoy resolver + signed catalog, bootstrap resilience, DPI harness, ALPN/JA3 parity fixtures.
+    - Status: M1 complete. M2 code-complete in repo — stealth-mode feature plumbed; variable record sizing and bounded jitter integrated; STREAM padding applied pre-AEAD with back-compat decoder; plaintext zeroization after encode; ALPN/JA3 template rotation via env allow-list with 24h cache; targeted tests added (sizing/jitter determinism, padded AEAD round-trip, JA3 variance). Decoy resolver with signed catalog and bootstrap resilience (signed seeds, backoff+jitter, cache, health probe) integrated; DPI helper scripts added; JA3 fixtures/rotation cadence tests present. Pending: external bootstrap acceptance demo (<30s) and QUIC parity.
 - [ ] T6.8: Repository Organization for Dual Audience
 - [ ] T6.9: User Documentation and Quick Start Guides
 - [ ] T6.10: Repository Size Management

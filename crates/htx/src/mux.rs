@@ -14,9 +14,6 @@ use serde_cbor as cbor;
 
 type StreamId = u32;
 
-const INITIAL_WINDOW: usize = 64 * 1024; // 64 KiB
-const CHUNK: usize = 4096; // max payload per data frame chunk we send
-
 #[derive(Clone)]
 pub struct Mux {
     inner: Arc<Inner>,
@@ -43,6 +40,10 @@ struct Inner {
     next_id: Mutex<StreamId>,
     // Control stream state (ID 0); when closed during rekey-close, data writes are ignored until resumed
     control_open: Mutex<bool>,
+
+    // Flow-control defaults (tunable for HTTP-friendly behavior)
+    initial_window: usize,
+    base_chunk: usize,
 
     #[cfg(feature = "stealth-mode")]
     shaper: Mutex<Option<StealthShaper>>, // record sizing + jitter
@@ -84,6 +85,7 @@ struct OldKey {
 impl Mux {
     pub fn new(tx: mpsc::Sender<Bytes>, rx: mpsc::Receiver<Bytes>) -> Self {
         let (accept_tx, accept_rx) = mpsc::channel();
+        let (initial_window, base_chunk) = scheduler_defaults_from_env();
         let inner = Arc::new(Inner {
             tx,
             rx: Mutex::new(rx),
@@ -96,6 +98,8 @@ impl Mux {
             credit_cv: Condvar::new(),
             next_id: Mutex::new(1),
             control_open: Mutex::new(true),
+            initial_window,
+            base_chunk,
             #[cfg(feature = "stealth-mode")]
             shaper: Mutex::new(init_stealth_shaper_from_env()),
         });
@@ -238,7 +242,7 @@ impl Mux {
                                 // Initialize remote credit so we can send back immediately
                                 {
                                     let mut rem = inner.remote_credit.lock().unwrap();
-                                    rem.insert(id, INITIAL_WINDOW);
+                                    rem.insert(id, inner.initial_window);
                                 }
                                 let handle = StreamHandle {
                                     id,
@@ -309,7 +313,7 @@ impl Mux {
         // initialize remote credit and incoming channel
         {
             let mut rem = self.inner.remote_credit.lock().unwrap();
-            rem.insert(id, INITIAL_WINDOW);
+            rem.insert(id, self.inner.initial_window);
         }
         let (tx_data, rx_data) = mpsc::channel();
         {
@@ -417,7 +421,7 @@ impl StreamHandle {
             #[cfg(feature = "stealth-mode")]
             let target = {
                 // Default fallback
-                let mut t = CHUNK;
+                let mut t = self.mux.inner.base_chunk;
                 let mut guard = self.mux.stealth_shaper_lock();
                 if let Some(sh) = guard.as_mut() {
                     let maxr = sh.max_record.min(64 * 1024);
@@ -428,7 +432,7 @@ impl StreamHandle {
                 t
             };
             #[cfg(not(feature = "stealth-mode"))]
-            let target = CHUNK;
+            let target = self.mux.inner.base_chunk;
 
             // For stealth-mode, interpret target as desired full STREAM payload (id+len+data+pad). Otherwise, it's just data chunk size.
             #[cfg(feature = "stealth-mode")]
@@ -613,6 +617,31 @@ impl Mux {
     pub fn encryption_epoch(&self) -> u64 {
         *self.inner.key_epoch.lock().unwrap()
     }
+}
+
+// Determine scheduler defaults from environment.
+// HTX_SCHEDULER_PROFILE=http -> initial_window=256KiB, base_chunk=16KiB (HTTP-friendly)
+// Otherwise defaults: 64KiB window, 4KiB chunk.
+// Overrides: HTX_INITIAL_WINDOW, HTX_CHUNK (bytes, usize), if set.
+fn scheduler_defaults_from_env() -> (usize, usize) {
+    use std::env;
+    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| String::from("default"));
+    let (mut iw, mut ch) = if profile.eq_ignore_ascii_case("http") {
+        (256 * 1024, 16 * 1024)
+    } else {
+        (64 * 1024, 4096)
+    };
+    if let Ok(v) = env::var("HTX_INITIAL_WINDOW") {
+        if let Ok(parsed) = v.parse::<usize>() {
+            iw = parsed.max(1024); // sane floor
+        }
+    }
+    if let Ok(v) = env::var("HTX_CHUNK") {
+        if let Ok(parsed) = v.parse::<usize>() {
+            ch = parsed.clamp(512, 64 * 1024);
+        }
+    }
+    (iw, ch)
 }
 
 #[cfg(test)]
@@ -888,5 +917,38 @@ mod tests {
         } else {
             panic!("no accept");
         }
+    }
+
+    #[test]
+    fn scheduler_env_overrides_apply() {
+        // Ensure defaults
+        std::env::remove_var("HTX_SCHEDULER_PROFILE");
+        std::env::remove_var("HTX_INITIAL_WINDOW");
+        std::env::remove_var("HTX_CHUNK");
+        let (a_tx, a_rx_peer) = mpsc::channel::<Bytes>();
+        let (b_tx, b_rx_peer) = mpsc::channel::<Bytes>();
+        let a = Mux::new(a_tx, b_rx_peer);
+        let _b = Mux::new(b_tx, a_rx_peer);
+        assert_eq!(a.inner.initial_window, 64 * 1024);
+        assert_eq!(a.inner.base_chunk, 4096);
+
+        // HTTP profile
+        std::env::set_var("HTX_SCHEDULER_PROFILE", "http");
+        let (a_tx2, a_rx2) = mpsc::channel::<Bytes>();
+        let (b_tx2, b_rx2) = mpsc::channel::<Bytes>();
+        let a2 = Mux::new(a_tx2, b_rx2);
+        let _b2 = Mux::new(b_tx2, a_rx2);
+        assert_eq!(a2.inner.initial_window, 256 * 1024);
+        assert_eq!(a2.inner.base_chunk, 16 * 1024);
+
+        // Explicit overrides
+        std::env::set_var("HTX_INITIAL_WINDOW", "131072"); // 128KiB
+        std::env::set_var("HTX_CHUNK", "8192"); // 8KiB
+        let (a_tx3, a_rx3) = mpsc::channel::<Bytes>();
+        let (b_tx3, b_rx3) = mpsc::channel::<Bytes>();
+        let a3 = Mux::new(a_tx3, b_rx3);
+        let _b3 = Mux::new(b_tx3, a_rx3);
+        assert_eq!(a3.inner.initial_window, 128 * 1024);
+        assert_eq!(a3.inner.base_chunk, 8192);
     }
 }

@@ -19,7 +19,8 @@ pub struct AllowEntry {
     pub weight: Option<u32>, // unused in simple RR
 }
 
-static ROT_IDX: AtomicUsize = AtomicUsize::new(0);
+static ROT_IDX: AtomicUsize = AtomicUsize::new(0); // legacy/global (kept for fallback)
+static ROT_PER_HOST: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ALLOWLIST: Lazy<Mutex<Option<Vec<AllowEntry>>>> = Lazy::new(|| {
     let v = std::env::var("STEALTH_TPL_ALLOWLIST").ok().and_then(|s| serde_json::from_str::<Vec<AllowEntry>>(&s).ok());
     Mutex::new(v)
@@ -127,7 +128,18 @@ pub fn choose_template_rotating(origin: &str, cfg: Option<&Config>) -> Result<(T
         if let Some(list) = guard.as_ref() {
             let matches: Vec<&AllowEntry> = list.iter().filter(|e| host_matches(&e.host_pattern, &host)).collect();
             if !matches.is_empty() {
-                let idx = ROT_IDX.fetch_add(1, Ordering::Relaxed);
+                // Per-host round-robin to avoid cross-test interference and be deterministic
+                let idx = {
+                    if let Ok(mut m) = ROT_PER_HOST.lock() {
+                        let e = m.entry(host.clone()).or_insert(0);
+                        let current = *e;
+                        *e = current.saturating_add(1);
+                        current
+                    } else {
+                        // Fallback to global counter if mutex poisoned
+                        ROT_IDX.fetch_add(1, Ordering::Relaxed)
+                    }
+                };
                 let pick = matches[idx % matches.len()].template.clone();
                 let id = compute_template_id(&pick);
                 return Ok((id, pick));

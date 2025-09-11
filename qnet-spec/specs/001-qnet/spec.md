@@ -82,6 +82,19 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 - Bounties deliverable
 - Better than Betanet in key areas
 
+## Stealth-mode summary (T6.7, M2)
+- Feature flag across `htx` and `core-framing` enabling:
+	- TLS-like record sizing profiles (small/webby/bursty) with deterministic seeds
+	- Bounded timing jitter in mux write path; backpressure-aware
+	- STREAM right-padding (id||len||data||pad) applied pre-AEAD; backward-compatible decoder
+	- Plaintext buffer zeroization on encode
+	- ALPN/JA3 template rotation with 24h cache; TemplateID via deterministic CBOR
+- Decoy routing: signed catalog (Ed25519 over DET-CBOR), weighted selection, optional ALPN override
+- Bootstrap: signed seeds, exponential backoff (0.5s→8s, ±10% jitter), 24h cache, HTTPS /health probe, env gate before dial
+- Env knobs: STEALTH_SIZING_PROFILE/SEED, STEALTH_JITTER_PROFILE/SEED, STEALTH_TPL_ALLOWLIST, STEALTH_DECOY_* and STEALTH_BOOTSTRAP_*; reserved PREFER_QUIC
+	- HTX scheduler: HTX_SCHEDULER_PROFILE (http), HTX_INITIAL_WINDOW, HTX_CHUNK for flow-control defaults
+- Validation: unit tests for distributions, bounds, AEAD with padding, template rotation; example DPI scripts under `qnet-spec/templates/`
+
 ## Performance Targets and Methodology (for T6.6)
 - Micro-benchmarks:
 	- AEAD (ChaCha20-Poly1305) ≥2 GB/s per core for ≥16KiB payloads (x86_64 AVX2 reference).
