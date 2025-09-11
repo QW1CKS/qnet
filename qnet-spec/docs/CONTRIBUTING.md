@@ -10,7 +10,6 @@ Welcome to QNet! We're building the future of decentralized, censorship-resistan
 - [Quality Standards](#quality-standards)
 - [Submitting Changes](#submitting-changes)
 - [Review Process](#review-process)
-- [Bounties & Rewards](#bounties--rewards)
 
 ## 🤝 Code of Conduct
 
