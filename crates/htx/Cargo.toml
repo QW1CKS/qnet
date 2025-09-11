@@ -22,6 +22,7 @@ rustls = "0.21"
 rustls-native-certs = "0.6"
 thiserror = "1"
 serde_cbor = { version = "0.11", features = ["std"] }
+hex = "0.4"
 
 [features]
 rustls-config = []

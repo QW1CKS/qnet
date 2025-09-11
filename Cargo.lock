@@ -2348,6 +2348,7 @@ dependencies = [
  "core-framing",
  "criterion",
  "curve25519-dalek",
+ "hex",
  "md5",
  "once_cell",
  "rand 0.8.5",
