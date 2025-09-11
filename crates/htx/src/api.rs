@@ -274,9 +274,18 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     // If decoy catalog is present and verifies, route to decoy host/port
     if let Some(cat) = decoy::load_from_env() {
         if let Some((dhost, dport, alpn)) = decoy::resolve(origin, &cat) {
+            let real = host.clone();
             host = dhost;
             port = dport;
             alpn_override = alpn;
+            // Redacted logging: emit only decoy destination to logs for plausibility
+            if std::env::var("STEALTH_LOG_DECOY_ONLY").ok().as_deref() == Some("1") {
+                #[cfg(feature = "tracing")]
+                tracing::info!(target: "htx::dial", decoy_host=%host, decoy_port=%port, "routing via decoy");
+            } else {
+                #[cfg(feature = "tracing")]
+                tracing::info!(target: "htx::dial", decoy_host=%host, decoy_port=%port, real_host=%real, "routing via decoy");
+            }
         }
     }
     // Choose template via allow-list rotation when provided; otherwise fall back

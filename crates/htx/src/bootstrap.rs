@@ -138,6 +138,45 @@ pub fn weighted_pick<'a>(entries: &'a [SeedEntry], idx: usize) -> Option<&'a See
     Some(chosen)
 }
 
+/// Try to connect using seeds with backoff until success or timeout.
+/// `probe` returns Ok(()) on successful connect to the given URL.
+/// `sleep_fn` is injected for testability.
+pub fn try_connect_loop<FProbe, FSleep>(
+    seeds: &SeedCatalog,
+    cache: &mut SeedCache,
+    timeout: Duration,
+    backoff: BackoffPlan,
+    mut probe: FProbe,
+    mut sleep_fn: FSleep,
+) -> Result<String, ()>
+where
+    FProbe: FnMut(&str) -> Result<(), ()>,
+    FSleep: FnMut(Duration),
+{
+    let start = Instant::now();
+    // Try cached first
+    for url in cache.get_valid() {
+        if probe(&url).is_ok() { return Ok(url); }
+    }
+    let mut idx = 0usize;
+    let mut bo = BackoffIter::new(backoff, Some(123));
+    loop {
+        if start.elapsed() >= timeout { return Err(()); }
+        if let Some(entry) = weighted_pick(&seeds.entries, idx) {
+            if probe(&entry.url).is_ok() {
+                cache.put(entry.url.clone());
+                return Ok(entry.url.clone());
+            }
+            idx = idx.wrapping_add(1);
+        }
+        let d = bo.next().unwrap_or(Duration::from_millis(0));
+        // Ensure we don't overshoot timeout in tests
+        if start.elapsed() + d > timeout { break; }
+        sleep_fn(d);
+    }
+    Err(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +230,29 @@ mod tests {
             if pick.url == "a" { count_a += 1 } else { count_b += 1 }
         }
         assert!(count_b > count_a);
+    }
+
+    #[test]
+    fn connect_loop_succeeds_under_30s() {
+        let seeds = SeedCatalog {
+            version: 1,
+            updated_at: 0,
+            entries: vec![
+                SeedEntry { url: "https://bad1".into(), weight: 1 },
+                SeedEntry { url: "https://bad2".into(), weight: 1 },
+                SeedEntry { url: "https://good".into(), weight: 1 },
+            ],
+        };
+        let mut cache = SeedCache::new(Duration::from_secs(86400));
+        // Probe fails twice then succeeds when url == good
+        let mut attempts = 0;
+        let probe = move |url: &str| -> Result<(), ()> {
+            attempts += 1;
+            if url == "https://good" && attempts >= 3 { Ok(()) } else { Err(()) }
+        };
+        let mut slept = Duration::from_millis(0);
+        let sleep_fn = |d: Duration| { slept += d; };
+        let res = try_connect_loop(&seeds, &mut cache, Duration::from_secs(29), BackoffPlan::default(), probe, sleep_fn);
+        assert!(res.is_ok());
     }
 }

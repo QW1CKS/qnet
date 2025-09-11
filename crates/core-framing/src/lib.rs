@@ -362,4 +362,31 @@ mod stealth_tests {
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
+
+    #[test]
+    fn sizing_distribution_sanity_webby() {
+        use crate::sizing::{Profile, Sizer};
+        // With the Webby profile, roughly majority of records should be <= ~10KiB over a large sample
+        let mut s = Sizer::new(Profile::Webby, Some(2025));
+        let mut small_or_mid = 0usize;
+        let mut large = 0usize;
+        for _ in 0..2000 {
+            let len = s.choose_len(1500);
+            if len <= 10 * 1024 { small_or_mid += 1; } else { large += 1; }
+            assert!(len <= 64 * 1024);
+        }
+        // Expect at least 60% of samples to be <= 10KiB
+        assert!(small_or_mid as f32 / 2000.0 >= 0.60, "small_or_mid={} large={}", small_or_mid, large);
+    }
+
+    #[test]
+    fn jitter_bounds_webby_profile() {
+        use crate::jitter::{Jitter, Profile};
+        let mut j = Jitter::new(Profile::Webby, Some(7));
+        for _ in 0..128 {
+            let d = j.delay();
+            let ms = d.as_millis() as u64;
+            assert!(ms >= 2 && ms <= 15, "ms={} out of bounds", ms);
+        }
+    }
 }
