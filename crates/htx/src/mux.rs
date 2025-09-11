@@ -379,6 +379,7 @@ impl Mux {
         self.send_frame(frame);
     }
 
+    #[allow(dead_code)]
     fn take_credit_blocking(&self, id: StreamId, needed: usize) -> usize {
         let mut rem = self.inner.remote_credit.lock().unwrap();
         loop {
@@ -444,9 +445,12 @@ impl StreamHandle {
                 (data_budget.max(0), pad)
             };
             #[cfg(not(feature = "stealth-mode"))]
-            let (data_budget, pad_len) = (data.len().min(target), 0usize);
+            let (data_budget, _pad_len) = (data.len().min(target), 0usize);
 
+            #[cfg(feature = "stealth-mode")]
             let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+            #[cfg(not(feature = "stealth-mode"))]
+            let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
             let (chunk, rest) = data.split_at(take);
 
             // Apply bounded jitter only if we didn't just block on credit
@@ -558,8 +562,11 @@ impl Mux {
         self.send_data(0, &data);
     }
     fn send_frame(&self, frame: framing::Frame) {
-        // We may mutate a local copy to zeroize sensitive plaintext after encoding
-        let mut frame = frame;
+    // We may clone locally to zeroize sensitive plaintext after encoding without borrowing issues
+    #[cfg(feature = "stealth-mode")]
+    let mut frame = frame;
+    #[cfg(not(feature = "stealth-mode"))]
+    let frame = frame;
         let mut enc = self.inner.enc.lock().unwrap();
         if let Some(st) = enc.as_mut() {
             let nonce = Self::ctr_to_nonce(st.tx_ctr);

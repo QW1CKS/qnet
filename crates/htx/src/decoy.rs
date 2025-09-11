@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
@@ -59,6 +58,7 @@ fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+#[cfg(test)]
 fn bytes_to_hex(b: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(b.len() * 2);
@@ -108,7 +108,7 @@ pub fn resolve(origin: &str, catalog: &DecoyCatalog) -> Option<(String, u16, Opt
     let host = url.host_str()?;
     let port = url.port().unwrap_or(443);
     // collect matches
-    let mut matches: Vec<&DecoyEntry> = catalog
+    let matches: Vec<&DecoyEntry> = catalog
         .entries
         .iter()
         .filter(|e| host_matches(&e.host_pattern, host))
