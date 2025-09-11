@@ -4,7 +4,7 @@
 
 ### Core Languages
 - **Rust**: Primary language for HTX crate, mixnode, and core networking components. Chosen for memory safety, performance, and async capabilities.
-- **C**: For the C library implementation bounty. Provides wide compatibility and low-level control.
+- **C**: For the C library implementation. Provides wide compatibility and low-level control.
 - **Go**: For the spec-compliance linter. Excellent for CLI tools and concurrent processing.
 
 ### Key Libraries & Frameworks
@@ -41,11 +41,11 @@ These choices tighten the spec for early interoperability and provide clear test
 ### Component Structure
 ```
 qnet/
-├── htx-crate/          # Rust HTX client/server (bounty)
-├── mixnode/            # Rust Nym mixnode (bounty)
-├── c-lib/              # C library implementation (bounty)
-├── linter/             # Go spec-compliance linter (bounty)
-├── utls-gen/           # uTLS template generator (bounty)
+├── htx-crate/          # Rust HTX client/server
+├── mixnode/            # Rust Nym mixnode
+├── c-lib/              # C library implementation
+├── linter/             # Go spec-compliance linter
+├── utls-gen/           # uTLS template generator
 ├── core/               # Shared Rust libraries
 │   ├── crypto/         # ChaCha20, Ed25519, etc.
 │   ├── framing/        # L2 frame handling
@@ -135,7 +135,7 @@ qnet/
 
 ### Containerization
 - Multi-stage Docker builds for minimal images
-- Separate containers for each bounty component
+- Separate containers for each component
 - Docker Compose for local development
 
 ### CI/CD Pipeline
@@ -193,7 +193,7 @@ See Phase 6 Task T6.6 for detailed micro-benchmarks, zero-copy refactors, QUIC i
 ## Success Metrics
 
 - All 13 compliance points implemented
-- Bounty deliverables completed
+- Implementation deliverables completed
 - End-to-end connectivity demonstrated
 - Performance targets met
 - Security audit passed
@@ -238,4 +238,4 @@ QNet serves both developers (toolkit/framework users) and end users (ready-to-us
 - PQ crypto library maturity
 - Cover traffic generation techniques
 
-This plan provides a modular, bounty-friendly architecture that can be developed incrementally while maintaining compliance with the QNet specification.
+This plan provides a modular architecture that can be developed incrementally while maintaining compliance with the QNet specification.

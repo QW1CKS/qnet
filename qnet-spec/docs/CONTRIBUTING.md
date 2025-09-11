@@ -265,42 +265,7 @@ Brief description of changes and their purpose.
 - Keep discussions focused and productive
 - Be open to refactoring suggestions
 
-## 🎯 Bounties & Rewards
-
-QNet offers bounties for high-priority components:
-
-### Active Bounties
-
-| Component | Difficulty | Reward | Status |
-|-----------|------------|--------|--------|
-| HTX Crate Implementation | 🔴 High | 💰💰💰 | Open |
-| Nym Mixnode Integration | 🔴 High | 💰💰💰 | Open |
-| C Library Wrapper | 🟡 Medium | 💰💰 | Open |
-| Go Spec Linter | 🟡 Medium | 💰💰 | Open |
-| uTLS Template Generator | 🟢 Low | 💰 | Open |
-
-### Bounty Process
-
-1. **Claim Task:**
-   - Comment on relevant issue
-   - Get approval from maintainers
-   - Begin implementation
-
-2. **Development:**
-   - Follow standard contribution workflow
-   - Regular progress updates
-   - Meet all quality standards
-
-3. **Submission:**
-   - Complete implementation and tests
-   - Pass all review requirements
-   - Documentation included
-
-4. **Reward:**
-   - Payment via agreed method
-   - Recognition in contributor hall of fame
-
-## 🆘 Getting Help
+##  Getting Help
 
 ### Communication Channels
 

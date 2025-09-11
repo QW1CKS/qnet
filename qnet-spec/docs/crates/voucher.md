@@ -322,12 +322,12 @@ voucher/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../../memory/ai-guardrail.md)
-- Meet [Testing Rules](../../memory/testing-rules.md)
+- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
+- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License

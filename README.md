@@ -20,7 +20,7 @@
 
 ## 🌟 Overview
 
-**QNet (QuantaNet)** is a revolutionary decentralized network protocol designed to replace the vulnerable public Internet. It provides **strong user privacy**, **decentralized operation**, and **resistance to censorship** through a sophisticated layered architecture and advanced cryptography.
+**QNet (QuantaNet)** is a decentralized network protocol designed to replace the vulnerable public Internet. It provides **strong user privacy**, **decentralized operation**, and **resistance to censorship** through a sophisticated layered architecture and advanced cryptography.
 
 ### ✨ Key Features
 
@@ -145,8 +145,8 @@ curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 - **[Testing Rules](qnet-spec/memory/testing-rules.md)**: Testing requirements
 
 ### 🏗️ Technical Documentation
-- **[Architecture](docs/ARCHITECTURE.md)**: System architecture details
-- **[Contributing](docs/CONTRIBUTING.md)**: Development guidelines
+- **[Architecture](qnet-spec/docs/ARCHITECTURE.md)**: System architecture details
+- **[Contributing](qnet-spec/docs/CONTRIBUTING.md)**: Development guidelines
 - **[API Documentation](https://docs.rs/qnet)**: Generated Rust docs
 
 ### 🧪 Development Tools
@@ -304,16 +304,6 @@ We welcome contributions from developers, security researchers, and protocol des
 - **Include checklists** in PR descriptions
 - **Keep code idiomatic** and well-documented
 
-### Bounties Available
-
-| Component | Reward | Status |
-|-----------|--------|--------|
-| HTX Crate Implementation | 💰 Bounty | Open |
-| Nym Mixnode Integration | 💰 Bounty | Open |
-| C Library Wrapper | 💰 Bounty | Open |
-| Go Spec Linter | 💰 Bounty | Open |
-| uTLS Template Generator | 💰 Bounty | Open |
-
 ---
 
 ## 📊 Project Status
@@ -371,7 +361,7 @@ QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for deta
 
 ## 🌍 Community
 
-- **📖 [Documentation](docs/)**: Comprehensive guides and API references
+- **📖 [Documentation](qnet-spec/docs/)**: Comprehensive guides and API references
 - **🐛 [Issues](https://github.com/QW1CKS/qnet/issues)**: Bug reports and feature requests
 - **💬 [Discussions](https://github.com/QW1CKS/qnet/discussions)**: General discussion and Q&A
 - **📧 [Security](SECURITY.md)**: Security vulnerability reporting
@@ -384,11 +374,3 @@ QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for deta
 - **Q4 2025**: Production-ready release ⏳
 
 ---
-
-<div align="center">
-
-**Join us in building the future of decentralized networking! 🚀**
-
-*Say goodbye to surveillance and hello to true digital freedom.*
-
-</div>

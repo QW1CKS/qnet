@@ -578,7 +578,7 @@ T1.1
 
 ## Success Criteria
 - All High tasks delivered; E2E HTX echo demo; compliance MINIMAL profile passes.
-- Modular crates ready for bounty components and future extension.
+- Modular crates ready for future extension.
 
 ## Physical Testing Tasks
 This section tracks hands-on testing of QNet using physical setups (e.g., two local computers). Use the table below to log inputs, outputs, notes, and failure reasons for each test. Tasks progress from basic setup to advanced scenarios.

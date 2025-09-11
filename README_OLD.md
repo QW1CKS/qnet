@@ -124,7 +124,7 @@ qnet/
 
 ### Core Languages
 - **Rust**: Primary for HTX, mixnode, and core networking—memory-safe, performant, async-ready.
-- **C**: For cross-platform C library bounty.
+- **C**: For cross-platform C library.
 - **Go**: For spec-compliance linter CLI tools.
 
 ### Key Libraries & Frameworks
@@ -617,7 +617,7 @@ QNet offers bounties for key components to accelerate development:
 - **Spec Linter**: Compliance checker tool
 - **uTLS Generator**: ClientHello template utility
 
-See `qnet-spec/specs/001-qnet/spec.md` for detailed bounty requirements.
+See `qnet-spec/specs/001-qnet/spec.md` for detailed implementation requirements.
 
 ## Security
 
