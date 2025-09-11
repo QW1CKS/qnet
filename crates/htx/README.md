@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/htx.svg)](https://crates.io/crates/htx)
 [![Documentation](https://docs.rs/htx/badge.svg)](https://docs.rs/htx)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **QNet's tunneling protocol** - Secure, authenticated key exchange and encrypted tunnel establishment with forward secrecy and post-quantum resistance.
 
@@ -271,7 +271,7 @@ htx/
 
 ## Protocol Specification
 
-See [HTX Protocol Specification](../../specs/htx-protocol.md) for detailed protocol documentation.
+See [HTX Protocol Specification](../../qnet-spec/specs/001-qnet/spec.md) for detailed protocol documentation.
 
 ### Noise XK Pattern
 HTX implements the Noise XK pattern:
@@ -291,7 +291,7 @@ HTX implements the Noise XK pattern:
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

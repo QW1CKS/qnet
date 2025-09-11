@@ -1,6 +1,6 @@
 # QNet Specification
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
 **Complete technical specification for QNet** - Protocol specifications, implementation plans, testing frameworks, and governance documentation.
 
@@ -20,11 +20,8 @@ The `qnet-spec` directory contains the complete technical specification for the 
 ```
 qnet-spec/
 ├── specs/                 # Protocol specifications
-│   ├── qnet-protocol.md   # Main protocol specification
-│   ├── htx-protocol.md    # HTX tunneling protocol
-│   ├── framing-protocol.md # Message framing protocol
-│   ├── identity-protocol.md # Identity management protocol
-│   └── routing-protocol.md # Routing protocol
+│   └── 001-qnet/
+│       └── spec.md        # Main QNet specification
 ├── memory/                # AI and development guidelines
 │   ├── ai-guardrail.md    # AI development guardrails
 │   ├── constitution.md    # Project constitution
@@ -53,7 +50,7 @@ qnet-spec/
 - **Interoperability**: Cross-implementation compatibility
 - **Extensibility**: Protocol extension mechanisms
 
-#### [HTX Protocol](specs/htx-protocol.md)
+#### [HTX Protocol](specs/001-qnet/spec.md)
 **Authenticated key exchange and tunneling:**
 - **Noise XK Handshake**: Authenticated key exchange pattern
 - **Forward Secrecy**: Ephemeral key rotation

@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-governance.svg)](https://crates.io/crates/core-governance)
 [![Documentation](https://docs.rs/core-governance/badge.svg)](https://docs.rs/core-governance)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Decentralized governance system for QNet** - Democratic decision-making, stake-based voting, constitution enforcement, and protocol upgrades.
 
@@ -353,7 +353,7 @@ core-governance/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

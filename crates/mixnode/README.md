@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/mixnode.svg)](https://crates.io/crates/mixnode)
 [![Documentation](https://docs.rs/mixnode/badge.svg)](https://docs.rs/mixnode)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **QNet mixnet node implementation** - High-performance mix network nodes with automated key management, traffic mixing, and network participation.
 
@@ -403,7 +403,7 @@ mixnode/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

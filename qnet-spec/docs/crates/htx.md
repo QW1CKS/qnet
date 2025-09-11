@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/htx.svg)](https://crates.io/crates/htx)
 [![Documentation](https://docs.rs/htx/badge.svg)](https://docs.rs/htx)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **QNet's tunneling protocol** - Secure, authenticated key exchange and encrypted tunnel establishment with forward secrecy and post-quantum resistance.
 
@@ -271,7 +271,7 @@ htx/
 
 ## Protocol Specification
 
-See [HTX Protocol Specification](../qnet-spec/specs/htx-protocol.md) for detailed protocol documentation.
+See [HTX Protocol Specification](../../specs/001-qnet/spec.md) for detailed protocol documentation.
 
 ### Noise XK Pattern
 HTX implements the Noise XK pattern:
@@ -295,17 +295,17 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
+Licensed under the MIT License. See [LICENSE](../../../LICENSE) for details.
 
 ## Security
 
-If you discover a security vulnerability, please see our [Security Policy](../../SECURITY.md).
+If you discover a security vulnerability, please see our [Security Policy](../../../SECURITY.md).
 
 ---
 

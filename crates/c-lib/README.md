@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/c-lib.svg)](https://crates.io/crates/c-lib)
 [![Documentation](https://docs.rs/c-lib/badge.svg)](https://docs.rs/c-lib)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **C language bindings for QNet** - Foreign function interface (FFI) for integrating QNet functionality into C/C++ applications.
 
@@ -434,7 +434,7 @@ c-lib/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

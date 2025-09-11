@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/voucher.svg)](https://crates.io/crates/voucher)
 [![Documentation](https://docs.rs/voucher/badge.svg)](https://docs.rs/voucher)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Cryptographic voucher system for QNet** - Secure token issuance, verification, and management with privacy-preserving redemption.
 
@@ -322,7 +322,7 @@ voucher/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-identity.svg)](https://crates.io/crates/core-identity)
 [![Documentation](https://docs.rs/core-identity/badge.svg)](https://docs.rs/core-identity)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **Self-certifying identity system for QNet** - Decentralized identity management with cryptographic self-certification, reputation systems, and privacy-preserving authentication.
 
@@ -307,17 +307,17 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
+Licensed under the MIT License. See [LICENSE](../../../LICENSE) for details.
 
 ## Security
 
-If you discover a security vulnerability, please see our [Security Policy](../../SECURITY.md).
+If you discover a security vulnerability, please see our [Security Policy](../../../SECURITY.md).
 
 ---
 

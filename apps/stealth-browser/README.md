@@ -1,6 +1,6 @@
 # Stealth Browser
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Privacy-preserving web browser for QNet** - Anonymous browsing with integrated mixnet protection, decentralized identity, and secure communication.
 
@@ -384,7 +384,7 @@ npm run test:e2e
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

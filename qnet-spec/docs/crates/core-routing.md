@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-routing.svg)](https://crates.io/crates/core-routing)
 [![Documentation](https://docs.rs/core-routing/badge.svg)](https://docs.rs/core-routing)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **Intelligent routing engine for QNet** - Multi-path routing, traffic optimization, QoS management, and adaptive path selection for optimal network performance.
 
@@ -361,8 +361,8 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License

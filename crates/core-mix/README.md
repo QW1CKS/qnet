@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-mix.svg)](https://crates.io/crates/core-mix)
 [![Documentation](https://docs.rs/core-mix/badge.svg)](https://docs.rs/core-mix)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Privacy-preserving mix network for QNet** - Anonymous communication through layered encryption, traffic mixing, and cryptographic unlinkability.
 
@@ -318,7 +318,7 @@ core-mix/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

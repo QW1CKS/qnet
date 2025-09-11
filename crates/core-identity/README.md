@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-identity.svg)](https://crates.io/crates/core-identity)
 [![Documentation](https://docs.rs/core-identity/badge.svg)](https://docs.rs/core-identity)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Self-certifying identity system for QNet** - Decentralized identity management with cryptographic self-certification, reputation systems, and privacy-preserving authentication.
 
@@ -303,7 +303,7 @@ core-identity/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

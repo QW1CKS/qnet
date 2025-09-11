@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-mesh.svg)](https://crates.io/crates/core-mesh)
 [![Documentation](https://docs.rs/core-mesh/badge.svg)](https://docs.rs/core-mesh)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Decentralized mesh networking for QNet** - Peer-to-peer connectivity with automatic routing, NAT traversal, and resilient overlay networks.
 
@@ -315,7 +315,7 @@ core-mesh/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

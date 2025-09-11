@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/voucher.svg)](https://crates.io/crates/voucher)
 [![Documentation](https://docs.rs/voucher/badge.svg)](https://docs.rs/voucher)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **Cryptographic voucher system for QNet** - Secure token issuance, verification, and management with privacy-preserving redemption.
 
@@ -326,8 +326,8 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License

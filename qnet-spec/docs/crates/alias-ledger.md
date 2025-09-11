@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/alias-ledger.svg)](https://crates.io/crates/alias-ledger)
 [![Documentation](https://docs.rs/alias-ledger/badge.svg)](https://docs.rs/alias-ledger)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **Decentralized alias system for QNet** - Human-readable names for identities, services, and resources with cryptographic verification.
 
@@ -355,8 +355,8 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License

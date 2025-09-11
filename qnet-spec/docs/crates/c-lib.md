@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/c-lib.svg)](https://crates.io/crates/c-lib)
 [![Documentation](https://docs.rs/c-lib/badge.svg)](https://docs.rs/c-lib)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../../LICENSE)
 
 **C language bindings for QNet** - Foreign function interface (FFI) for integrating QNet functionality into C/C++ applications.
 
@@ -438,8 +438,8 @@ See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and 
 
 ### Development Requirements
 
-- Follow [AI Guardrail](../qnet-spec/memory/ai-guardrail.md)
-- Meet [Testing Rules](../qnet-spec/memory/testing-rules.md)
+- Follow [AI Guardrail](../../memory/ai-guardrail.md)
+- Meet [Testing Rules](../../memory/testing-rules.md)
 - Include `AI-Guardrail: PASS` and `Testing-Rules: PASS` in commits
 
 ## License

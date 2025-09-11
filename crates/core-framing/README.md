@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-framing.svg)](https://crates.io/crates/core-framing)
 [![Documentation](https://docs.rs/core-framing/badge.svg)](https://docs.rs/core-framing)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Frame encoding/decoding for QNet** - Efficient, secure message framing with length prefixing, AEAD encryption, and integrity verification.
 
@@ -249,7 +249,7 @@ match result {
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

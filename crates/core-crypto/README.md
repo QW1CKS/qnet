@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-crypto.svg)](https://crates.io/crates/core-crypto)
 [![Documentation](https://docs.rs/core-crypto/badge.svg)](https://docs.rs/core-crypto)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Core cryptographic primitives for QNet** - Thin wrappers around the [ring](https://github.com/briansmith/ring) cryptography library, providing a consistent API for QNet's cryptographic operations.
 
@@ -210,7 +210,7 @@ core-crypto/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/alias-ledger.svg)](https://crates.io/crates/alias-ledger)
 [![Documentation](https://docs.rs/alias-ledger/badge.svg)](https://docs.rs/alias-ledger)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Decentralized alias system for QNet** - Human-readable names for identities, services, and resources with cryptographic verification.
 
@@ -351,7 +351,7 @@ alias-ledger/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 

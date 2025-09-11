@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/core-routing.svg)](https://crates.io/crates/core-routing)
 [![Documentation](https://docs.rs/core-routing/badge.svg)](https://docs.rs/core-routing)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
 **Intelligent routing engine for QNet** - Multi-path routing, traffic optimization, QoS management, and adaptive path selection for optimal network performance.
 
@@ -357,7 +357,7 @@ core-routing/
 
 ## Contributing
 
-See the main [Contributing Guide](../../docs/CONTRIBUTING.md) for development setup and contribution guidelines.
+See the main [Contributing Guide](../../qnet-spec/docs/CONTRIBUTING.md) for development setup and contribution guidelines.
 
 ### Development Requirements
 
