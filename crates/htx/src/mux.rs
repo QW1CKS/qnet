@@ -632,7 +632,20 @@ impl Mux {
 // Overrides: HTX_INITIAL_WINDOW, HTX_CHUNK (bytes, usize), if set.
 fn scheduler_defaults_from_env() -> (usize, usize) {
     use std::env;
-    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| String::from("default"));
+    // Compatibility flag: if PREFER_QUIC is set truthy and no explicit HTX_SCHEDULER_PROFILE is provided,
+    // default to the HTTP-friendly profile.
+    let prefer_quic = env::var("PREFER_QUIC")
+        .ok()
+        .map(|v| {
+            let v = v.to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
+        .unwrap_or(false);
+
+    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| {
+        if prefer_quic { String::from("http") } else { String::from("default") }
+    });
+
     let (mut iw, mut ch) = if profile.eq_ignore_ascii_case("http") {
         (256 * 1024, 16 * 1024)
     } else {
@@ -930,6 +943,7 @@ mod tests {
     fn scheduler_env_overrides_apply() {
         // Ensure defaults
         std::env::remove_var("HTX_SCHEDULER_PROFILE");
+        std::env::remove_var("PREFER_QUIC");
         std::env::remove_var("HTX_INITIAL_WINDOW");
         std::env::remove_var("HTX_CHUNK");
         let (a_tx, a_rx_peer) = mpsc::channel::<Bytes>();
@@ -938,6 +952,16 @@ mod tests {
         let _b = Mux::new(b_tx, a_rx_peer);
         assert_eq!(a.inner.initial_window, 64 * 1024);
         assert_eq!(a.inner.base_chunk, 4096);
+
+        // PREFER_QUIC should bias to HTTP profile when no explicit profile is set
+        std::env::set_var("PREFER_QUIC", "1");
+        let (a_tx_pq, a_rx_pq) = mpsc::channel::<Bytes>();
+        let (b_tx_pq, b_rx_pq) = mpsc::channel::<Bytes>();
+        let a_pq = Mux::new(a_tx_pq, b_rx_pq);
+        let _b_pq = Mux::new(b_tx_pq, a_rx_pq);
+        assert_eq!(a_pq.inner.initial_window, 256 * 1024);
+        assert_eq!(a_pq.inner.base_chunk, 16 * 1024);
+        std::env::remove_var("PREFER_QUIC");
 
         // HTTP profile
         std::env::set_var("HTX_SCHEDULER_PROFILE", "http");
