@@ -39,7 +39,7 @@
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture {#architecture}
 
 QNet's innovative **7-layer architecture** ensures seamless, secure connectivity:
 
@@ -72,7 +72,7 @@ QNet's innovative **7-layer architecture** ensures seamless, secure connectivity
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start {#quick-start}
 
 ### Prerequisites
 
@@ -132,7 +132,7 @@ curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 
 ---
 
-## 📚 Documentation
+## 📚 Documentation {#documentation}
 
 ### 📖 Specifications
 - **[QNet Specification](qnet-spec/specs/001-qnet/spec.md)**: Complete technical specification
@@ -272,7 +272,7 @@ cd linter && go build -o qnet-lint ./cmd/qnet-lint
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contributing {#contributing}
 
 We welcome contributions from developers, security researchers, and protocol designers!
 
@@ -353,7 +353,7 @@ QNet implements multiple layers of security:
 
 ---
 
-## 📄 License
+## 📄 License {#license}
 
 QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for details.
 
