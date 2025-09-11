@@ -1,0 +1,10 @@
+{
+  "catalog": {
+    "version": 1,
+    "updated_at": 1726000001,
+    "entries": [
+      { "url": "https://seed1.example.net", "weight": 3 },
+      { "url": "https://seed2.example.net", "weight": 1 }
+    ]
+  }
+}
