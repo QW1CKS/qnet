@@ -289,4 +289,40 @@ mod tests {
                 assert!(!ja3_1.is_empty());
                 assert!(!ja3_2.is_empty());
         }
+
+            #[test]
+            fn ja3_fixture_hash_for_known_template() {
+                let tpl = Template {
+                    alpn: vec!["h2".into(), "http/1.1".into()],
+                    sig_algs: vec!["rsa_pss_rsae_sha256".into()],
+                    groups: vec!["x25519".into(), "secp256r1".into()],
+                    extensions: vec![0, 11, 10, 35, 16, 23, 43, 51],
+                };
+                // Compute expected JA3 using the same logic
+                let ja3 = compute_ja3(&tpl);
+            // The value should be stable and equal to the fixture hash for this template
+            assert_eq!(ja3, compute_ja3(&tpl));
+            assert_eq!(ja3, "fd2e42d63964a4223054e5e71e8250e4");
+            assert_eq!(ja3.len(), 32); // md5 hex length
+            }
+
+            #[test]
+            fn allowlist_rotation_cadence_round_robin_distribution() {
+                __test_set_allowlist(r#"[
+                    {"host_pattern":"example.org","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
+                    {"host_pattern":"example.org","template":{"alpn":["http/1.1"],"sig_algs":["ecdsa_secp256r1_sha256"],"groups":["secp256r1"],"extensions":[0,10,11,35,16,23,43,51]}},
+                    {"host_pattern":"example.org","template":{"alpn":["h2"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,51,43]}}
+                ]"#);
+                let mut counts = std::collections::HashMap::<String, usize>::new();
+                for _ in 0..300 {
+                    let (_id, tpl) = choose_template_rotating("https://example.org", None).unwrap();
+                    let key = tpl.alpn.join("+");
+                    *counts.entry(key).or_default() += 1;
+                }
+                // Expect near-equal distribution (round robin): differences at most 1
+                let mut vals: Vec<usize> = counts.values().copied().collect();
+                vals.sort_unstable();
+                assert_eq!(vals.len(), 3);
+                assert!(vals[2] - vals[0] <= 1, "distribution skewed: {:?}", counts);
+            }
 }

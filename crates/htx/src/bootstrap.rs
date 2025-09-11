@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use core_cbor as cbor;
 use core_crypto as crypto;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SeedEntry {
@@ -175,6 +176,29 @@ where
         sleep_fn(d);
     }
     Err(())
+}
+
+/// Check seed health by performing a simple HTTP GET to /health (or the provided path if non-root).
+pub fn check_health(seed_url: &str, timeout: Duration) -> Result<(), ()> {
+    let mut url = Url::parse(seed_url).map_err(|_| ())?;
+    if url.path() == "/" { url.set_path("/health"); }
+    let client = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
+        .timeout(timeout)
+        .build()
+        .map_err(|_| ())?;
+    let resp = client.get(url).send().map_err(|_| ())?;
+    if resp.status().is_success() { Ok(()) } else { Err(()) }
+}
+
+/// Load seeds from env and attempt to find a healthy one within `timeout`.
+/// Returns the working seed URL on success.
+pub fn connect_seed_from_env(timeout: Duration) -> Option<String> {
+    let seeds = load_from_env()?;
+    let mut cache = SeedCache::new(Duration::from_secs(24 * 60 * 60));
+    let probe = |u: &str| check_health(u, Duration::from_secs(3));
+    let sleep_fn = |d: Duration| std::thread::sleep(d);
+    try_connect_loop(&seeds, &mut cache, timeout, BackoffPlan::default(), probe, sleep_fn).ok()
 }
 
 #[cfg(test)]

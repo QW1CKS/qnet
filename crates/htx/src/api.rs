@@ -262,9 +262,15 @@ fn spawn_tls_pump<S: Read + Write + Send + 'static>(
 pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     use crate::inner::Caps;
     use crate::tls_mirror::{build_client_hello, choose_template_rotating, Config as TlsCfg, Template};
-    use crate::decoy;
+    use crate::{decoy, bootstrap};
     use std::time::Duration;
     use url::Url;
+
+    // If bootstrap seeds are configured, ensure we can reach at least one healthy seed first (<30s)
+    if std::env::var("STEALTH_BOOTSTRAP_CATALOG_JSON").is_ok() {
+        let ok = bootstrap::connect_seed_from_env(Duration::from_secs(29)).is_some();
+        if !ok { return Err(ApiError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "bootstrap timeout"))); }
+    }
 
     // Calibrate and build client config
     let url = Url::parse(origin).map_err(|_| ApiError::Url)?;
