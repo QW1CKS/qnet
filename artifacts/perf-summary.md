@@ -1,6 +1,34 @@
-# Performance Summary (T6.6)
+# Performance Summary (T6.6/T6.7)
 
 This summarizes the latest local perf run using the provided scripts. Criterion JSONs are under `artifacts/criterion/`.
+
+## QUIC parity (T6.7 M2)
+
+Bench: core-mesh echo (TCP vs QUIC) with features "with-libp2p quic" in quick mode (stable on this host). Source JSONs: `target/criterion/mesh_echo/*/base/`.
+
+Median comparison
+
+| Case | TCP median (ms) | QUIC median (ms) | Delta | PASS/FAIL |
+|---|---:|---:|---:|---|
+| Single RT | 1003.090 | 1003.611 | +0.05% | PASS |
+| Persistent RTs (n=20) | 2003.840 | 2004.461 | +0.03% | PASS |
+| Simulated 20ms/1% loss | 2001.982 | 2004.014 | +0.10% | PASS |
+| Concurrent inflight=8 (20ms/1% loss) | 2002.616 | 2005.379 | +0.14% | PASS |
+
+Acceptance p95 check (QUIC p95 ≤ TCP p95 × 1.1):
+- Single RT: TCP 1004.766 vs QUIC 1005.876 (Δ +0.11%) → PASS
+- Persistent RTs: TCP 2005.581 vs QUIC 2008.128 (Δ +0.13%) → PASS
+- Sim 20ms/1%: TCP 2005.384 vs QUIC 2007.040 (Δ +0.08%) → PASS
+- Concurrent inflight=8: TCP 2005.535 vs QUIC 2007.498 (Δ +0.10%) → PASS
+
+Notes: Full mode on this host uses 5s measurement × 20 samples × 8 functions, which takes a long time; quick mode provides tight parity numbers and satisfies acceptance.
+
+Raw medians (ns → ms):
+- mesh_echo/tcp/1024: 1003090150.5 → 1003.090
+- mesh_echo/quic/1024: 1003611268.5 → 1003.611
+- tcp_pconn/20: 2003840030.0 → 2003.840; quic_pconn/20: 2004460666.5 → 2004.461
+- tcp_sim_20ms_1pct/20: 2001982341.5 → 2001.982; quic_sim_20ms_1pct/20: 2004013824.0 → 2004.014
+- tcp_pconn_c8_sim_20ms_1pct/20: 2002616081.0 → 2002.616; quic_pconn_c8_sim_20ms_1pct/20: 2005377908.5 → 2005.379
 
 ## Run Metadata
 - Date/Time (UTC): 2025-09-10
@@ -33,7 +61,7 @@ Extracted from `windows-hw-profile.txt`:
 - HTX stream write/read
   - 16KiB: median ≈ 690 µs (stressed configuration; low absolute throughput on this host)
 - Mesh echo (libp2p)
-  - Full mode budgets are capped; use the quick, uncapped rr_compare example below for RTT deltas.
+  - Full mode budgets are capped; use quick mode for parity checks on this host. See the QUIC parity section above.
 
 ### Uncapped request-response compare (rr_compare)
 - Scenario: 100 sequential requests, simulated RTT 20 ms, loss 1%.
