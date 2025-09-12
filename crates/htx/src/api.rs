@@ -281,6 +281,8 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     if let Some(cat) = decoy::load_from_env() {
         if let Some((dhost, dport, alpn)) = decoy::resolve(origin, &cat) {
             let real = host.clone();
+            #[allow(unused_variables)]
+            let _ = &real; // prevent unused warning when tracing feature is off
             host = dhost;
             port = dport;
             alpn_override = alpn;

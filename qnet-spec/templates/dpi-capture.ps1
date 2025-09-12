@@ -7,7 +7,10 @@ param(
     [string]$Interface, # Optional: tshark interface index or name (e.g., 1 or "Wi-Fi")
 
     # Compute default output directory after param-binding for better PS 5.1 compatibility
-    [string]$OutDir
+    [string]$OutDir,
+
+    # Optional: full path to tshark.exe (helps when PATH is not propagated into Job runspaces)
+    [string]$TsharkExe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -28,14 +31,19 @@ if ($DurationSeconds -lt 1) {
     Write-Error "-DurationSeconds must be a positive integer (got: $DurationSeconds)"
 }
 
-function Require-Tool {
-    param([string]$Name)
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        Write-Error "Required tool '$Name' not found in PATH. Install Wireshark (includes tshark) and ensure tshark.exe is on PATH."
-    }
+function Resolve-Tshark {
+    param([string]$Explicit)
+    if ($Explicit -and (Test-Path -LiteralPath $Explicit)) { return $Explicit }
+    $cmd = Get-Command 'tshark' -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @()
+    if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'Wireshark\tshark.exe') }
+    if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} 'Wireshark\tshark.exe') }
+    foreach ($p in $candidates) { if (Test-Path -LiteralPath $p) { return $p } }
+    Write-Error "Required tool 'tshark' not found. Install Wireshark (includes tshark) and ensure tshark.exe is on PATH or pass -TsharkExe."
 }
 
-Require-Tool -Name 'tshark'
+$tshark = Resolve-Tshark -Explicit $TsharkExe
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -53,7 +61,7 @@ if (-not $svc) {
             Write-Warning "Failed to start Npcap service automatically: $($_.Exception.Message). You may need to repair/reinstall Npcap."
         }
     } else {
-        Write-Warning "Npcap service is stopped and current shell is not elevated. Open PowerShell as Administrator and run: `nSet-Service -Name npcap -StartupType Automatic; Start-Service -Name npcap` then re-run this script."
+        Write-Warning "Npcap service is stopped and current shell is not elevated. Open PowerShell as Administrator and run: Set-Service -Name npcap -StartupType Automatic; Start-Service -Name npcap then re-run this script."
     }
 }
 
@@ -67,15 +75,27 @@ Write-Host "Capturing $DurationSeconds s on port 443 -> $outfile"
 
 if (-not $Interface) {
     Write-Host "No interface specified. Available interfaces:" -ForegroundColor Yellow
-    tshark -D
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    Start-Process -FilePath $tshark -ArgumentList @('-D') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr | Out-Null
+    if (Test-Path -LiteralPath $tmpOut) { Get-Content -LiteralPath $tmpOut | Out-Host }
+    if (Test-Path -LiteralPath $tmpErr) { Get-Content -LiteralPath $tmpErr | Out-Host }
+    Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut, $tmpErr
     Write-Host "Tip: Re-run with -Interface <index> (from list above) for non-interactive use." -ForegroundColor Yellow
 }
 
-$args = @()
-if ($Interface) { $args += @('-i', $Interface) }
-$args += @('-f', $filter, '-a', "duration:$DurationSeconds", '-w', $outfile)
+# Build tshark argument list. Avoid using the automatic $args variable name.
+$tsharkArgs = @()
+if ($Interface) { $tsharkArgs += @('-i', "$Interface") }
+# Pass capture filter only via -f to avoid duplicate-filter warnings.
+$tsharkArgs += @('-f', "$filter", '-a', "duration:$DurationSeconds", '-w', "$outfile")
 
-& tshark @args
+$tmpOut2 = [System.IO.Path]::GetTempFileName()
+$tmpErr2 = [System.IO.Path]::GetTempFileName()
+Start-Process -FilePath $tshark -ArgumentList $tsharkArgs -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tmpOut2 -RedirectStandardError $tmpErr2 | Out-Null
+if (Test-Path -LiteralPath $tmpOut2) { Get-Content -LiteralPath $tmpOut2 | Out-Host }
+if (Test-Path -LiteralPath $tmpErr2) { Get-Content -LiteralPath $tmpErr2 | Out-Host }
+Remove-Item -Force -ErrorAction SilentlyContinue $tmpOut2, $tmpErr2
 
 Write-Host "Saved: $outfile"
 Write-Host "Done."

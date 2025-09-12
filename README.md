@@ -107,6 +107,32 @@ cargo run -p stealth-browser --features with-tauri
 curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 ```
 
+### Demo: Secure Connection
+
+Demonstrate a full secure connection with bootstrap, TLS handshake, decoy routing, and DPI evasion verification:
+
+**Windows (PowerShell):**
+```powershell
+# Set up seeds (replace with your Cloudflare tunnels)
+$seeds = "https://your-tunnel1.trycloudflare.com https://your-tunnel2.trycloudflare.com"
+
+# Run one-click demo with decoy and DPI capture
+.\scripts\demo-secure-connection.ps1 `
+  -WithDecoy `
+  -Origin https://www.wikipedia.org `
+  -CaptureSeconds 60 `
+  -Interface 3 `
+  -SeedsList $seeds
+```
+
+**Features:**
+- ✅ Bootstrap seed discovery
+- ✅ Real TLS handshake + inner HTX secure stream
+- ✅ Decoy routing for censorship evasion
+- ✅ DPI capture and comparison (PASS if traffic looks like normal TLS)
+
+See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting.
+
 ### Development Setup
 
 1. **Clone the repository:**
@@ -147,6 +173,7 @@ curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 ### 🏗️ Technical Documentation
 - **[Architecture](qnet-spec/docs/ARCHITECTURE.md)**: System architecture details
 - **[Contributing](qnet-spec/docs/CONTRIBUTING.md)**: Development guidelines
+- **[Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md)**: Step-by-step secure connection demo
 - **[API Documentation](https://docs.rs/qnet)**: Generated Rust docs
 
 ### 🧪 Development Tools
