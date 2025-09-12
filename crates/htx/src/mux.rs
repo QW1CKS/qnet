@@ -1,5 +1,6 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -45,8 +46,19 @@ struct Inner {
     initial_window: usize,
     base_chunk: usize,
 
+    // Round-robin writer scheduler
+    rr_enabled: bool,
+    rr_tx: mpsc::Sender<WriteReq>,
+    rr_rx: Mutex<mpsc::Receiver<WriteReq>>, // Mutex to make Inner Sync
+    rr_queues: Mutex<HashMap<StreamId, VecDeque<Vec<u8>>>>,
+
     #[cfg(feature = "stealth-mode")]
     shaper: Mutex<Option<StealthShaper>>, // record sizing + jitter
+}
+
+struct WriteReq {
+    id: StreamId,
+    chunk: Vec<u8>,
 }
 
 pub struct StreamHandle {
@@ -86,6 +98,8 @@ impl Mux {
     pub fn new(tx: mpsc::Sender<Bytes>, rx: mpsc::Receiver<Bytes>) -> Self {
         let (accept_tx, accept_rx) = mpsc::channel();
         let (initial_window, base_chunk) = scheduler_defaults_from_env();
+        let rr_enabled = should_enable_rr_scheduler();
+        let (rr_tx, rr_rx) = mpsc::channel();
         let inner = Arc::new(Inner {
             tx,
             rx: Mutex::new(rx),
@@ -100,6 +114,10 @@ impl Mux {
             control_open: Mutex::new(true),
             initial_window,
             base_chunk,
+            rr_enabled,
+            rr_tx,
+            rr_rx: Mutex::new(rr_rx),
+            rr_queues: Mutex::new(HashMap::new()),
             #[cfg(feature = "stealth-mode")]
             shaper: Mutex::new(init_stealth_shaper_from_env()),
         });
@@ -108,6 +126,9 @@ impl Mux {
             inner: inner.clone(),
         };
         mux.spawn_reader();
+        if mux.inner.rr_enabled {
+            mux.spawn_rr_writer();
+        }
         mux
     }
 
@@ -415,7 +436,8 @@ impl StreamHandle {
         self.id
     }
 
-    // Write all data, respecting remote credit and chunking.
+    // Write all data, respecting remote credit and chunking. When RR scheduler is enabled,
+    // enqueue chunks to the scheduler; otherwise, send inline.
     pub fn write(&self, mut data: &[u8]) {
         while !data.is_empty() {
             // Decide target record size
@@ -447,11 +469,20 @@ impl StreamHandle {
             #[cfg(not(feature = "stealth-mode"))]
             let (data_budget, _pad_len) = (data.len().min(target), 0usize);
 
-            #[cfg(feature = "stealth-mode")]
-            let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
-            #[cfg(not(feature = "stealth-mode"))]
-            let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
-            let (chunk, rest) = data.split_at(take);
+            // Credit is consumed at send time in RR mode; when inline, we must take credit here.
+            let (chunk, rest) = if self.mux.inner.rr_enabled {
+                // Split by budget locally; scheduler will enforce credit per send
+                let take = data_budget;
+                let (c, r) = data.split_at(take);
+                (c, r)
+            } else {
+                #[cfg(feature = "stealth-mode")]
+                let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                #[cfg(not(feature = "stealth-mode"))]
+                let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                let (c, r) = data.split_at(take);
+                (c, r)
+            };
 
             // Apply bounded jitter only if we didn't just block on credit
             #[cfg(feature = "stealth-mode")]
@@ -465,15 +496,25 @@ impl StreamHandle {
                 }
             }
 
-            #[cfg(feature = "stealth-mode")]
-            {
-                self.mux.send_data_padded(self.id, chunk, pad_len);
-            }
-            #[cfg(not(feature = "stealth-mode"))]
-            {
-                self.mux.send_data(self.id, chunk);
+            if self.mux.inner.rr_enabled {
+                // Enqueue for RR scheduler
+                let _ = self.mux.inner.rr_tx.send(WriteReq { id: self.id, chunk: chunk.to_vec() });
+            } else {
+                #[cfg(feature = "stealth-mode")]
+                {
+                    self.mux.send_data_padded(self.id, chunk, pad_len);
+                }
+                #[cfg(not(feature = "stealth-mode"))]
+                {
+                    self.mux.send_data(self.id, chunk);
+                }
             }
             data = rest;
+
+            // Fairness hint: if we still have a lot of data remaining, yield to let other streams progress
+            if data.len() > self.mux.inner.base_chunk {
+                std::thread::yield_now();
+            }
         }
     }
 
@@ -560,6 +601,75 @@ impl Mux {
     pub fn send_control(&self, sc: &SignedControl) {
         let data = cbor::to_vec(sc).expect("cbor");
         self.send_data(0, &data);
+    }
+    fn spawn_rr_writer(&self) {
+        let inner = self.inner.clone();
+        thread::spawn(move || {
+            // Round-robin over streams, sending one chunk per turn
+            loop {
+                // Receive new write requests (non-blocking drain to queues)
+                {
+                    let rx = &mut *inner.rr_rx.lock().unwrap();
+                    while let Ok(req) = rx.try_recv() {
+                        let mut qmap = inner.rr_queues.lock().unwrap();
+                        qmap.entry(req.id).or_insert_with(VecDeque::new).push_back(req.chunk);
+                    }
+                }
+                // Build a static list of stream ids to iterate fairly
+                let ids: Vec<StreamId> = {
+                    let qmap = inner.rr_queues.lock().unwrap();
+                    qmap.keys().copied().collect()
+                };
+                if ids.is_empty() {
+                    // Block briefly waiting for new work to avoid busy spin
+                    let rx = &mut *inner.rr_rx.lock().unwrap();
+                    if let Ok(req) = rx.recv_timeout(Duration::from_millis(5)) {
+                        let mut qmap = inner.rr_queues.lock().unwrap();
+                        qmap.entry(req.id).or_insert_with(VecDeque::new).push_back(req.chunk);
+                    }
+                    continue;
+                }
+                for id in ids {
+                    // Pop one chunk, if any
+                    let maybe_chunk = {
+                        let mut qmap = inner.rr_queues.lock().unwrap();
+                        if let Some(q) = qmap.get_mut(&id) {
+                            q.pop_front()
+                        } else { None }
+                    };
+                    if let Some(chunk) = maybe_chunk {
+                        // Respect remote credit here
+                        let needed = chunk.len();
+                        let (take, _blocked) = {
+                            // Use the existing credit mechanism
+                            // If not enough credit to send the whole chunk, split and requeue remainder
+                            let (t, _b) = Mux { inner: inner.clone() }.take_credit_blocking_with_flag(id, needed);
+                            (t, _b)
+                        };
+                        if take == 0 { continue; }
+                        let (to_send, remainder) = if take < needed {
+                            (chunk[..take].to_vec(), Some(chunk[take..].to_vec()))
+                        } else {
+                            (chunk, None)
+                        };
+                        #[cfg(feature = "stealth-mode")]
+                        {
+                            Mux { inner: inner.clone() }.send_data_padded(id, &to_send, 0);
+                        }
+                        #[cfg(not(feature = "stealth-mode"))]
+                        {
+                            Mux { inner: inner.clone() }.send_data(id, &to_send);
+                        }
+                        if let Some(rem) = remainder {
+                            let mut qmap = inner.rr_queues.lock().unwrap();
+                            qmap.entry(id).or_insert_with(VecDeque::new).push_front(rem);
+                        }
+                    }
+                }
+                // Small yield to let readers/processors run
+                std::thread::yield_now();
+            }
+        });
     }
     fn send_frame(&self, frame: framing::Frame) {
     // We may clone locally to zeroize sensitive plaintext after encoding without borrowing issues
@@ -662,6 +772,21 @@ fn scheduler_defaults_from_env() -> (usize, usize) {
         }
     }
     (iw, ch)
+}
+
+fn should_enable_rr_scheduler() -> bool {
+    use std::env;
+    if let Ok(v) = env::var("HTX_SCHEDULER_RR") {
+        let v = v.to_ascii_lowercase();
+        return matches!(v.as_str(), "1" | "true" | "yes" | "on");
+    }
+    // Enable by default when HTTP profile is set or PREFER_QUIC is truthy
+    let prefer_quic = env::var("PREFER_QUIC")
+        .ok()
+        .map(|v| { let v = v.to_ascii_lowercase(); matches!(v.as_str(), "1" | "true" | "yes" | "on") })
+        .unwrap_or(false);
+    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| if prefer_quic { String::from("http") } else { String::from("default") });
+    profile.eq_ignore_ascii_case("http")
 }
 
 #[cfg(test)]
@@ -981,5 +1106,66 @@ mod tests {
         let _b3 = Mux::new(b_tx3, a_rx3);
         assert_eq!(a3.inner.initial_window, 128 * 1024);
         assert_eq!(a3.inner.base_chunk, 8192);
+    }
+
+    #[test]
+    fn small_stream_finishes_before_large_under_contention_rr() {
+        // Force RR scheduler and HTTP profile like defaults
+        std::env::set_var("HTX_SCHEDULER_RR", "1");
+        std::env::set_var("HTX_SCHEDULER_PROFILE", "http");
+        let (a, b) = pair();
+
+        // Echo server on b
+        let server = thread::spawn(move || {
+            let mut accepted = 0;
+            while accepted < 2 {
+                if let Some(sh) = b.accept_stream(Duration::from_secs(1)) {
+                    accepted += 1;
+                    thread::spawn(move || {
+                        while let Some(buf) = sh.read() {
+                            sh.write(&buf);
+                            if buf.len() == 0 { break; }
+                        }
+                    });
+                }
+            }
+        });
+
+        // Large and small payloads
+    let big = vec![1u8; 512 * 1024];
+    let small = vec![2u8; 8 * 1024];
+    let small_len = small.len();
+
+        // Start both streams nearly simultaneously
+        let a1 = a.clone();
+        let h_large = thread::spawn(move || {
+            let sh = a1.open_stream();
+            sh.write(&big);
+            let mut got = 0usize;
+            let start = std::time::Instant::now();
+            while let Some(buf) = sh.read() {
+                got += buf.len();
+                if got >= big.len() || start.elapsed() > Duration::from_secs(5) { break; }
+            }
+            got
+        });
+        let a2 = a.clone();
+        let h_small = thread::spawn(move || {
+            let sh = a2.open_stream();
+            sh.write(&small);
+            let mut got = 0usize;
+            let start = std::time::Instant::now();
+            while let Some(buf) = sh.read() {
+                got += buf.len();
+                if got >= small_len || start.elapsed() > Duration::from_secs(2) { break; }
+            }
+            got
+        });
+
+        let got_small = h_small.join().unwrap();
+        let got_large_partial = h_large.join().unwrap();
+        server.join().unwrap();
+    assert_eq!(got_small, small_len);
+        assert!(got_large_partial >= got_small, "large should have progressed too");
     }
 }

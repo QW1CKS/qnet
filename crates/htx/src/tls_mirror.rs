@@ -272,9 +272,15 @@ fn build_rustls_config(tpl: &Template) -> std::sync::Arc<rustls::ClientConfig> {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex as StdMutex;
+
+    // Serialize tests in this module to avoid interference via global state (ALLOWLIST, ROT_PER_HOST, GLOBAL_CACHE)
+    static TEST_MUTEX: Lazy<StdMutex<()>> = Lazy::new(|| StdMutex::new(()));
 
     #[test]
     fn template_id_stable_and_cache_works() {
+        let _g = TEST_MUTEX.lock().unwrap();
         let mut cache = MirrorCache::new(Duration::from_secs(1));
         let (id1, tpl1) = calibrate("https://example.com", Some(&mut cache), None).unwrap();
         let (id2, tpl2) = calibrate("https://example.com", Some(&mut cache), None).unwrap();
@@ -287,6 +293,7 @@ mod tests {
 
         #[test]
         fn allowlist_rotation_and_ja3() {
+        let _g = TEST_MUTEX.lock().unwrap();
                 // two entries for example.com, rotate between them
                 __test_set_allowlist(r#"[
                     {"host_pattern":"example.com","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
@@ -304,6 +311,7 @@ mod tests {
 
             #[test]
             fn ja3_fixture_hash_for_known_template() {
+                let _g = TEST_MUTEX.lock().unwrap();
                 let tpl = Template {
                     alpn: vec!["h2".into(), "http/1.1".into()],
                     sig_algs: vec!["rsa_pss_rsae_sha256".into()],
@@ -320,6 +328,7 @@ mod tests {
 
             #[test]
             fn allowlist_rotation_cadence_round_robin_distribution() {
+                let _g = TEST_MUTEX.lock().unwrap();
                 __test_set_allowlist(r#"[
                     {"host_pattern":"example.org","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
                     {"host_pattern":"example.org","template":{"alpn":["http/1.1"],"sig_algs":["ecdsa_secp256r1_sha256"],"groups":["secp256r1"],"extensions":[0,10,11,35,16,23,43,51]}},

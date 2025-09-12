@@ -7,6 +7,8 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 use tracing_appender::rolling;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration as StdDuration, Instant as StdInstant};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,6 +30,18 @@ async fn main() -> Result<()> {
 
     let cfg = Config::load_default()?;
     info!(port = cfg.socks_port, mode=?cfg.mode, "config loaded");
+
+    // Shared app state for status reporting
+    let app_state = Arc::new(AppState::new(cfg.clone()));
+    // Background connectivity monitor (bootstrap gate)
+    if cfg.bootstrap {
+        spawn_connectivity_monitor(app_state.clone());
+    }
+
+    // Start a tiny local status server (headless-friendly)
+    if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone()).await? {
+        info!(%status_addr, "status server listening (GET /status)");
+    }
 
     // Placeholder: print planned feature flags
     #[cfg(feature = "stealth-mode")]
@@ -131,11 +145,12 @@ struct Config {
     socks_port: u16,
     mode: Mode,
     bootstrap: bool,
+    status_port: u16,
 }
 
 impl Default for Config {
     fn default() -> Self {
-    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false }
+    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false, status_port: 0 }
     }
 }
 
@@ -154,8 +169,148 @@ impl Config {
             };
         }
         if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") { cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true"); }
+        if let Ok(p) = std::env::var("STEALTH_STATUS_PORT") {
+            if let Ok(n) = p.parse::<u16>() { cfg.status_port = n; }
+        }
         Ok(cfg)
     }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ConnState {
+    Offline,
+    Calibrating,
+    Connected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StatusSnapshot {
+    state: ConnState,
+    last_seed: Option<String>,
+    last_checked_ms_ago: Option<u64>,
+}
+
+#[derive(Debug)]
+struct AppState {
+    cfg: Config,
+    status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
+}
+
+impl AppState {
+    fn new(cfg: Config) -> Self {
+        let snap = StatusSnapshot { state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline }, last_seed: None, last_checked_ms_ago: None };
+        Self { cfg, status: Mutex::new((snap, None)) }
+    }
+}
+
+fn spawn_connectivity_monitor(state: Arc<AppState>) {
+    std::thread::spawn(move || {
+        loop {
+            // Attempt a quick seed connect using env
+            let res = htx::bootstrap::connect_seed_from_env(StdDuration::from_secs(3));
+            let mut guard = state.status.lock().unwrap();
+            let now = StdInstant::now();
+            match res {
+                Some(url) => {
+                    guard.0.state = ConnState::Connected;
+                    guard.0.last_seed = Some(url);
+                    guard.1 = Some(now);
+                    guard.0.last_checked_ms_ago = Some(0);
+                }
+                None => {
+                    // If we were never connected, we are still calibrating; else offline
+                    guard.0.state = if matches!(guard.0.state, ConnState::Connected) { ConnState::Offline } else { ConnState::Calibrating };
+                    guard.1 = Some(now);
+                    guard.0.last_checked_ms_ago = Some(0);
+                }
+            }
+            drop(guard);
+            std::thread::sleep(StdDuration::from_secs(5));
+            // update ms_ago
+            let mut guard2 = state.status.lock().unwrap();
+            if let Some(since) = guard2.1 {
+                let ms = since.elapsed().as_millis() as u64;
+                guard2.0.last_checked_ms_ago = Some(ms);
+            }
+            drop(guard2);
+        }
+    });
+}
+
+// Start a minimal HTTP status server on 127.0.0.1:<status_port> (0 = auto)
+async fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<Option<std::net::SocketAddr>> {
+    let bind = format!("{}:{}", bind_ip, port);
+    let listener = match TcpListener::bind(&bind).await {
+        Ok(l) => l,
+        Err(e) => {
+            warn!(%bind, error=?e, "status server bind failed; continuing without status endpoint");
+            return Ok(None);
+        }
+    };
+    let local_addr = listener.local_addr().ok();
+    tokio::spawn(async move {
+        loop {
+            let (mut s, _peer) = match listener.accept().await { Ok(v) => v, Err(_) => break };
+            let app2 = app.clone();
+            tokio::spawn(async move {
+                if let Err(_e) = serve_status(&mut s, &app2).await {
+                    // ignore
+                }
+            });
+        }
+    });
+    Ok(local_addr)
+}
+
+async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
+    use tokio::time::{timeout, Duration};
+    // Read request head with a small timeout to avoid hanging
+    let mut buf = vec![0u8; 1024];
+    let n = match timeout(Duration::from_millis(500), s.read(&mut buf)).await {
+        Ok(Ok(n)) => n,
+        _ => 0,
+    };
+    let req = String::from_utf8_lossy(&buf[..n]);
+    let first_line = req.lines().next().unwrap_or("");
+    let path_status = first_line.starts_with("GET /status ") || first_line.starts_with("GET /status?");
+    let path_root = first_line.starts_with("GET / ");
+    let body;
+    let content_type;
+    if path_status {
+        let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
+        let (snap, since_opt) = {
+            let g = app.status.lock().unwrap();
+            (g.0.clone(), g.1)
+        };
+        let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
+        let mut json = serde_json::json!({
+            "socks_addr": socks_addr,
+            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo" },
+            "bootstrap": app.cfg.bootstrap,
+            "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
+        });
+        if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
+        if let Some(ms) = ms_ago { json["last_checked_ms_ago"] = serde_json::Value::Number(serde_json::Number::from(ms)); }
+        body = json.to_string();
+        content_type = "application/json";
+    } else if path_root {
+        let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
+        body = format!("<html><head><title>QNet Stealth</title></head><body><h3>QNet Stealth — Status</h3><pre id=out></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
+        content_type = "text/html; charset=utf-8";
+    } else {
+        body = serde_json::json!({"error":"not found"}).to_string();
+        content_type = "application/json";
+    }
+    let status = if path_status || path_root { "200 OK" } else { "404 Not Found" };
+    let resp = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+        ct=content_type,
+        len=body.len(),
+        body=body
+    );
+    s.write_all(resp.as_bytes()).await?;
+    Ok(())
 }
 
 // Minimal SOCKS5 (RFC 1928) — supports CONNECT, ATYP IPv4 & DOMAIN, no auth

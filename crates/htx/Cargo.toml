@@ -41,3 +41,8 @@ required-features = ["perf-bench"]
 name = "stream"
 harness = false
 required-features = ["perf-bench"]
+
+[[bench]]
+name = "mixed_concurrency"
+harness = false
+required-features = ["perf-bench"]

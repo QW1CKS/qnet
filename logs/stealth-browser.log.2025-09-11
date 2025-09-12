@@ -16,3 +16,15 @@
 [2m2025-09-11T19:54:52.864894Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
 [2m2025-09-11T19:54:52.864963Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
 [2m2025-09-11T19:54:52.865077Z[0m [32m INFO[0m launching tauri window (dev)
+[2m2025-09-11T23:28:52.997732Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-11T23:28:52.997874Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-11T23:28:53.000346Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:9876
+[2m2025-09-11T23:28:53.000398Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-11T23:31:46.183961Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-11T23:31:46.184002Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-11T23:32:45.958975Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-11T23:32:45.959126Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-11T23:32:45.961916Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:9876
+[2m2025-09-11T23:32:45.962026Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-11T23:33:21.317563Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-11T23:33:21.317642Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
