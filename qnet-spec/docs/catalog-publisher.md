@@ -1,6 +1,6 @@
 # Catalog Publisher Guide
 
-Status: Draft (M3)
+Status: M3 v1 (docs complete) — manual signing now; CI automation planned
 
 This guide explains how to author, sign, and publish the QNet decoy catalog using a dedicated repository (e.g., `qnet-catalogs`). It complements `docs/catalog-schema.md`.
 

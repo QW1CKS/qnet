@@ -110,6 +110,12 @@ Acceptance (M3):
 - Updater pulls a newer catalog from mirrors; rejects tamper; fails over mirrors; retains last-known-good on errors.
 - UI (or dev panel) shows catalog status fields for manual validation.
 
+Docs status: M3 documentation is complete (schema, signer CLI, publisher guide, app behavior). See:
+- `qnet-spec/docs/catalog-schema.md`
+- `qnet-spec/docs/catalog-signer.md`
+- `qnet-spec/docs/catalog-publisher.md`
+- `qnet-spec/docs/apps/stealth-browser.md`
+
 ## Performance Targets and Methodology (for T6.6)
 - Micro-benchmarks:
 	- AEAD (ChaCha20-Poly1305) ≥2 GB/s per core for ≥16KiB payloads (x86_64 AVX2 reference).

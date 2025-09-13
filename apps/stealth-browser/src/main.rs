@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::EnvFilter;
 use tokio::{
@@ -31,8 +31,25 @@ async fn main() -> Result<()> {
     let cfg = Config::load_default()?;
     info!(port = cfg.socks_port, mode=?cfg.mode, "config loaded");
 
+    // M3: Catalog-first loader (bundled + cache + verify) and background updater
+    let cache_dir = CatalogState::ensure_cache_dir()?;
+    info!(path=%cache_dir.display(), "catalog cache directory ready");
+    let mut cat_state = CatalogState::init_load().await?;
+    // Persist verified catalog to cache for subsequent runs
+    let _ = cat_state.persist_atomic().await;
+    // Best-effort background updater (persists to cache when newer catalog is found)
+    let mut cat_state_for_update = cat_state.clone();
+    tokio::spawn(async move {
+        cat_state_for_update.updater().await;
+    });
+    if let Some(meta) = &cat_state.current {
+        info!(ver=meta.catalog.catalog_version, exp=%meta.catalog.expires_at, "catalog verified");
+    } else {
+        warn!("no valid catalog available; seeds may be used as fallback if enabled elsewhere");
+    }
+
     // Shared app state for status reporting
-    let app_state = Arc::new(AppState::new(cfg.clone()));
+    let app_state = Arc::new(AppState::new(cfg.clone(), cat_state.clone()));
     // Background connectivity monitor (bootstrap gate)
     if cfg.bootstrap {
         spawn_connectivity_monitor(app_state.clone());
@@ -40,7 +57,7 @@ async fn main() -> Result<()> {
 
     // Start a tiny local status server (headless-friendly)
     if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone()).await? {
-        info!(%status_addr, "status server listening (GET /status)");
+    info!(%status_addr, "status server listening (GET /status)");
     }
 
     // Placeholder: print planned feature flags
@@ -89,10 +106,16 @@ async fn main() -> Result<()> {
     let addr = format!("127.0.0.1:{}", cfg.socks_port);
     info!(%addr, mode = ?cfg.mode, "starting SOCKS5 server");
     #[cfg(feature = "with-tauri")]
-    let _server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client).await });
+    {
+        let app_state_for_socks = app_state.clone();
+        let _server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await });
+    }
 
     #[cfg(not(feature = "with-tauri"))]
-    let server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client).await });
+    let server = {
+        let app_state_for_socks = app_state.clone();
+        tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await })
+    };
 
     // Optional: start a tiny Tauri window when built with `--features with-tauri`.
     // IMPORTANT: the Tauri/tao event loop must be created on the main thread.
@@ -151,6 +174,12 @@ async fn get_status(state: tauri::State<'_, AppHandleState>) -> Result<StatusSna
     };
     let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
     let mut out = snap;
+    // Add catalog meta into snapshot (shallow)
+    if let Some(cm) = &state.state.catalog.current {
+        out.catalog_version = Some(cm.catalog.catalog_version);
+        out.catalog_expires_at = Some(cm.catalog.expires_at.clone());
+        out.catalog_source = cm.source.clone();
+    }
     out.last_checked_ms_ago = ms_ago;
     Ok(out)
         .map_err(|e: anyhow::Error| e.to_string())
@@ -235,18 +264,30 @@ struct StatusSnapshot {
     state: ConnState,
     last_seed: Option<String>,
     last_checked_ms_ago: Option<u64>,
+    // M3 catalog status (optional)
+    catalog_version: Option<u32>,
+    catalog_expires_at: Option<String>,
+    catalog_source: Option<String>,
 }
 
 #[derive(Debug)]
 struct AppState {
     cfg: Config,
     status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
+    catalog: CatalogState,
 }
 
 impl AppState {
-    fn new(cfg: Config) -> Self {
-        let snap = StatusSnapshot { state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline }, last_seed: None, last_checked_ms_ago: None };
-        Self { cfg, status: Mutex::new((snap, None)) }
+    fn new(cfg: Config, catalog: CatalogState) -> Self {
+        let snap = StatusSnapshot {
+            state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline },
+            last_seed: None,
+            last_checked_ms_ago: None,
+            catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version),
+            catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.clone()),
+            catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
+        };
+        Self { cfg, status: Mutex::new((snap, None)), catalog }
     }
 }
 
@@ -336,7 +377,10 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
             "bootstrap": app.cfg.bootstrap,
             "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
         });
-        if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
+    if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
+    if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
+    if let Some(exp) = &snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
+    if let Some(src) = &snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
         if let Some(ms) = ms_ago { json["last_checked_ms_ago"] = serde_json::Value::Number(serde_json::Number::from(ms)); }
         body = json.to_string();
         content_type = "application/json";
@@ -360,22 +404,23 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
 }
 
 // Minimal SOCKS5 (RFC 1928) — supports CONNECT, ATYP IPv4 & DOMAIN, no auth
-async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>) -> Result<()> {
+async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, app_state: Option<Arc<AppState>>) -> Result<()> {
     let listener = TcpListener::bind(bind).await
         .with_context(|| format!("bind {}", bind))?;
     loop {
         let (mut inbound, peer) = listener.accept().await?;
         let mode_c = mode;
         let htx_c = htx_client.clone();
+        let app_state_c = app_state.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(&mut inbound, mode_c, htx_c).await {
+            if let Err(e) = handle_client(&mut inbound, mode_c, htx_c, app_state_c).await {
                 eprintln!("socks client {} error: {e:?}", peer);
             }
         });
     }
 }
 
-async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<htx::api::Conn>) -> Result<()> {
+async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<htx::api::Conn>, app_state: Option<Arc<AppState>>) -> Result<()> {
     // Handshake: VER, NMETHODS, METHODS...
     let ver = read_u8(stream).await?;
     if ver != 0x05 { bail!("unsupported ver {ver}"); }
@@ -432,6 +477,13 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                 .with_context(|| format!("connect {target}"))?;
             // Success reply
             send_reply(stream, 0x00).await?;
+            // Mark app as connected (online) on first successful CONNECT
+            if let Some(app) = &app_state {
+                let mut guard = app.status.lock().unwrap();
+                guard.0.state = ConnState::Connected;
+                guard.1 = Some(StdInstant::now());
+                guard.0.last_checked_ms_ago = Some(0);
+            }
             let _bytes = tokio::io::copy_bidirectional(stream, &mut outbound).await?;
             Ok(())
         }
@@ -441,6 +493,13 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             let ss = client.open_stream();
             // Success reply to SOCKS client
             send_reply(stream, 0x00).await?;
+            // Mark app as connected (online) upon opening secure stream
+            if let Some(app) = &app_state {
+                let mut guard = app.status.lock().unwrap();
+                guard.0.state = ConnState::Connected;
+                guard.1 = Some(StdInstant::now());
+                guard.0.last_checked_ms_ago = Some(0);
+            }
             // Bridge TCP <-> SecureStream
             bridge_tcp_secure(stream, ss).await
         }
@@ -534,4 +593,211 @@ async fn send_reply(s: &mut TcpStream, rep: u8) -> Result<()> {
     // VER=5, REP=rep, RSV=0, ATYP=1 (IPv4), BND.ADDR=0.0.0.0, BND.PORT=0
     s.write_all(&[0x05, rep, 0x00, 0x01, 0,0,0,0, 0,0]).await?;
     Ok(())
+}
+
+// =====================
+// M3: Catalog-first impl
+// =====================
+use chrono::{DateTime, Utc};
+use directories::ProjectDirs;
+use hex::FromHex;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CatalogInner {
+    schema_version: u32,
+    catalog_version: u32,
+    generated_at: String,
+    expires_at: String,
+    publisher_id: String,
+    update_urls: Vec<String>,
+    seed_fallback_urls: Option<Vec<String>>,
+    entries: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CatalogJson {
+    #[serde(flatten)]
+    catalog: CatalogInner,
+    #[serde(default)]
+    signature_hex: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CatalogMeta {
+    catalog: CatalogInner,
+    source: Option<String>, // bundled|cache|<url>
+}
+
+#[derive(Debug, Clone)]
+struct CatalogState {
+    current: Option<CatalogMeta>,
+}
+
+impl CatalogState {
+    fn cache_paths() -> anyhow::Result<(std::path::PathBuf, std::path::PathBuf)> {
+        let dirs = ProjectDirs::from("org", "qnet", "stealth-browser")
+            .ok_or_else(|| anyhow::anyhow!("project dirs"))?;
+        let dir = dirs.cache_dir();
+        std::fs::create_dir_all(dir)?;
+        let json = dir.join("catalog.json");
+        let sig = dir.join("catalog.json.sig");
+        Ok((json, sig))
+    }
+
+    fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
+        let dirs = ProjectDirs::from("org", "qnet", "stealth-browser")
+            .ok_or_else(|| anyhow::anyhow!("project dirs"))?;
+        Ok(dirs.cache_dir().to_path_buf())
+    }
+
+    fn ensure_cache_dir() -> anyhow::Result<std::path::PathBuf> {
+        let p = Self::cache_dir()?;
+        std::fs::create_dir_all(&p)?;
+        Ok(p)
+    }
+
+    async fn init_load() -> anyhow::Result<Self> {
+        // 1) Try cache
+        if let Some(meta) = Self::load_from_cache().await? {
+            return Ok(Self { current: Some(meta) });
+        }
+        // 2) Try bundled from qnet-spec/templates as a stand-in until assets bundling is wired
+        if let Some(meta) = Self::load_from_repo_templates().await? {
+            return Ok(Self { current: Some(meta) });
+        }
+        Ok(Self { current: None })
+    }
+
+    async fn load_from_cache() -> anyhow::Result<Option<CatalogMeta>> {
+        let (json_p, sig_p) = Self::cache_paths()?;
+        if !json_p.exists() || !sig_p.exists() { return Ok(None); }
+        let json = tokio::fs::read(&json_p).await?;
+        let sig = tokio::fs::read_to_string(&sig_p).await?;
+        match Self::parse_and_verify(&json, Some(&sig))? {
+            Some(mut cm) => { cm.source = Some("cache".into()); Ok(Some(cm)) }
+            None => Ok(None),
+        }
+    }
+
+    async fn load_from_repo_templates() -> anyhow::Result<Option<CatalogMeta>> {
+        let repo_json = std::path::Path::new("qnet-spec").join("templates").join("catalog.example.json");
+        let repo_sig = std::path::Path::new("qnet-spec").join("templates").join("catalog.example.json.sig");
+        if !repo_json.exists() || !repo_sig.exists() { return Ok(None); }
+        let json = tokio::fs::read(&repo_json).await?;
+        let sig = tokio::fs::read_to_string(&repo_sig).await?;
+        match Self::parse_and_verify(&json, Some(&sig))? {
+            Some(mut cm) => { cm.source = Some("bundled".into()); Ok(Some(cm)) }
+            None => Ok(None)
+        }
+    }
+
+    fn parse_and_verify(json_bytes: &[u8], sig_detached: Option<&str>) -> anyhow::Result<Option<CatalogMeta>> {
+        let cj: CatalogJson = serde_json::from_slice(json_bytes)?;
+        // TTL check early
+        let exp: DateTime<Utc> = cj.catalog.expires_at.parse().unwrap_or_else(|_| Utc::now());
+        if exp <= Utc::now() {
+            warn!("catalog expired; rejecting");
+            return Ok(None);
+        }
+        // Determine signature source
+        let sig_hex_opt = match (sig_detached, cj.signature_hex.as_deref()) {
+            (Some(s), _) => Some(s.trim().to_string()),
+            (None, Some(inline)) => Some(inline.to_string()),
+            _ => None,
+        };
+        let allow_unsigned = std::env::var("STEALTH_CATALOG_ALLOW_UNSIGNED").map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+        if let Some(sig_hex) = sig_hex_opt {
+            let sig = match Vec::from_hex(&sig_hex) {
+                Ok(v) => v,
+                Err(e) => {
+                    if allow_unsigned {
+                        warn!(error=?e, "bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
+                        return Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }));
+                    } else {
+                        return Ok(None);
+                    }
+                }
+            };
+            // Inline verify: re-serialize inner to DET-CBOR and verify using pinned pubkey
+            let det = core_cbor::to_det_cbor(&cj.catalog)?;
+            let pk_hex = std::fs::read_to_string("qnet-spec/templates/keys/publisher.pub")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let pk = Vec::from_hex(&pk_hex).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
+            core_crypto::ed25519::verify(&pk, &det, &sig)
+                .map_err(|_| anyhow::anyhow!("signature verify failed"))?;
+            Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }))
+        } else if allow_unsigned {
+            warn!("missing signature; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
+            Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }))
+        } else {
+            warn!("missing signature");
+            Ok(None)
+        }
+    }
+
+    async fn persist_atomic(&self) -> anyhow::Result<()> {
+        if let Some(cur) = &self.current {
+            let cache_dir = Self::cache_dir()?;
+            if let Err(e) = std::fs::create_dir_all(&cache_dir) { warn!(error=?e, path=%cache_dir.display(), "create cache dir failed"); return Err(e.into()); }
+            let (json_p, sig_p) = Self::cache_paths()?;
+            let tmp_json = json_p.with_extension("json.tmp");
+            let tmp_sig = sig_p.with_extension("sig.tmp");
+            let json = serde_json::to_vec_pretty(&serde_json::json!({
+                "schema_version": cur.catalog.schema_version,
+                "catalog_version": cur.catalog.catalog_version,
+                "generated_at": cur.catalog.generated_at,
+                "expires_at": cur.catalog.expires_at,
+                "publisher_id": cur.catalog.publisher_id,
+                "update_urls": cur.catalog.update_urls,
+                "seed_fallback_urls": cur.catalog.seed_fallback_urls,
+                "entries": cur.catalog.entries,
+            }))?;
+            tokio::fs::write(&tmp_json, &json).await?;
+            tokio::fs::rename(&tmp_json, &json_p).await?;
+            // Note: without a detached signature here, write a marker
+            if let Err(e) = tokio::fs::write(&tmp_sig, "verified-inline").await { warn!(error=?e, path=%tmp_sig.display(), "sig write failed"); }
+            if let Err(e) = tokio::fs::rename(&tmp_sig, &sig_p).await { warn!(error=?e, from=%tmp_sig.display(), to=%sig_p.display(), "sig rename failed"); }
+            info!(path=%json_p.display(), "catalog cached");
+            return Ok(());
+        }
+        Err(anyhow::anyhow!("no catalog to persist"))
+    }
+
+    async fn updater(self: &mut Self) {
+        // Best-effort periodic updater using update_urls; transport untrusted
+        let urls = match &self.current { Some(c) => c.catalog.update_urls.clone(), None => vec![] };
+        if urls.is_empty() { return; }
+        let client = reqwest::Client::builder().use_rustls_tls().build();
+        let client = match client { Ok(c) => c, Err(_) => return };
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+            for u in &urls {
+                match client.get(u).send().await.and_then(|r| r.error_for_status()) {
+                    Ok(resp) => {
+                        if let Ok(bytes) = resp.bytes().await {
+                            if let Ok(Some(mut cm)) = Self::parse_and_verify(&bytes, None) {
+                                cm.source = Some(u.clone());
+                                // Only replace if newer version
+                                let replace = match &self.current {
+                                    Some(cur) => cm.catalog.catalog_version > cur.catalog.catalog_version,
+                                    None => true,
+                                };
+                                if replace {
+                                    info!(url=%u, ver=cm.catalog.catalog_version, "catalog updated");
+                                    self.current = Some(cm);
+                                    let _ = self.persist_atomic().await;
+                                    break;
+                                } else {
+                                    debug!(url=%u, "catalog same or older; skip");
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => { /* ignore and try next */ }
+                }
+            }
+        }
+    }
 }

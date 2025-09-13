@@ -107,6 +107,13 @@ qnet/
 3. uTLS template generator
 4. SLSA provenance in CI/CD
 
+### Phase 7: Catalog pipeline (M3)
+Documentation complete for a catalog-first distribution model:
+- Format and signing: see `qnet-spec/docs/catalog-schema.md` (DET-CBOR + Ed25519, TTL, mirrors)
+- Signer CLI: `crates/catalog-signer` with docs in `qnet-spec/docs/catalog-signer.md`
+- Publisher workflow: `qnet-spec/docs/catalog-publisher.md` (manual signing now; automate in CI later)
+- App behavior: loader/verify/TTL/cache/updater documented in `qnet-spec/docs/apps/stealth-browser.md`
+
 ## Testing Strategy
 
 ### Unit Tests

@@ -1,0 +1,43 @@
+[2m2025-09-13T12:35:27.105792Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:35:27.106002Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:35:27.144317Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:35:27.144377Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:35:27.146624Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:35:27.146707Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:36:21.548347Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:36:21.548483Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:36:21.567409Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:36:21.567489Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:36:21.572933Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:36:21.572979Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:36:59.145392Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-13T12:36:59.145474Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-13T12:37:52.468789Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:37:52.468909Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:37:52.484289Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:37:52.484376Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:37:52.487425Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:37:52.487483Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:43:42.314017Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:43:42.314322Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:43:42.335554Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:43:42.339005Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T12:43:42.339134Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:43:42.341725Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:43:42.341804Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:45:47.935942Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:45:47.936149Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:45:47.940234Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T12:45:47.942213Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:45:47.945959Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T12:45:47.946168Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:45:47.950802Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:45:47.950878Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:52:14.744121Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T12:52:14.744263Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T12:52:14.747910Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T12:52:14.749015Z[0m [33m WARN[0m bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED [3merror[0m[2m=[0mOddLength
+[2m2025-09-13T12:52:14.751862Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T12:52:14.752413Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-19T12:00:00Z
+[2m2025-09-13T12:52:14.756060Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T12:52:14.756111Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect

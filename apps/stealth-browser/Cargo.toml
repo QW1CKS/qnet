@@ -13,10 +13,11 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tracing-appender = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 anyhow = "1"
 thiserror = "1"
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal", "fs"] }
 
 # HTTP client used by the Tauri command to fetch via SOCKS
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "socks"] }
@@ -24,6 +25,11 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Placeholders for future integration
 htx = { path = "../../crates/htx" }
 core-framing = { path = "../../crates/core-framing" }
+core-cbor = { path = "../../crates/core-cbor" }
+core-crypto = { path = "../../crates/core-crypto" }
+hex = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+directories = "5"
 
 # Optional UI shell (enabled with `--features with-tauri`) — not default to keep builds green on CI without GUI deps
 tauri = { version = "2.4.1", optional = true, default-features = false, features = ["wry"] }

@@ -57,6 +57,7 @@ Expose a minimal status struct via Tauri IPC:
 ### Notes
 - Mirrors are untrusted transport. Integrity comes solely from signature over DET-CBOR bytes.
 - Keep 1–3 pinned keys to enable rotation. Document fingerprints in README and UI.
+- Manual vs CI signing: For now, catalogs may be signed locally using `catalog-signer` with `CATALOG_PRIVKEY` set in the shell (store securely). When QNet grows, move to CI automation with GitHub Secrets to avoid local key handling.
 
 ## Quick start (dev)
 

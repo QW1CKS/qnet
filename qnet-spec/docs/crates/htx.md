@@ -289,6 +289,13 @@ HTX implements the Noise XK pattern:
 - **`core-framing`**: Handles message framing
 - **`core-identity`**: Manages self-certifying identities
 
+## Config: catalog-first (M3)
+
+HTX integrates with a signed decoy catalog as the primary configuration source, with seeds as a resilience fallback:
+- Decoy catalog: Signed JSON (DET-CBOR + Ed25519) loaded at app start; provides decoy hosts, ALPN hints, and update mirrors.
+- Seeds (fallback): Signed seed list used only when no valid catalog is available.
+- See: `../../docs/catalog-schema.md` and app behavior in `../../docs/apps/stealth-browser.md`.
+
 ## Contributing
 
 See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and contribution guidelines.

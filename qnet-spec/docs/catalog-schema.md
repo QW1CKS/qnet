@@ -1,6 +1,6 @@
 # QNet Catalog: Schema, Signing, and Update Model
 
-Status: Draft (adopt for M3); Aligns with existing DET-CBOR + Ed25519 signatures in `htx::decoy` and `htx::bootstrap`.
+Status: M3 v1 (docs complete); Aligns with existing DET-CBOR + Ed25519 signatures in `htx::decoy` and `htx::bootstrap`.
 
 ---
 

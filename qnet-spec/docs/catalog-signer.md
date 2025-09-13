@@ -1,6 +1,6 @@
 # Catalog Signer (CLI)
 
-Status: Draft (M3)
+Status: M3 v1 (docs complete); CLI implemented under `crates/catalog-signer`
 
 A small Rust CLI that turns YAML templates into a signed catalog ready to bundle with the app or publish to mirrors.
 

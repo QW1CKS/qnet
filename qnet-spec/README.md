@@ -19,6 +19,7 @@ Quick links (M3 — Catalog pipeline):
 - Catalog schema: `docs/catalog-schema.md`
 - Catalog signer (CLI): `docs/catalog-signer.md`
 - Publisher guide: `docs/catalog-publisher.md`
+- App behavior (Stealth Browser): `docs/apps/stealth-browser.md`
 - Templates: `templates/decoys.yml`, `templates/catalog.meta.yml`
 - Examples: `templates/catalog.example.json`, `templates/catalog.example.json.sig`, `templates/keys/publisher.pub`
 
