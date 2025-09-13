@@ -11,14 +11,77 @@
       .card { text-align: center; padding: 24px 32px; border: 1px solid #243241; border-radius: 12px; background: #0f1720; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
       h1 { font-size: 20px; margin: 0 0 8px; color: #7dcfff; }
       p { margin: 0; color: #a8b3c7; }
+      .spinner { width: 16px; height: 16px; border: 2px solid #243241; border-top-color: #7dcfff; border-radius: 50%; animation: spin 0.8s linear infinite; display:none; }
+      @keyframes spin { to { transform: rotate(360deg);} }
+      .muted { color:#a8b3c7; font-size:12px; }
     </style>
   </head>
   <body>
-    <div class="center">
-      <div class="card">
-        <h1>QNet Stealth Browser</h1>
-        <p>Empty window stub — UI coming soon.</p>
+    <div style="display:flex; flex-direction:column; height:100%">
+      <div style="padding:10px; border-bottom:1px solid #243241; display:flex; gap:8px; align-items:center;">
+        <input id="addr" type="text" placeholder="https://example.com" style="flex:1; padding:10px; border-radius:8px; border:1px solid #243241; background:#0f1720; color:#e6eef7;" />
+        <button id="go" style="padding:10px 14px; border-radius:8px; border:1px solid #243241; background:#17212b; color:#7dcfff; cursor:pointer;">Go</button>
+        <div id="busy" class="spinner" title="Loading..."></div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px; min-width:220px;">
+          <span id="status" class="muted">offline</span>
+          <span id="statusDetails" class="muted"></span>
+        </div>
+      </div>
+      <div id="content" style="flex:1; padding:12px; overflow:auto;">
+        <pre id="out" style="white-space:pre-wrap; word-break:break-word; color:#cfe1f9;"></pre>
       </div>
     </div>
+    <script>
+      // Tauri v2 exposes invoke under __TAURI__.core.invoke; v1 used __TAURI__.invoke
+      function tauriInvoke(cmd, args){
+        const t = window.__TAURI__ || {};
+        if (t.core && typeof t.core.invoke === 'function') return t.core.invoke(cmd, args);
+        if (typeof t.invoke === 'function') return t.invoke(cmd, args);
+        return Promise.reject('Tauri API unavailable');
+      }
+      const addr = document.getElementById('addr');
+      const go = document.getElementById('go');
+      const statusEl = document.getElementById('status');
+    const statusDetailsEl = document.getElementById('statusDetails');
+    const busy = document.getElementById('busy');
+      const out = document.getElementById('out');
+
+      async function refreshStatus(){
+        try {
+          const snap = await tauriInvoke('get_status');
+          const st = snap.state || 'offline';
+          statusEl.textContent = st;
+            const seed = snap.last_seed || snap.seed_url || '';
+            const ms = snap.last_checked_ms_ago || 0;
+            const secs = Math.floor(ms/1000);
+            statusDetailsEl.textContent = seed ? `seed: ${seed} • checked: ${secs}s ago` : (secs ? `checked: ${secs}s ago` : '');
+        } catch(e) {
+          statusEl.textContent = 'offline';
+            statusDetailsEl.textContent = '';
+        }
+      }
+      setInterval(refreshStatus, 3000);
+      refreshStatus();
+
+      async function navigate(){
+        const url = addr.value.trim();
+        if(!url) return;
+        out.textContent = 'Loading...';
+          go.disabled = true; addr.disabled = true; busy.style.display = 'inline-block';
+        try {
+          const resp = await tauriInvoke('navigate_url', { url });
+          out.textContent = resp;
+        } catch(e) {
+          out.textContent = 'Error: ' + e;
+          if(String(e).includes('Tauri API unavailable')){
+            out.textContent += '\n\nHint: This window must be launched by Tauri. Ensure you start the app with `cargo run -p stealth-browser --features with-tauri` and that the Tauri global API is enabled.';
+          }
+          } finally {
+            go.disabled = false; addr.disabled = false; busy.style.display = 'none';
+        }
+      }
+      go.addEventListener('click', navigate);
+      addr.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ navigate(); }});
+    </script>
   </body>
 </html>

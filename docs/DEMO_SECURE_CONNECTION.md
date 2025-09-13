@@ -1,40 +1,34 @@
 # Demo: Secure Connection with QNet
 
-This guide demonstrates a full end-to-end secure connection using QNet, including bootstrap discovery, TLS handshake, decoy routing, and DPI evasion verification.
+This guide demonstrates a full end-to-end secure connection using QNet, including catalog-first configuration (signed + bundled), TLS handshake, decoy routing, and DPI evasion verification. Seeds are kept as an optional fallback.
 
 ## Prerequisites
 
 - **Rust and Cargo**: Install from [rustup.rs](https://rustup.rs). Ensure `cargo` is on PATH.
 - **Wireshark/Npcap**: Install Wireshark from [wireshark.org](https://www.wireshark.org/download.html) (includes Npcap driver). Ensure `tshark.exe` is on PATH or note its full path.
 - **Python**: For DPI comparison (optional). Install Python 3.x and `scapy` via `pip install scapy`.
-- **Bootstrap Seeds**: Publicly reachable HTTPS endpoints returning 200 on `/health`. Use Cloudflare Quick Tunnels (e.g., `cloudflared tunnel --url http://localhost:8080`) or provide your own.
+- **(Optional) Bootstrap Seeds**: Publicly reachable HTTPS endpoints returning 200 on `/health` if you want to exercise the seed fallback path. Otherwise not required.
 - **Npcap Service**: Ensure the `npcap` service is running (check with `Get-Service npcap` in PowerShell).
 
 ## Quick Demo Steps (Windows PowerShell)
 
-1. **Set up bootstrap seeds** (replace with your tunnel URLs):
-   ```powershell
-   $seeds = "https://your-tunnel1.trycloudflare.com https://your-tunnel2.trycloudflare.com"
-   ```
+1. **Use the bundled signed catalog** (default):
+   - The app ships with a signed catalog embedded. No setup required.
 
-2. **Validate seeds**:
-   ```powershell
-   foreach ($u in $seeds -split ' ') { Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 10; Write-Host "$u -> $($_.StatusCode)" }
-   ```
+2. **(Optional) Preview active catalog source**: The UI shows whether the catalog is bundled, cached, or updated from a mirror, along with version and expiry.
 
-3. **Run bootstrap check**:
+3. **Run catalog-based secure dial demo** (with decoy routing):
    ```powershell
-   $env:STEALTH_BOOTSTRAP_CATALOG_JSON = '{"catalog":{"version":1,"updated_at":1726128000,"entries":[{"url":"https://your-tunnel1.trycloudflare.com"},{"url":"https://your-tunnel2.trycloudflare.com"}]}}'
-   $env:STEALTH_BOOTSTRAP_ALLOW_UNSIGNED = '1'
-   cargo run -q -p htx --example bootstrap_check
-   ```
-
-4. **Run secure dial demo** (with decoy routing):
-   ```powershell
-   $env:STEALTH_DECOY_CATALOG_JSON = '{"catalog":{"version":1,"updated_at":1726128000,"entries":[{"host_pattern":"*","decoy_host":"www.cloudflare.com","port":443,"alpn":["h2","http/1.1"],"weight":1}]}}'
-   $env:STEALTH_DECOY_ALLOW_UNSIGNED = '1'
    $env:STEALTH_LOG_DECOY_ONLY = '1'
    cargo run -q -p htx --features rustls-config --example dial_tls_demo -- https://www.wikipedia.org
+   ```
+
+4. **(Optional) Seed fallback smoke test**:
+   ```powershell
+   $seeds = "https://your-tunnel1.trycloudflare.com https://your-tunnel2.trycloudflare.com"
+   $env:STEALTH_BOOTSTRAP_CATALOG_JSON = '{"catalog":{"version":1,"updated_at":1726128000,"entries":["' + ($seeds -replace ' ', '","') + '"]}}'
+   $env:STEALTH_BOOTSTRAP_ALLOW_UNSIGNED = '1'
+   cargo run -q -p htx --example bootstrap_check
    ```
 
 5. **Capture and compare DPI** (optional, requires Wireshark):
@@ -62,7 +56,7 @@ Use the provided PowerShell script for automation:
   -SeedsList "https://your-tunnel1.trycloudflare.com https://your-tunnel2.trycloudflare.com"
 ```
 
-This script handles env setup, validation, bootstrap, decoy, capture, and dial in sequence.
+This script handles env setup, uses the catalog-first path by default, runs capture, and performs the dial. To force the seed fallback path, pass the `-UseSeeds` (hypothetical) flag and provide `-SeedsList`.
 
 ## Expected Output
 
@@ -82,7 +76,8 @@ This script handles env setup, validation, bootstrap, decoy, capture, and dial i
 
 ## What This Demonstrates
 
-- **Bootstrap**: Discovers healthy seeds for initial trust.
+- **Catalog-first**: Uses a signed, bundled catalog as the primary configuration; background updates may refresh it from mirrors.
+- **Seed fallback**: Optionally demonstrates the bootstrap gate via seeds if mirrors are unavailable.
 - **Secure Connection**: Performs real TLS handshake, derives inner keys via EKM, opens HTX stream.
 - **Decoy Routing**: Routes outer TLS to decoy host to evade censorship.
 - **DPI Evasion**: Verifies traffic shape matches normal TLS (CDF comparison).

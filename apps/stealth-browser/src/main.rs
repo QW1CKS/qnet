@@ -99,8 +99,13 @@ async fn main() -> Result<()> {
     #[cfg(feature = "with-tauri")]
     {
         use tauri::{Builder, generate_context};
+        // Share app_state into Tauri commands
+        let app_state2 = app_state.clone();
+        let tauri_builder = Builder::default()
+            .invoke_handler(tauri::generate_handler![navigate_url, get_status])
+            .manage(AppHandleState { state: app_state2 });
         info!("launching tauri window (dev)");
-        if let Err(e) = Builder::default().run(generate_context!()) {
+        if let Err(e) = tauri_builder.run(generate_context!()) {
             eprintln!("tauri error: {}", e);
         }
         info!("tauri window closed; exiting app");
@@ -131,6 +136,47 @@ async fn main() -> Result<()> {
     // Should be unreachable; all cfg branches above return.
     #[allow(unreachable_code)]
     Ok(())
+}
+
+#[cfg(feature = "with-tauri")]
+#[derive(Clone)]
+struct AppHandleState { state: Arc<AppState> }
+
+#[cfg(feature = "with-tauri")]
+#[tauri::command]
+async fn get_status(state: tauri::State<'_, AppHandleState>) -> Result<StatusSnapshot, String> {
+    let (snap, since_opt) = {
+        let g = state.state.status.lock().map_err(|_| "lock".to_string())?;
+        (g.0.clone(), g.1)
+    };
+    let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
+    let mut out = snap;
+    out.last_checked_ms_ago = ms_ago;
+    Ok(out)
+        .map_err(|e: anyhow::Error| e.to_string())
+}
+
+#[cfg(feature = "with-tauri")]
+#[tauri::command]
+async fn navigate_url(url: String, state: tauri::State<'_, AppHandleState>) -> Result<String, String> {
+    // Build a reqwest client that routes via the local SOCKS proxy
+    let socks = format!("socks5h://127.0.0.1:{}", state.state.cfg.socks_port);
+    let proxy = reqwest::Proxy::all(&socks).map_err(|e| e.to_string())?;
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .proxy(proxy)
+        .build()
+        .map_err(|e| e.to_string())?;
+    // Normalize URL (prepend https:// if missing a scheme)
+    let mut url2 = url.trim().to_string();
+    if !url2.starts_with("http://") && !url2.starts_with("https://") {
+        url2 = format!("https://{}", url2);
+    }
+    let resp = client.get(&url2).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap_or_default();
+    let preview = if body.len() > 1024 { &body[..1024] } else { &body };
+    Ok(format!("GET {} -> HTTP {}\n\n{}", url2, status, preview)).map_err(|e: anyhow::Error| e.to_string())
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]

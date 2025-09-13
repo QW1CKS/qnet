@@ -18,6 +18,9 @@ thiserror = "1"
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal"] }
 
+# HTTP client used by the Tauri command to fetch via SOCKS
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "socks"] }
+
 # Placeholders for future integration
 htx = { path = "../../crates/htx" }
 core-framing = { path = "../../crates/core-framing" }

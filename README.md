@@ -109,29 +109,25 @@ curl -I http://example.com --socks5-hostname 127.0.0.1:1080
 
 ### Demo: Secure Connection
 
-Demonstrate a full secure connection with bootstrap, TLS handshake, decoy routing, and DPI evasion verification:
+Demonstrate a full secure connection with catalog-first configuration (signed + bundled), TLS handshake, decoy routing, and DPI evasion verification:
 
 **Windows (PowerShell):**
 ```powershell
-# Set up seeds (replace with your Cloudflare tunnels)
-$seeds = "https://your-tunnel1.trycloudflare.com https://your-tunnel2.trycloudflare.com"
-
-# Run one-click demo with decoy and DPI capture
+# Run one-click demo with DPI capture (catalog-first by default)
 .\scripts\demo-secure-connection.ps1 `
   -WithDecoy `
   -Origin https://www.wikipedia.org `
   -CaptureSeconds 60 `
-  -Interface 3 `
-  -SeedsList $seeds
+   -Interface 3
 ```
 
 **Features:**
-- ✅ Bootstrap seed discovery
+- ✅ Catalog-first configuration (signed, bundled; updates from mirrors)
 - ✅ Real TLS handshake + inner HTX secure stream
 - ✅ Decoy routing for censorship evasion
 - ✅ DPI capture and comparison (PASS if traffic looks like normal TLS)
 
-See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting.
+See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format.
 
 ### Development Setup
 
