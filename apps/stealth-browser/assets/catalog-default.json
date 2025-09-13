@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "catalog_version": 1,
+  "generated_at": "2025-09-13T13:57:51.534643700Z",
+  "expires_at": "2025-09-20T13:57:51.534643700Z",
+  "publisher_id": "qnet.main.ed25519.2025",
+  "update_urls": [
+    "https://raw.githubusercontent.com/<org>/qnet-catalogs/main/dist/catalog.json",
+    "https://<org>.github.io/qnet-catalogs/catalog.json"
+  ],
+  "seed_fallback_urls": [
+    "https://seed1.example.org/bootstrap.json"
+  ],
+  "entries": [
+    {
+      "id": "cdn-01",
+      "host": "www.example-cdn.com",
+      "ports": [
+        443
+      ],
+      "protocols": [
+        "tcp",
+        "quic"
+      ],
+      "alpn": [
+        "h2",
+        "h3"
+      ],
+      "region": [
+        "global",
+        "cdn"
+      ],
+      "weight": 10,
+      "health_path": "/",
+      "tls_profile": "chrome-like-2025q3",
+      "quic_hints": null
+    },
+    {
+      "id": "edge-01",
+      "host": "edge.example.net",
+      "ports": [
+        443
+      ],
+      "protocols": [
+        "tcp"
+      ],
+      "alpn": [
+        "h2"
+      ],
+      "region": [
+        "global"
+      ],
+      "weight": 5,
+      "health_path": "/",
+      "tls_profile": "chrome-like-2025q3",
+      "quic_hints": null
+    }
+  ],
+  "signature_hex": "b81f290ec554433babc39443bea4807de5b9a39e1bf4cfd688a2f2d6a047c7595609d55215e2b61f5c6e126e438ce8e0e908a299599807bb7095679faabc940c"
+}

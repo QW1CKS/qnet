@@ -94,6 +94,10 @@ Example (trimmed):
 
 Pinned keys: embed 1–3 Ed25519 public keys in code; allow key rotation by shipping overlapping keys for at least one release.
 
+See also:
+- Bundling guidance and strict verification: `docs/catalog-publisher.md#app-bundling-guidance-assets--strict-verify`
+- Manual update trigger contract: `docs/catalog-publisher.md#manual-check-for-updates-contract-uibackend`
+
 ---
 
 ## Update model

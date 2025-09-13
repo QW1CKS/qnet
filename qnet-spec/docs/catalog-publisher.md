@@ -31,6 +31,8 @@ See the detailed YAML snippet in `specs/001-qnet/T6.7-playbook.md` under "catalo
 - Verify signature using `keys/publisher.pub`
 - Commit `dist/` and optionally publish a GitHub Release and GitHub Pages mirror
 
+See also template: `qnet-spec/templates/catalog-publish-workflow.yml` for a ready-to-adapt workflow skeleton.
+
 ## Manual signing (for now)
 
 Until QNet scales up, manually sign catalogs locally to avoid CI setup overhead:
@@ -61,3 +63,32 @@ Until QNet scales up, manually sign catalogs locally to avoid CI setup overhead:
 - Point the app to the cache path with the generated files to test loader/updater logic
 
 Refer to `docs/catalog-schema.md` for field semantics and verification rules.
+
+---
+
+## App bundling guidance (assets + strict verify)
+
+For production builds, bundle a default signed catalog with the app and enforce strict signature verification:
+
+- Place `assets/catalog-default.json` and `assets/catalog-default.json.sig` in the app project (e.g., `apps/stealth-browser/assets/`).
+- Embed assets via your app’s bundler (e.g., Tauri asset bundling or include_bytes!/include_str!).
+- Ship pinned publisher public keys in the binary. Remove any dev overrides like `STEALTH_CATALOG_ALLOW_UNSIGNED`.
+- Loader policy:
+	1) Load cached (verify+fresh) → else bundled (verify+fresh)
+	2) Reject unsigned or expired catalogs
+	3) Persist verified catalogs atomically to cache
+- Acceptance:
+	- On fresh install with no cache, app starts with bundled catalog verified and status `/status` shows `catalog_source: bundled` and a valid expiry.
+	- Tampering with bundled or cached data results in rejection and safe fallback to last-known-good or failure with clear log.
+
+## Manual "Check for updates" contract (UI/backend)
+
+Expose a user-triggered update action to fetch from `update_urls`, verify, and atomically swap if newer:
+
+- Backend command (example): `check_for_updates`
+	- Input: none
+	- Behavior: attempt fetch from mirrors; verify signature/TTL; replace cache if `catalog_version` increases (or fresher expiry).
+	- Output: JSON `{ updated: bool, from: string|null, version: number|null, error: string|null }`
+- Status fields (extend `/status` and UI):
+	- `last_update_check_ms_ago`, `last_update_ok`, `last_update_error`
+	- `catalog_source` becomes `remote` when a newer remote catalog is active

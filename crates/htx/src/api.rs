@@ -266,8 +266,18 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     use std::time::Duration;
     use url::Url;
 
-    // If bootstrap seeds are configured, ensure we can reach at least one healthy seed first (<30s)
-    if std::env::var("STEALTH_BOOTSTRAP_CATALOG_JSON").is_ok() {
+    // Global kill switch: disable online bootstrap seeds unless explicitly allowed
+    // Default behavior (when STEALTH_DISABLE_BOOTSTRAP is unset) is to DISABLE seeds.
+    let seeds_disabled = match std::env::var("STEALTH_DISABLE_BOOTSTRAP") {
+        Ok(v) => {
+            let v = v.to_ascii_lowercase();
+            !(v == "0" || v == "false" || v == "off")
+        }
+        Err(_) => true,
+    };
+    // If bootstrap seeds are configured, ensure we can reach at least one healthy seed first (<30s),
+    // but only when seeds are not globally disabled.
+    if !seeds_disabled && std::env::var("STEALTH_BOOTSTRAP_CATALOG_JSON").is_ok() {
         let ok = bootstrap::connect_seed_from_env(Duration::from_secs(29)).is_some();
         if !ok { return Err(ApiError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "bootstrap timeout"))); }
     }

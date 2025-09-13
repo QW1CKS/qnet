@@ -67,3 +67,22 @@ Expose a minimal status struct via Tauri IPC:
 4) Watch status change from `bundled` → `cached` or `remote`.
 
 For catalog authoring and signing, see `docs/catalog-schema.md` and the publisher guide (coming in `docs/catalog-publisher.md`).
+
+## Seedless “online” flip (dev convenience)
+
+For development without bootstrap seeds, the app marks `state: connected` after the first successful SOCKS CONNECT to any target. This lets you validate the end-to-end local path (SOCKS proxy and status server) while staying seedless.
+
+Windows quick test (PowerShell):
+
+1) Start the app in one terminal:
+  - Set `STEALTH_STATUS_PORT=18080` and (for examples) `STEALTH_CATALOG_ALLOW_UNSIGNED=1`
+  - Run the binary: `P:\GITHUB\qnet\target\debug\stealth-browser.exe`
+2) In another terminal, drive one request through the local SOCKS proxy to the status endpoint:
+  - Use Windows `curl.exe` (avoid the PowerShell `curl` alias):
+    - `%SystemRoot%\System32\curl.exe --socks5-hostname 127.0.0.1:1080 http://127.0.0.1:18080/status`
+3) Verify the state:
+  - `Invoke-RestMethod http://127.0.0.1:18080/status` → shows `state: connected`, `bootstrap: false`.
+
+Notes:
+- This is for dev verification only; production relies on the signed catalog and normal datapath. Remove `STEALTH_CATALOG_ALLOW_UNSIGNED` for strict verification in prod builds.
+- If `curl.exe` isn’t on PATH, reference it with the full path shown above.

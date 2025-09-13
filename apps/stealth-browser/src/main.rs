@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     // M3: Catalog-first loader (bundled + cache + verify) and background updater
     let cache_dir = CatalogState::ensure_cache_dir()?;
     info!(path=%cache_dir.display(), "catalog cache directory ready");
-    let mut cat_state = CatalogState::init_load().await?;
+    let cat_state = CatalogState::init_load().await?;
     // Persist verified catalog to cache for subsequent runs
     let _ = cat_state.persist_atomic().await;
     // Best-effort background updater (persists to cache when newer catalog is found)
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     // Shared app state for status reporting
     let app_state = Arc::new(AppState::new(cfg.clone(), cat_state.clone()));
     // Background connectivity monitor (bootstrap gate)
-    if cfg.bootstrap {
+    if cfg.bootstrap && !cfg.disable_bootstrap {
         spawn_connectivity_monitor(app_state.clone());
     }
 
@@ -221,17 +221,19 @@ struct Config {
     mode: Mode,
     bootstrap: bool,
     status_port: u16,
+    // Global kill switch to ensure no online seeds are used unless explicitly allowed
+    disable_bootstrap: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false, status_port: 0 }
+    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false, status_port: 0, disable_bootstrap: true }
     }
 }
 
 impl Config {
     fn load_default() -> Result<Self> {
-        // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP
+    // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP
         let mut cfg = Self::default();
         if let Ok(p) = std::env::var("STEALTH_SOCKS_PORT") {
             if let Ok(n) = p.parse::<u16>() { cfg.socks_port = n; }
@@ -244,6 +246,11 @@ impl Config {
             };
         }
         if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") { cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true"); }
+        // Global kill switch (defaults to disabled seeds). To ENABLE seeds, set to 0/false/off explicitly.
+        if let Ok(v) = std::env::var("STEALTH_DISABLE_BOOTSTRAP") {
+            let v = v.to_ascii_lowercase();
+            cfg.disable_bootstrap = !(v == "0" || v == "false" || v == "off");
+        }
         if let Ok(p) = std::env::var("STEALTH_STATUS_PORT") {
             if let Ok(n) = p.parse::<u16>() { cfg.status_port = n; }
         }
@@ -283,8 +290,8 @@ impl AppState {
             state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline },
             last_seed: None,
             last_checked_ms_ago: None,
-            catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version),
-            catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.clone()),
+            catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
+            catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
             catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
         };
         Self { cfg, status: Mutex::new((snap, None)), catalog }
@@ -374,7 +381,8 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         let mut json = serde_json::json!({
             "socks_addr": socks_addr,
             "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo" },
-            "bootstrap": app.cfg.bootstrap,
+            // Surface effective bootstrap state: false when kill switch is active
+            "bootstrap": app.cfg.bootstrap && !app.cfg.disable_bootstrap,
             "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
         });
     if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
@@ -603,15 +611,35 @@ use directories::ProjectDirs;
 use hex::FromHex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct CatalogEntry {
+    id: String,
+    host: String,
+    ports: Vec<u16>,
+    protocols: Vec<String>,
+    alpn: Vec<String>,
+    #[serde(default)]
+    region: Vec<String>,
+    #[serde(default)]
+    weight: Option<u64>,
+    #[serde(default)]
+    health_path: Option<String>,
+    #[serde(default)]
+    tls_profile: Option<String>,
+    #[serde(default)]
+    quic_hints: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CatalogInner {
-    schema_version: u32,
-    catalog_version: u32,
-    generated_at: String,
-    expires_at: String,
+    schema_version: u64,
+    catalog_version: u64,
+    generated_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
     publisher_id: String,
     update_urls: Vec<String>,
-    seed_fallback_urls: Option<Vec<String>>,
-    entries: Vec<serde_json::Value>,
+    #[serde(default)]
+    seed_fallback_urls: Vec<String>,
+    entries: Vec<CatalogEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -625,6 +653,7 @@ struct CatalogJson {
 #[derive(Debug, Clone)]
 struct CatalogMeta {
     catalog: CatalogInner,
+    signature_hex: Option<String>,
     source: Option<String>, // bundled|cache|<url>
 }
 
@@ -661,7 +690,11 @@ impl CatalogState {
         if let Some(meta) = Self::load_from_cache().await? {
             return Ok(Self { current: Some(meta) });
         }
-        // 2) Try bundled from qnet-spec/templates as a stand-in until assets bundling is wired
+        // 2) Try bundled assets (embedded with the binary)
+        if let Some(meta) = Self::load_from_bundled_assets()? {
+            return Ok(Self { current: Some(meta) });
+        }
+        // 3) Dev-only: try repo templates if present on disk
         if let Some(meta) = Self::load_from_repo_templates().await? {
             return Ok(Self { current: Some(meta) });
         }
@@ -675,6 +708,16 @@ impl CatalogState {
         let sig = tokio::fs::read_to_string(&sig_p).await?;
         match Self::parse_and_verify(&json, Some(&sig))? {
             Some(mut cm) => { cm.source = Some("cache".into()); Ok(Some(cm)) }
+            None => Ok(None),
+        }
+    }
+
+    fn load_from_bundled_assets() -> anyhow::Result<Option<CatalogMeta>> {
+        // These files are generated at build-time and embedded into the binary
+        // Paths are relative to this source file (src/) -> ../assets/
+        let json_bytes: &'static [u8] = include_bytes!("../assets/catalog-default.json");
+        match Self::parse_and_verify(json_bytes, None)? {
+            Some(mut cm) => { cm.source = Some("bundled".into()); Ok(Some(cm)) }
             None => Ok(None),
         }
     }
@@ -694,7 +737,7 @@ impl CatalogState {
     fn parse_and_verify(json_bytes: &[u8], sig_detached: Option<&str>) -> anyhow::Result<Option<CatalogMeta>> {
         let cj: CatalogJson = serde_json::from_slice(json_bytes)?;
         // TTL check early
-        let exp: DateTime<Utc> = cj.catalog.expires_at.parse().unwrap_or_else(|_| Utc::now());
+        let exp: DateTime<Utc> = cj.catalog.expires_at;
         if exp <= Utc::now() {
             warn!("catalog expired; rejecting");
             return Ok(None);
@@ -705,14 +748,16 @@ impl CatalogState {
             (None, Some(inline)) => Some(inline.to_string()),
             _ => None,
         };
-        let allow_unsigned = std::env::var("STEALTH_CATALOG_ALLOW_UNSIGNED").map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+    let allow_unsigned_env = std::env::var("STEALTH_CATALOG_ALLOW_UNSIGNED").map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
+    // Only honor unsigned catalogs on debug builds AND when env flag is set.
+    let allow_unsigned = cfg!(debug_assertions) && allow_unsigned_env;
         if let Some(sig_hex) = sig_hex_opt {
             let sig = match Vec::from_hex(&sig_hex) {
                 Ok(v) => v,
                 Err(e) => {
                     if allow_unsigned {
                         warn!(error=?e, "bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
-                        return Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }));
+                        return Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: None, source: None }));
                     } else {
                         return Ok(None);
                     }
@@ -720,17 +765,19 @@ impl CatalogState {
             };
             // Inline verify: re-serialize inner to DET-CBOR and verify using pinned pubkey
             let det = core_cbor::to_det_cbor(&cj.catalog)?;
-            let pk_hex = std::fs::read_to_string("qnet-spec/templates/keys/publisher.pub")
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            let pk = Vec::from_hex(&pk_hex).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
+            let mut pk_hex = include_str!("../assets/publisher.pub").to_string();
+            // Support comment lines beginning with '#'
+            pk_hex = pk_hex
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .collect::<String>();
+            let pk = Vec::from_hex(pk_hex.trim()).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
             core_crypto::ed25519::verify(&pk, &det, &sig)
                 .map_err(|_| anyhow::anyhow!("signature verify failed"))?;
-            Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }))
+            Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: Some(hex::encode(sig)), source: None }))
         } else if allow_unsigned {
             warn!("missing signature; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
-            Ok(Some(CatalogMeta { catalog: cj.catalog, source: None }))
+            Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: None, source: None }))
         } else {
             warn!("missing signature");
             Ok(None)
@@ -744,7 +791,8 @@ impl CatalogState {
             let (json_p, sig_p) = Self::cache_paths()?;
             let tmp_json = json_p.with_extension("json.tmp");
             let tmp_sig = sig_p.with_extension("sig.tmp");
-            let json = serde_json::to_vec_pretty(&serde_json::json!({
+            // Persist outer JSON with signature if available (self-contained cache)
+            let mut outer = serde_json::json!({
                 "schema_version": cur.catalog.schema_version,
                 "catalog_version": cur.catalog.catalog_version,
                 "generated_at": cur.catalog.generated_at,
@@ -753,12 +801,18 @@ impl CatalogState {
                 "update_urls": cur.catalog.update_urls,
                 "seed_fallback_urls": cur.catalog.seed_fallback_urls,
                 "entries": cur.catalog.entries,
-            }))?;
+            });
+            if let Some(sig_hex) = &cur.signature_hex {
+                outer["signature_hex"] = serde_json::Value::String(sig_hex.clone());
+            }
+            let json = serde_json::to_vec_pretty(&outer)?;
             tokio::fs::write(&tmp_json, &json).await?;
             tokio::fs::rename(&tmp_json, &json_p).await?;
-            // Note: without a detached signature here, write a marker
-            if let Err(e) = tokio::fs::write(&tmp_sig, "verified-inline").await { warn!(error=?e, path=%tmp_sig.display(), "sig write failed"); }
-            if let Err(e) = tokio::fs::rename(&tmp_sig, &sig_p).await { warn!(error=?e, from=%tmp_sig.display(), to=%sig_p.display(), "sig rename failed"); }
+            // Write detached signature file for convenience
+            if let Some(sig_hex) = &cur.signature_hex {
+                if let Err(e) = tokio::fs::write(&tmp_sig, sig_hex).await { warn!(error=?e, path=%tmp_sig.display(), "sig write failed"); }
+                if let Err(e) = tokio::fs::rename(&tmp_sig, &sig_p).await { warn!(error=?e, from=%tmp_sig.display(), to=%sig_p.display(), "sig rename failed"); }
+            }
             info!(path=%json_p.display(), "catalog cached");
             return Ok(());
         }
