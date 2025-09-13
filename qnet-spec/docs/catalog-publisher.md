@@ -100,3 +100,4 @@ Some deployments may prefer to publish the decoy catalog as a separate artifact 
 - Add `dist/decoy-catalog.json` and `dist/decoy-catalog.json.sig` to the publisher outputs.
 - Reuse the same signing key or define a decoy-specific publisher key (document in clients if different).
 - Clients should prefer signed file-based decoy catalogs over environment-provided ones in production.
+ - App behavior alignment (M3): the runtime prefers a signed decoy catalog loaded from assets or disk; env-based catalogs are only honored in dev with explicit `STEALTH_DECOY_ALLOW_UNSIGNED=1`.

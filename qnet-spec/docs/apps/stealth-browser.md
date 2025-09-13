@@ -26,6 +26,9 @@ This document focuses on M3 (Catalog pipeline) specifics for the Stealth Browser
   - Verify signature and `expires_at` freshness; require `catalog_version` > current or fresher `expires_at`.
   - On success, atomically replace cache and emit a status event.
   - On failure, keep current catalog; schedule retry with capped backoff.
+ - Manual trigger (dev & UI wiring):
+   - Invoke `GET /update` (alias: `GET /check-updates`) on the local status server to perform a one-shot update check.
+   - The response includes `{ updated, from, version, error, checked_at_ms }`. The `/status` payload also surfaces the last attempt under `last_update` with `checked_ms_ago`.
 
 ### Status API (for UI)
 Expose a minimal status struct via Tauri IPC:
@@ -82,6 +85,7 @@ Windows quick test (PowerShell):
     - `%SystemRoot%\System32\curl.exe --socks5-hostname 127.0.0.1:1080 http://127.0.0.1:18080/status`
 3) Verify the state:
   - `Invoke-RestMethod http://127.0.0.1:18080/status` → shows `state: connected`, `bootstrap: false`.
+  - Optional: trigger a catalog check with `Invoke-RestMethod http://127.0.0.1:18080/update` and inspect `/status` → `last_update`.
 
 Notes:
 - This is for dev verification only; production relies on the signed catalog and normal datapath. Remove `STEALTH_CATALOG_ALLOW_UNSIGNED` for strict verification in prod builds.

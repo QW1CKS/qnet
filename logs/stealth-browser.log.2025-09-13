@@ -271,3 +271,20 @@
 [2m2025-09-13T20:58:42.071026Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
 [2m2025-09-13T20:58:42.073383Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
 [2m2025-09-13T20:58:42.073419Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T21:36:01.023470Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T21:36:01.023706Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T21:36:01.027909Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T21:36:01.037509Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T21:36:01.037585Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T21:36:01.040445Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T21:36:01.040495Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1080 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T21:36:11.972677Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-13T21:36:11.972737Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-13T21:37:23.437506Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T21:37:23.437644Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m19091 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T21:37:23.443223Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T21:37:23.456082Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T21:37:23.456137Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T21:37:23.460849Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:19090
+[2m2025-09-13T21:37:23.460938Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:19091 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T21:38:09.551996Z[0m [32m INFO[0m connected (seedless) via SOCKS CONNECT [3mtarget[0m[2m=[0mexample.com:443

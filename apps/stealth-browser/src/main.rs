@@ -37,11 +37,6 @@ async fn main() -> Result<()> {
     let cat_state = CatalogState::init_load().await?;
     // Persist verified catalog to cache for subsequent runs
     let _ = cat_state.persist_atomic().await;
-    // Best-effort background updater (persists to cache when newer catalog is found)
-    let mut cat_state_for_update = cat_state.clone();
-    tokio::spawn(async move {
-        cat_state_for_update.updater().await;
-    });
     if let Some(meta) = &cat_state.current {
         info!(ver=meta.catalog.catalog_version, exp=%meta.catalog.expires_at, "catalog verified");
     } else {
@@ -50,6 +45,18 @@ async fn main() -> Result<()> {
 
     // Shared app state for status reporting
     let app_state = Arc::new(AppState::new(cfg.clone(), cat_state.clone()));
+    // Background updater: periodically check mirrors and swap active catalog on success
+    {
+        let app_for_update = app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = check_for_updates_now(&app_for_update).await {
+                    warn!(error=?e, "catalog update cycle failed");
+                }
+                tokio::time::sleep(StdDuration::from_secs(600)).await; // 10 min
+            }
+        });
+    }
     // Kick off a one-shot "Routine Checkup" on startup to align with signed+ship model
     let app_state_for_checkup = app_state.clone();
     tokio::spawn(async move {
@@ -295,9 +302,11 @@ struct StatusSnapshot {
 struct AppState {
     cfg: Config,
     status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
-    catalog: CatalogState,
+    catalog: Mutex<CatalogState>,
     // In-memory decoy catalog loaded during Routine Checkup (preferred over env)
     decoy_catalog: Mutex<Option<htx::decoy::DecoyCatalog>>,
+    // Last catalog update attempt/result (manual or background)
+    last_update: Mutex<Option<UpdateInfo>>,
 }
 
 impl AppState {
@@ -314,7 +323,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog, decoy_catalog: Mutex::new(None) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None) }
     }
 }
 
@@ -388,6 +397,7 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
     let req = String::from_utf8_lossy(&buf[..n]);
     let first_line = req.lines().next().unwrap_or("");
     let path_status = first_line.starts_with("GET /status ") || first_line.starts_with("GET /status?");
+    let path_update = first_line.starts_with("GET /update ") || first_line.starts_with("POST /update ") || first_line.starts_with("GET /check-updates ");
     let path_root = first_line.starts_with("GET / ");
     let body;
     let content_type;
@@ -413,9 +423,38 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     if let Some(n) = snap.peers_online { json["peers_online"] = serde_json::json!(n); }
     if let Some(p) = &snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
+        if let Some(u) = app.last_update.lock().unwrap().as_ref() {
+            let mut obj = serde_json::json!({
+                "updated": u.updated,
+                "from": u.from,
+                "version": u.version,
+                "error": u.error,
+            });
+            if let Some(t) = u.checked_at { obj["checked_ms_ago"] = serde_json::json!(t.elapsed().as_millis() as u64); }
+            json["last_update"] = obj;
+        }
         if let Some(ms) = ms_ago { json["last_checked_ms_ago"] = serde_json::Value::Number(serde_json::Number::from(ms)); }
         body = json.to_string();
         content_type = "application/json";
+    } else if path_update {
+        // One-shot update trigger
+        match check_for_updates_now(app).await {
+            Ok(info) => {
+                let mut obj = serde_json::json!({
+                    "updated": info.updated,
+                    "from": info.from,
+                    "version": info.version,
+                    "error": info.error,
+                });
+                if let Some(t) = info.checked_at { obj["checked_at_ms"] = serde_json::json!(t.elapsed().as_millis() as u64); }
+                body = obj.to_string();
+                content_type = "application/json";
+            }
+            Err(e) => {
+                body = serde_json::json!({"updated": false, "error": e.to_string()}).to_string();
+                content_type = "application/json";
+            }
+        }
     } else if path_root {
         let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
         body = format!("<html><head><title>QNet Stealth</title></head><body><h3>QNet Stealth — Status</h3><pre id=out></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
@@ -476,7 +515,7 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         body = serde_json::json!({"error":"not found"}).to_string();
         content_type = "application/json";
     }
-    let status = if path_status || path_root || first_line.starts_with("GET /resolve?") { "200 OK" } else { "404 Not Found" };
+    let status = if path_status || path_update || path_root || first_line.starts_with("GET /resolve?") { "200 OK" } else { "404 Not Found" };
     let resp = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
         ct=content_type,
@@ -564,6 +603,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             // Mark app as connected (online) on first successful CONNECT
             if let Some(app) = &app_state {
                 let mut guard = app.status.lock().unwrap();
+                if !matches!(guard.0.state, ConnState::Connected) { info!(target=%target, "connected (seedless) via SOCKS CONNECT"); }
                 guard.0.state = ConnState::Connected;
                 guard.1 = Some(StdInstant::now());
                 guard.0.last_checked_ms_ago = Some(0);
@@ -609,6 +649,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             send_reply(stream, 0x00).await?;
             if let Some(app) = &app_state {
                 let mut guard = app.status.lock().unwrap();
+                if !matches!(guard.0.state, ConnState::Connected) { info!(target=%connect_target, "connected (decoy-direct) via SOCKS CONNECT"); }
                 guard.0.state = ConnState::Connected;
                 guard.1 = Some(StdInstant::now());
                 guard.0.last_checked_ms_ago = Some(0);
@@ -727,7 +768,8 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
         let mut g = app.status.lock().unwrap();
         g.0.checkup_phase = Some("downloading-catalog".into());
     }
-    try_catalog_update_once(&app.catalog).await;
+    // Attempt a single catalog update; ignore errors
+    let _ = check_for_updates_now(&app).await;
 
     // Phase: calibrating-decoys (load from signed file or env for dev)
     {
@@ -759,14 +801,7 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
 }
 
 async fn try_catalog_update_once(cat: &CatalogState) {
-    let urls = match &cat.current { Some(c) => c.catalog.update_urls.clone(), None => vec![] };
-    if urls.is_empty() { return; }
-    let client = match reqwest::Client::builder().use_rustls_tls().build() { Ok(c) => c, Err(_) => return };
-    for u in &urls {
-        if let Ok(resp) = client.get(u).send().await.and_then(|r| r.error_for_status()) {
-            if let Ok(bytes) = resp.bytes().await { let _ = CatalogState::parse_and_verify(&bytes, None); }
-        }
-    }
+    let _ = cat; // legacy stub removed in favor of check_for_updates_now
 }
 
 async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> {
@@ -1015,39 +1050,82 @@ impl CatalogState {
         Err(anyhow::anyhow!("no catalog to persist"))
     }
 
-    async fn updater(self: &mut Self) {
-        // Best-effort periodic updater using update_urls; transport untrusted
-        let urls = match &self.current { Some(c) => c.catalog.update_urls.clone(), None => vec![] };
-        if urls.is_empty() { return; }
-        let client = reqwest::Client::builder().use_rustls_tls().build();
-        let client = match client { Ok(c) => c, Err(_) => return };
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(600)).await;
-            for u in &urls {
-                match client.get(u).send().await.and_then(|r| r.error_for_status()) {
-                    Ok(resp) => {
-                        if let Ok(bytes) = resp.bytes().await {
-                            if let Ok(Some(mut cm)) = Self::parse_and_verify(&bytes, None) {
+    // updater removed in favor of app-level shared updater using AppState
+}
+
+// =====================
+// Catalog update trigger (manual + background)
+// =====================
+
+#[derive(Debug, Clone)]
+struct UpdateInfo {
+    updated: bool,
+    from: Option<String>,
+    version: Option<u64>,
+    error: Option<String>,
+    checked_at: Option<StdInstant>,
+}
+
+async fn check_for_updates_now(app: &Arc<AppState>) -> Result<UpdateInfo> {
+    use anyhow::Context as _;
+    let mut urls: Vec<String> = Vec::new();
+    let mut cur_ver: Option<u64> = None;
+    {
+        let guard = app.catalog.lock().unwrap();
+        if let Some(c) = &guard.current { urls = c.catalog.update_urls.clone(); cur_ver = Some(c.catalog.catalog_version); }
+    }
+    if urls.is_empty() {
+        let info = UpdateInfo { updated: false, from: None, version: cur_ver, error: Some("no update_urls".into()), checked_at: Some(StdInstant::now()) };
+        *app.last_update.lock().unwrap() = Some(info.clone());
+        return Ok(info);
+    }
+    let client = reqwest::Client::builder().use_rustls_tls().build().context("http client")?;
+    let mut last_err: Option<String> = None;
+    for u in urls {
+        match client.get(&u).send().await.and_then(|r| r.error_for_status()) {
+            Ok(resp) => {
+                match resp.bytes().await {
+                    Ok(bytes) => match CatalogState::parse_and_verify(&bytes, None) {
+                        Ok(Some(mut cm)) => {
+                            // Compare versions
+                            let newer = {
+                                let guard = app.catalog.lock().unwrap();
+                                match &guard.current { Some(cur) => cm.catalog.catalog_version > cur.catalog.catalog_version, None => true }
+                            };
+                            if newer {
                                 cm.source = Some(u.clone());
-                                // Only replace if newer version
-                                let replace = match &self.current {
-                                    Some(cur) => cm.catalog.catalog_version > cur.catalog.catalog_version,
-                                    None => true,
-                                };
-                                if replace {
-                                    info!(url=%u, ver=cm.catalog.catalog_version, "catalog updated");
-                                    self.current = Some(cm);
-                                    let _ = self.persist_atomic().await;
-                                    break;
-                                } else {
-                                    debug!(url=%u, "catalog same or older; skip");
+                                // Persist and swap
+                                let mut new_state = CatalogState { current: Some(cm.clone()) };
+                                let _ = new_state.persist_atomic().await;
+                                {
+                                    let mut guard = app.catalog.lock().unwrap();
+                                    *guard = new_state;
                                 }
+                                // Update snapshot fields
+                                {
+                                    let mut g = app.status.lock().unwrap();
+                                    g.0.catalog_version = Some(cm.catalog.catalog_version as u32);
+                                    g.0.catalog_expires_at = Some(cm.catalog.expires_at.to_rfc3339());
+                                    g.0.catalog_source = cm.source.clone();
+                                }
+                                let info = UpdateInfo { updated: true, from: Some(u.clone()), version: Some(cm.catalog.catalog_version), error: None, checked_at: Some(StdInstant::now()) };
+                                *app.last_update.lock().unwrap() = Some(info.clone());
+                                info!(url=%u, ver=cm.catalog.catalog_version, "catalog updated");
+                                return Ok(info);
+                            } else {
+                                debug!(url=%u, "catalog same or older; skip");
                             }
                         }
-                    }
-                    Err(_) => { /* ignore and try next */ }
+                        Ok(None) => { last_err = Some("verify/ttl rejection".into()); }
+                        Err(e) => { last_err = Some(format!("parse error: {e}")); }
+                    },
+                    Err(e) => { last_err = Some(format!("read body: {e}")); }
                 }
             }
+            Err(e) => { last_err = Some(format!("http: {e}")); }
         }
     }
+    let info = UpdateInfo { updated: false, from: None, version: cur_ver, error: last_err, checked_at: Some(StdInstant::now()) };
+    *app.last_update.lock().unwrap() = Some(info.clone());
+    Ok(info)
 }
