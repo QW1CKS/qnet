@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "catalog_version": 1,
+  "generated_at": "2025-09-12T12:00:00Z",
+  "expires_at": "2025-09-19T12:00:00Z",
+  "publisher_id": "qnet.main.ed25519.2025",
+  "update_urls": [
+    "https://raw.githubusercontent.com/<org>/qnet-catalogs/main/dist/catalog.json",
+    "https://<org>.github.io/qnet-catalogs/catalog.json"
+  ],
+  "seed_fallback_urls": [
+    "https://seed1.example.org/bootstrap.json"
+  ],
+  "entries": [
+    {
+      "id": "cdn-01",
+      "host": "www.example-cdn.com",
+      "ports": [443],
+      "protocols": ["tcp", "quic"],
+      "alpn": ["h2", "h3"],
+      "region": ["global", "cdn"],
+      "weight": 10,
+      "health_path": "/",
+      "tls_profile": "chrome-like-2025q3"
+    }
+  ],
+  "signature_hex": "ed25519_signature_hex_over_DET_CBOR"
+}

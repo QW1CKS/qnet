@@ -95,6 +95,21 @@ QNet is a decentralized, censorship-resistant network designed to replace the pu
 	- HTX scheduler: HTX_SCHEDULER_PROFILE (http), HTX_INITIAL_WINDOW, HTX_CHUNK for flow-control defaults
 - Validation: unit tests for distributions, bounds, AEAD with padding, template rotation; example DPI scripts under `qnet-spec/templates/`
 
+## Catalog pipeline summary (T6.7, M3)
+M3 makes the signed catalog the primary configuration path, with seeds as fallback. See `docs/catalog-schema.md` and `specs/001-qnet/T6.7-playbook.md`.
+
+- Format: JSON public form with detached Ed25519 signature over DET-CBOR bytes of the inner object; pinned publisher keys in client.
+- Bundling: Ship `assets/catalog-default.json` (+ `.sig`) with the app; verify at load time.
+- Cache + TTL: Store verified catalogs under OS-appropriate app data; enforce `expires_at` with grace + warnings; keep last-known-good for rollback.
+- Updater: Fetch from `update_urls` mirrors (GitHub Raw/Pages/CDN), verify signature and freshness, atomically replace cache, and surface status.
+- Status API: Expose `source` (bundled/cached/remote), `version`, `expires_at`, and `publisher_id` to the UI.
+- Security: Mirrors are untrusted; integrity comes from signatures; support 1–3 pinned keys for rotation; publish fingerprints in docs/UI.
+
+Acceptance (M3):
+- Loader verifies signatures and TTL; falls back correctly; atomic persist + rollback implemented.
+- Updater pulls a newer catalog from mirrors; rejects tamper; fails over mirrors; retains last-known-good on errors.
+- UI (or dev panel) shows catalog status fields for manual validation.
+
 ## Performance Targets and Methodology (for T6.6)
 - Micro-benchmarks:
 	- AEAD (ChaCha20-Poly1305) ≥2 GB/s per core for ≥16KiB payloads (x86_64 AVX2 reference).

@@ -15,6 +15,12 @@ QNet clients use a signed “catalog” as the primary configuration for plausib
 
 This document defines the JSON structure presented to users and mirrors, the canonical form that is signed (DET-CBOR), and operational guidance for keys, updates, and rotation.
 
+Related docs & templates:
+- Signer CLI: `docs/catalog-signer.md`
+- Publisher guide: `docs/catalog-publisher.md`
+- Templates: `qnet-spec/templates/decoys.yml`, `qnet-spec/templates/catalog.meta.yml`
+- Example outputs: `qnet-spec/templates/catalog.example.json`, `.sig`, and example pubkey under `qnet-spec/templates/keys/publisher.pub`
+
 ---
 
 ## File formats

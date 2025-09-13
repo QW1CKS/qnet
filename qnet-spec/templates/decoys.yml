@@ -1,0 +1,25 @@
+# Human-editable decoy entries for the catalog signer
+# Matches schema in docs/catalog-schema.md
+
+schema_version: 1
+publisher_id: qnet.main.ed25519.2025
+
+entries:
+  - id: cdn-01
+    host: www.example-cdn.com
+    ports: [443]
+    protocols: [tcp, quic]
+    alpn: [h2, h3]
+    region: [global, cdn]
+    weight: 10
+    health_path: /
+    tls_profile: chrome-like-2025q3
+  - id: edge-01
+    host: edge.example.net
+    ports: [443]
+    protocols: [tcp]
+    alpn: [h2]
+    region: [global]
+    weight: 5
+    health_path: /
+    tls_profile: chrome-like-2025q3

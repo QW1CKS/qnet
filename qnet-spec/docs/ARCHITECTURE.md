@@ -402,3 +402,17 @@ SphinxPacket {
 - HTX crate exposes dial/accept (to be implemented per spec).
 - Deterministic CBOR helpers in `core-cbor`.
 - Crypto wrappers in `core-crypto` (ChaCha20-Poly1305, HKDF skeleton).
+
+## 📦 Catalog-first configuration (M3)
+
+QNet distribution and runtime configuration are now catalog-first:
+
+- The app bundles a default signed `catalog.json` (+ optional `.sig`) describing decoy endpoints, update mirrors, and TTLs.
+- On startup, the app loads and verifies the catalog using a pinned Ed25519 public key over the canonical DET-CBOR encoding of the inner object.
+- A background updater periodically fetches newer catalogs from `update_urls`, verifies, and atomically swaps the cached copy. Seeds remain an optional fallback when no valid catalog is available.
+- TTL is enforced via `expires_at`; stale catalogs trigger warnings and an update attempt.
+
+References:
+- Catalog schema: `qnet-spec/docs/catalog-schema.md`
+- Signer CLI: `qnet-spec/docs/catalog-signer.md` (implemented as `crates/catalog-signer`)
+- Publisher guide (mirrors/CI): `qnet-spec/docs/catalog-publisher.md`

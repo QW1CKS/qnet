@@ -601,3 +601,20 @@ This section tracks hands-on testing of QNet using physical setups (e.g., two lo
 | Advanced Stealth: Decoy Routing | Configure decoy domains (e.g., google.com). Route through decoy node first, then to real destination. | ISP-like logs show decoy IP; real destination hidden. | | | Pending |
 
 - **Instructions**: Update "Actual Outputs" and "Notes/Failure Reason" after each test. Mark "Status" as Pass, Fail, or Pending. Add new rows for additional tests as needed.
+
+#### M3 Tasks — Catalog pipeline
+- T6.7-M3.1: Catalog signer templates
+    - Deliverables: `qnet-spec/templates/decoys.yml`, `qnet-spec/templates/catalog.meta.yml` (examples committed)
+    - Acceptance: Lints pass; schema matches `docs/catalog-schema.md`.
+- T6.7-M3.2: Bundle default signed catalog
+    - Deliverables: `apps/stealth-browser/assets/catalog-default.json` (+ `.sig`), pinned pubkeys in code
+    - Acceptance: App loads bundled catalog when no cache present; signature verified.
+- T6.7-M3.3: Loader + verifier + TTL + atomic cache
+    - Deliverables: Rust module to load/verify catalogs, enforce `expires_at`, persist atomically with rollback
+    - Acceptance: Unit tests cover good/bad signatures, expired TTL, atomic swap, rollback on partial write
+- T6.7-M3.4: Updater from mirrors
+    - Deliverables: Background task to fetch from `update_urls`, verify, compare `catalog_version`/`expires_at`, replace cache
+    - Acceptance: Integration tests for happy path, tamper rejection, mirror failover; last-known-good retained
+- T6.7-M3.5: Status API and dev panel
+    - Deliverables: IPC method exposing source/version/expiry/publisher; optional dev UI page showing fields
+    - Acceptance: E2E test shows correct transitions bundled → cached → remote

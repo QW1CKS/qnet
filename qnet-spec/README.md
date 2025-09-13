@@ -15,6 +15,13 @@ The `qnet-spec` directory contains the complete technical specification for the 
 - **Memory Systems**: AI guardrails and testing rules
 - **Scripts**: Automation tools for development workflow
 
+Quick links (M3 — Catalog pipeline):
+- Catalog schema: `docs/catalog-schema.md`
+- Catalog signer (CLI): `docs/catalog-signer.md`
+- Publisher guide: `docs/catalog-publisher.md`
+- Templates: `templates/decoys.yml`, `templates/catalog.meta.yml`
+- Examples: `templates/catalog.example.json`, `templates/catalog.example.json.sig`, `templates/keys/publisher.pub`
+
 ## Directory Structure
 
 ```
