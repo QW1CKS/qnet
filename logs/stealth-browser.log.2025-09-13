@@ -182,3 +182,92 @@
 [2m2025-09-13T18:15:04.646434Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
 [2m2025-09-13T18:15:04.650573Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18222
 [2m2025-09-13T18:15:04.650627Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:11222 [3mmode[0m[2m=[0mDirect
+[2m2025-09-13T20:31:59.438246Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:31:59.438562Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m9080 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:31:59.446107Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:31:59.460729Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:31:59.460951Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:31:59.463618Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:32371
+[2m2025-09-13T20:31:59.476364Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:9080 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:32:33.348290Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:32:33.348354Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m9080 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:32:33.354231Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:32:33.363822Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:32:33.364004Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:32:33.366852Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:32386
+[2m2025-09-13T20:32:33.373382Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:9080 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:32:33.380039Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-13T20:32:40.114203Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:32:40.114363Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m11222 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:32:40.130820Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:32:40.138138Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:32:40.138269Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:32:40.147319Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18222
+[2m2025-09-13T20:32:40.156297Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:11222 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:33:25.078778Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-13T20:33:25.078871Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-13T20:33:37.368410Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:33:37.368540Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m11222 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:33:37.372999Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:33:37.385419Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:33:37.385586Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:33:37.388048Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18222
+[2m2025-09-13T20:33:37.395558Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:11222 [3mmode[0m[2m=[0mHtxHttpEcho
+[2m2025-09-13T20:37:03.691177Z[0m [32m INFO[0m shutdown signal received
+[2m2025-09-13T20:37:03.691262Z[0m [32m INFO[0m OK: M1 SOCKS5 server running
+[2m2025-09-13T20:44:32.828339Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:44:32.828533Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:44:32.845949Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:44:32.859826Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:44:32.860062Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:44:32.863118Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:44:32.863163Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:45:43.022221Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:45:43.022349Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:45:43.026201Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:45:43.032399Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:45:43.032639Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:45:43.040101Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:45:43.040143Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:49:58.739872Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:49:58.740057Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:49:58.746488Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:49:58.751796Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:49:58.751937Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:49:58.756393Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:49:58.756491Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:50:38.594576Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:50:38.595214Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:50:38.601918Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:50:38.606885Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:50:38.607029Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:50:38.609938Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:50:38.610023Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:56:40.368026Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:56:40.368142Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:56:40.399718Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:56:40.429774Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:56:40.429957Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:56:40.432335Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:56:40.432371Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:56:59.097661Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:56:59.097808Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:56:59.125190Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:56:59.131985Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:56:59.132127Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:56:59.136931Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:56:59.136987Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:57:57.660474Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:57:57.660588Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:57:57.667556Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:57:57.678912Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:57:57.679080Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:57:57.681418Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:57:57.681468Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:58:42.050129Z[0m [32m INFO[0m stealth-browser stub starting
+[2m2025-09-13T20:58:42.050385Z[0m [32m INFO[0m config loaded [3mport[0m[2m=[0m1081 [3mmode[0m[2m=[0mDecoyDirect
+[2m2025-09-13T20:58:42.054790Z[0m [32m INFO[0m catalog cache directory ready [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache
+[2m2025-09-13T20:58:42.070892Z[0m [32m INFO[0m catalog cached [3mpath[0m[2m=[0mC:\Users\krypt\AppData\Local\qnet\stealth-browser\cache\catalog.json
+[2m2025-09-13T20:58:42.071026Z[0m [32m INFO[0m catalog verified [3mver[0m[2m=[0m1 [3mexp[0m[2m=[0m2025-09-20 13:57:51.534643700 UTC
+[2m2025-09-13T20:58:42.073383Z[0m [32m INFO[0m status server listening (GET /status) [3mstatus_addr[0m[2m=[0m127.0.0.1:18080
+[2m2025-09-13T20:58:42.073419Z[0m [32m INFO[0m starting SOCKS5 server [3maddr[0m[2m=[0m127.0.0.1:1081 [3mmode[0m[2m=[0mDecoyDirect

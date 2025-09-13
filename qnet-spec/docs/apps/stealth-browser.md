@@ -86,3 +86,22 @@ Windows quick test (PowerShell):
 Notes:
 - This is for dev verification only; production relies on the signed catalog and normal datapath. Remove `STEALTH_CATALOG_ALLOW_UNSIGNED` for strict verification in prod builds.
 - If `curl.exe` isn’t on PATH, reference it with the full path shown above.
+
+## Routine Checkup (first-run UX)
+
+On first open, the app runs a short Routine Checkup to ensure it starts from trusted, up-to-date presets without any live seed requirement:
+
+1. Download + verify catalog
+  - Fetch `catalog.json` from the `update_urls` mirrors in the bundled catalog; verify Ed25519 signature over DET-CBOR using the pinned publisher pubkey.
+  - If newer and valid, atomically persist to cache; otherwise keep bundled.
+2. Load decoy catalog (signed)
+  - Prefer a signed decoy catalog file shipped with the app or fetched from a trusted mirror; verify signature with the same pinned pubkey unless decoy uses a distinct publisher key.
+  - Dev-only fallback: allow an unsigned decoy catalog via env when `STEALTH_DECOY_ALLOW_UNSIGNED=1`.
+3. Calibrate decoys
+  - Precompute resolver state and ALPN/template hints for plausible egress.
+4. Peer discovery (handoff)
+  - Initiate discovery/connect (QNet peers) and surface `peers_online` in status. When connected, browsing proceeds via the QNet path.
+
+Status fields exposed during this flow: `checkup_phase`, `catalog_*`, `decoy_count`, `peers_online`.
+
+Masking policy: When a domain matches a `host_pattern` in the decoy catalog, the egress connection is made to the decoy host:port. Outsiders observe the decoy destination (e.g., youtube.com) rather than the original (e.g., google.com). Add catch-alls or specific mappings in the signed decoy catalog to expand coverage.

@@ -92,3 +92,11 @@ Expose a user-triggered update action to fetch from `update_urls`, verify, and a
 - Status fields (extend `/status` and UI):
 	- `last_update_check_ms_ago`, `last_update_ok`, `last_update_error`
 	- `catalog_source` becomes `remote` when a newer remote catalog is active
+
+### Decoy catalog artifacts (optional split)
+
+Some deployments may prefer to publish the decoy catalog as a separate artifact alongside the main catalog:
+
+- Add `dist/decoy-catalog.json` and `dist/decoy-catalog.json.sig` to the publisher outputs.
+- Reuse the same signing key or define a decoy-specific publisher key (document in clients if different).
+- Clients should prefer signed file-based decoy catalogs over environment-provided ones in production.

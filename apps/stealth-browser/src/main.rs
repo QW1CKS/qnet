@@ -50,6 +50,13 @@ async fn main() -> Result<()> {
 
     // Shared app state for status reporting
     let app_state = Arc::new(AppState::new(cfg.clone(), cat_state.clone()));
+    // Kick off a one-shot "Routine Checkup" on startup to align with signed+ship model
+    let app_state_for_checkup = app_state.clone();
+    tokio::spawn(async move {
+        if let Err(e) = run_routine_checkup(app_state_for_checkup).await {
+            warn!(error=?e, "routine checkup failed");
+        }
+    });
     // Background connectivity monitor (bootstrap gate)
     if cfg.bootstrap && !cfg.disable_bootstrap {
         spawn_connectivity_monitor(app_state.clone());
@@ -213,6 +220,7 @@ async fn navigate_url(url: String, state: tauri::State<'_, AppHandleState>) -> R
 enum Mode {
     Direct,
     HtxHttpEcho,
+    DecoyDirect,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,6 +250,7 @@ impl Config {
             cfg.mode = match m.to_ascii_lowercase().as_str() {
                 "direct" => Mode::Direct,
                 "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
+                "decoy-direct" | "decoy_direct" | "decoy" => Mode::DecoyDirect,
                 other => { warn!(%other, "unknown STEALTH_MODE; defaulting to direct"); Mode::Direct }
             };
         }
@@ -275,6 +284,11 @@ struct StatusSnapshot {
     catalog_version: Option<u32>,
     catalog_expires_at: Option<String>,
     catalog_source: Option<String>,
+    // Decoy routing (if applicable)
+    last_decoy: Option<String>,
+    decoy_count: Option<u32>,
+    peers_online: Option<u32>,
+    checkup_phase: Option<String>,
 }
 
 #[derive(Debug)]
@@ -282,6 +296,8 @@ struct AppState {
     cfg: Config,
     status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
     catalog: CatalogState,
+    // In-memory decoy catalog loaded during Routine Checkup (preferred over env)
+    decoy_catalog: Mutex<Option<htx::decoy::DecoyCatalog>>,
 }
 
 impl AppState {
@@ -293,8 +309,12 @@ impl AppState {
             catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
             catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
             catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
+            last_decoy: None,
+            decoy_count: None,
+            peers_online: None,
+            checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog }
+        Self { cfg, status: Mutex::new((snap, None)), catalog, decoy_catalog: Mutex::new(None) }
     }
 }
 
@@ -380,7 +400,7 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
         let mut json = serde_json::json!({
             "socks_addr": socks_addr,
-            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo" },
+            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::DecoyDirect => "decoy-direct" },
             // Surface effective bootstrap state: false when kill switch is active
             "bootstrap": app.cfg.bootstrap && !app.cfg.disable_bootstrap,
             "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
@@ -389,6 +409,10 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
     if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
     if let Some(exp) = &snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
     if let Some(src) = &snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
+    if let Some(d) = &snap.last_decoy { json["last_decoy"] = serde_json::json!(d); }
+    if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
+    if let Some(n) = snap.peers_online { json["peers_online"] = serde_json::json!(n); }
+    if let Some(p) = &snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
         if let Some(ms) = ms_ago { json["last_checked_ms_ago"] = serde_json::Value::Number(serde_json::Number::from(ms)); }
         body = json.to_string();
         content_type = "application/json";
@@ -396,11 +420,63 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
         body = format!("<html><head><title>QNet Stealth</title></head><body><h3>QNet Stealth — Status</h3><pre id=out></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
         content_type = "text/html; charset=utf-8";
+    } else if first_line.starts_with("GET /resolve?") {
+        // Simple decoy resolver endpoint: /resolve?origin=https://host:port
+        // Relies on env-based decoy catalog: STEALTH_DECOY_CATALOG_JSON (and optional STEALTH_DECOY_PUBKEY_HEX)
+        let mut origin: Option<String> = None;
+        if let Some(qidx) = first_line.find('?') {
+            if let Some(sp) = first_line[qidx + 1..].find(' ') {
+                let query = &first_line[qidx + 1..qidx + 1 + sp];
+                for pair in query.split('&') {
+                    if let Some(eq) = pair.find('=') {
+                        let (k, v) = (&pair[..eq], &pair[eq + 1..]);
+                        if k == "origin" {
+                            // Minimal percent-decoding for common characters
+                            let v = v.replace("%3A", ":").replace("%2F", "/");
+                            origin = Some(v);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(orig) = origin {
+            if let Some(cat) = htx::decoy::load_from_env() {
+                if let Some((host, port, alpn)) = htx::decoy::resolve(&orig, &cat) {
+                    body = serde_json::json!({
+                        "origin": orig,
+                        "decoy_host": host,
+                        "decoy_port": port,
+                        "alpn": alpn,
+                    }).to_string();
+                    content_type = "application/json";
+                } else {
+                    body = serde_json::json!({
+                        "origin": orig,
+                        "error": "no-match",
+                        "hint": "ensure STEALTH_DECOY_CATALOG_JSON contains entries matching host_pattern"
+                    }).to_string();
+                    content_type = "application/json";
+                }
+            } else {
+                body = serde_json::json!({
+                    "origin": orig,
+                    "error": "no-catalog",
+                    "hint": "set STEALTH_DECOY_CATALOG_JSON (and optional STEALTH_DECOY_PUBKEY_HEX)"
+                }).to_string();
+                content_type = "application/json";
+            }
+        } else {
+            body = serde_json::json!({
+                "error": "missing-origin",
+                "usage": "/resolve?origin=https://wikipedia.org:443"
+            }).to_string();
+            content_type = "application/json";
+        }
     } else {
         body = serde_json::json!({"error":"not found"}).to_string();
         content_type = "application/json";
     }
-    let status = if path_status || path_root { "200 OK" } else { "404 Not Found" };
+    let status = if path_status || path_root || first_line.starts_with("GET /resolve?") { "200 OK" } else { "404 Not Found" };
     let resp = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
         ct=content_type,
@@ -450,12 +526,12 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
         bail!("unsupported cmd {cmd}");
     }
 
-    let target = match atyp {
+    let (target, target_meta) = match atyp {
         0x01 => { // IPv4
             let mut ip = [0u8;4];
             stream.read_exact(&mut ip).await?;
             let port = read_u16(stream).await?;
-            format!("{}.{}.{}.{}:{}", ip[0],ip[1],ip[2],ip[3],port)
+            (format!("{}.{}.{}.{}:{}", ip[0],ip[1],ip[2],ip[3],port), TargetMeta::Ip)
         }
         0x03 => { // DOMAIN
             let len = read_u8(stream).await? as usize;
@@ -463,14 +539,14 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             stream.read_exact(&mut name).await?;
             let name = String::from_utf8_lossy(&name);
             let port = read_u16(stream).await?;
-            format!("{}:{}", name, port)
+            (format!("{}:{}", name, port), TargetMeta::Domain(name.to_string(), port))
         }
         0x04 => { // IPv6 (optional)
             let mut ip6 = [0u8;16];
             stream.read_exact(&mut ip6).await?;
             let port = read_u16(stream).await?;
             let addr = std::net::Ipv6Addr::from(ip6);
-            format!("[{}]:{}", addr, port)
+            (format!("[{}]:{}", addr, port), TargetMeta::Ip)
         }
         _ => {
             send_reply(stream, 0x08).await?; // address type not supported
@@ -511,7 +587,45 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             // Bridge TCP <-> SecureStream
             bridge_tcp_secure(stream, ss).await
         }
+        Mode::DecoyDirect => {
+            // If DOMAIN and decoy catalog present, try to resolve to decoy host:port
+            let mut connect_target = target.clone();
+            let mut decoy_used: Option<String> = None;
+            if let TargetMeta::Domain(host, port) = target_meta.clone() {
+                // Prefer app-loaded decoy catalog from Routine Checkup; fallback to env for dev
+                let cat_opt = app_state.as_ref().and_then(|app| app.decoy_catalog.lock().ok().and_then(|g| g.clone()));
+                if let Some(cat) = cat_opt.or_else(|| htx::decoy::load_from_env()) {
+                    let scheme = if port == 443 { "https" } else if port == 80 { "http" } else { "https" };
+                    let origin = format!("{}://{}:{}", scheme, host, port);
+                    if let Some((dhost, dport, _alpn)) = htx::decoy::resolve(&origin, &cat) {
+                        decoy_used = Some(format!("{}:{}", dhost, dport));
+                        connect_target = format!("{}:{}", dhost, dport);
+                    }
+                }
+            }
+            let mut outbound = TcpStream::connect(&connect_target).await
+                .with_context(|| format!("connect {connect_target}"))?;
+            // Success reply
+            send_reply(stream, 0x00).await?;
+            if let Some(app) = &app_state {
+                let mut guard = app.status.lock().unwrap();
+                guard.0.state = ConnState::Connected;
+                guard.1 = Some(StdInstant::now());
+                guard.0.last_checked_ms_ago = Some(0);
+                if let Some(d) = decoy_used {
+                    guard.0.last_decoy = Some(d);
+                }
+            }
+            let _bytes = tokio::io::copy_bidirectional(stream, &mut outbound).await?;
+            Ok(())
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+enum TargetMeta {
+    Ip,
+    Domain(String, u16),
 }
 
 async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -> Result<()> {
@@ -601,6 +715,88 @@ async fn send_reply(s: &mut TcpStream, rep: u8) -> Result<()> {
     // VER=5, REP=rep, RSV=0, ATYP=1 (IPv4), BND.ADDR=0.0.0.0, BND.PORT=0
     s.write_all(&[0x05, rep, 0x00, 0x01, 0,0,0,0, 0,0]).await?;
     Ok(())
+}
+
+// =====================
+// Routine Checkup (download+verify catalog, load decoys, stub peer discovery)
+// =====================
+
+async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
+    // Phase: downloading-catalog (force a single update pass now)
+    {
+        let mut g = app.status.lock().unwrap();
+        g.0.checkup_phase = Some("downloading-catalog".into());
+    }
+    try_catalog_update_once(&app.catalog).await;
+
+    // Phase: calibrating-decoys (load from signed file or env for dev)
+    {
+        let mut g = app.status.lock().unwrap();
+        g.0.checkup_phase = Some("calibrating-decoys".into());
+    }
+    let decoy = load_decoy_catalog_signed_or_dev().await;
+    {
+        let mut dc = app.decoy_catalog.lock().unwrap();
+        *dc = decoy.clone();
+        let mut g = app.status.lock().unwrap();
+        g.0.decoy_count = Some(decoy.as_ref().map(|c| c.entries.len() as u32).unwrap_or(0));
+    }
+
+    // Phase: peer-discovery (stub)
+    {
+        let mut g = app.status.lock().unwrap();
+        g.0.checkup_phase = Some("peer-discovery".into());
+        // TODO: integrate real discovery; for now 0
+        g.0.peers_online = Some(0);
+    }
+
+    // Phase: ready
+    {
+        let mut g = app.status.lock().unwrap();
+        g.0.checkup_phase = Some("ready".into());
+    }
+    Ok(())
+}
+
+async fn try_catalog_update_once(cat: &CatalogState) {
+    let urls = match &cat.current { Some(c) => c.catalog.update_urls.clone(), None => vec![] };
+    if urls.is_empty() { return; }
+    let client = match reqwest::Client::builder().use_rustls_tls().build() { Ok(c) => c, Err(_) => return };
+    for u in &urls {
+        if let Ok(resp) = client.get(u).send().await.and_then(|r| r.error_for_status()) {
+            if let Ok(bytes) = resp.bytes().await { let _ = CatalogState::parse_and_verify(&bytes, None); }
+        }
+    }
+}
+
+async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> {
+    // Prefer signed catalog file from repo templates (dev) or assets in release builds.
+    // 1) Repo templates (dev): qnet-spec/templates/decoy-catalog.json or .example.json
+    let candidates = [
+        std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json"),
+        std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.example.json"),
+    ];
+    for p in candidates {
+        if p.exists() {
+            if let Ok(text) = std::fs::read_to_string(&p) {
+                // Try signed first
+                if let Ok(signed) = serde_json::from_str::<htx::decoy::SignedCatalog>(&text) {
+                    // Use same pinned publisher key unless a decoy-specific key is added later
+                    let pk_hex = include_str!("../assets/publisher.pub").lines()
+                        .filter(|l| !l.trim_start().starts_with('#')).collect::<String>();
+                    if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) { return Some(cat); }
+                }
+                // Dev unsigned fallback (guarded by env)
+                if std::env::var("STEALTH_DECOY_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
+                    #[derive(Deserialize)]
+                    struct Unsigned { catalog: htx::decoy::DecoyCatalog }
+                    if let Ok(u) = serde_json::from_str::<Unsigned>(&text) { return Some(u.catalog); }
+                }
+            }
+        }
+    }
+    // 2) Env fallback (dev)
+    htx::decoy::load_from_env()
 }
 
 // =====================
