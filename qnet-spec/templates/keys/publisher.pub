@@ -1,3 +1,3 @@
-# Example Ed25519 public key (hex)
-# NOTE: Example only. Do not use in production.
-ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c
+# Ed25519 public key (hex) for catalog signing
+# Generated on 2025-09-13 for qnet catalog verification
+2a490f901ab05a4eb0ddf946d2124cc68fa8d74f52597c024240255da75243f3
