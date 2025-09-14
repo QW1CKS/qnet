@@ -12,3 +12,13 @@
 # Build artifacts
 Cargo.lock.bak
 *.log
+# Additional local build directories
+/target2/
+/target3/
+
+# Local dev certs (do not commit private keys)
+/certs/
+
+# Local logs and runtime artifacts
+/logs/
+*.log.*

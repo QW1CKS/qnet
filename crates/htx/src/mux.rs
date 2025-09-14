@@ -164,6 +164,9 @@ impl Mux {
                         Err(_) => break,
                     }
                 };
+                if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
+                    eprintln!("htx::mux(rx): got wire bytes len={}", bytes.len());
+                }
                 // If encrypted, attempt AEAD decode with current/new key, else fall back to plain
                 let frame_res = {
                     let mut enc_guard = inner.enc.lock().unwrap();
@@ -205,7 +208,13 @@ impl Mux {
                         framing::Frame::decode_plain(&bytes)
                     }
                 };
-                if let Ok(frame) = frame_res {
+                match frame_res {
+                    Ok(frame) => {
+                    if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
+                        let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
+                        let id = if frame.payload.len()>=4 { u32::from_be_bytes([frame.payload[0],frame.payload[1],frame.payload[2],frame.payload[3]]) } else { 0 };
+                        eprintln!("htx::mux(rx): frame ty={} id={} payload_len={}", ty, id, frame.payload.len());
+                    }
                     match frame.ty {
                         framing::FrameType::Stream => {
                             // payload: stream_id (u32) || data
@@ -321,6 +330,12 @@ impl Mux {
                             inner.credit_cv.notify_all();
                         }
                         _ => {}
+                    }
+                    },
+                    Err(e) => {
+                        if std::env::var("HTX_DEBUG_FRAMES").ok().as_deref() == Some("1") {
+                            eprintln!("htx::mux: decrypt_and_parse failed: {:?}; len={}", e, bytes.len());
+                        }
                     }
                 }
             }
@@ -470,6 +485,10 @@ impl StreamHandle {
             let (data_budget, _pad_len) = (data.len().min(target), 0usize);
 
             // Credit is consumed at send time in RR mode; when inline, we must take credit here.
+            // When stealth-mode is enabled we also track whether we blocked waiting for credit
+            // to decide if we should apply additional jitter (skip if we just blocked).
+            #[cfg(feature = "stealth-mode")]
+            let mut blocked = false;
             let (chunk, rest) = if self.mux.inner.rr_enabled {
                 // Split by budget locally; scheduler will enforce credit per send
                 let take = data_budget;
@@ -477,11 +496,18 @@ impl StreamHandle {
                 (c, r)
             } else {
                 #[cfg(feature = "stealth-mode")]
-                let (take, blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                {
+                    let (take, b) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                    blocked = b;
+                    let (c, r) = data.split_at(take);
+                    (c, r)
+                }
                 #[cfg(not(feature = "stealth-mode"))]
-                let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
-                let (c, r) = data.split_at(take);
-                (c, r)
+                {
+                    let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                    let (c, r) = data.split_at(take);
+                    (c, r)
+                }
             };
 
             // Apply bounded jitter only if we didn't just block on credit
@@ -688,6 +714,11 @@ impl Mux {
             if matches!(frame.ty, framing::FrameType::Stream) {
                 frame.payload.fill(0);
             }
+            if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
+                let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
+                let id = if out.len()>=8 { u32::from_be_bytes([out[4],out[5],out[6],out[7]]) } else { 0 };
+                eprintln!("htx::mux(tx,enc): frame ty={} id={} wire_len={}", ty, id, out.len());
+            }
             let _ = self.inner.tx.send(out);
         } else {
             let out = frame.encode_plain();
@@ -695,6 +726,11 @@ impl Mux {
             #[cfg(feature = "stealth-mode")]
             if matches!(frame.ty, framing::FrameType::Stream) {
                 frame.payload.fill(0);
+            }
+            if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
+                let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
+                let id = if out.len()>=8 { u32::from_be_bytes([out[4],out[5],out[6],out[7]]) } else { 0 };
+                eprintln!("htx::mux(tx,plain): frame ty={} id={} wire_len={}", ty, id, out.len());
             }
             let _ = self.inner.tx.send(out);
         }

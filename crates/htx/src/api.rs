@@ -238,7 +238,9 @@ fn spawn_tls_pump<S: Read + Write + Send + 'static>(
                         let len = ((buf[0] as usize) << 16)
                             | ((buf[1] as usize) << 8)
                             | (buf[2] as usize);
-                        let total = 4 + len;
+                        // Wire format is [Len(u24) | Type(u8) | payload...];
+                        // total bytes in this frame on the wire = 3 + len.
+                        let total = 3 + len;
                         if buf.len() < total {
                             break;
                         }
@@ -347,10 +349,20 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
         caps: &caps,
     })
     .map_err(|_| ApiError::Tls)?;
-    // Export 32 bytes EKM
+    // Export 32 bytes EKM. For local/dev compatibility, allow opting out of context binding
+    // by setting HTX_EKM_EXPORTER_NO_CTX=1 (both sides must match). This helps diagnose
+    // mismatches and simplifies interop with fixed templates.
     let mut ekm = [0u8; 32];
-    conn.export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
-        .map_err(|_| ApiError::Tls)?;
+    let no_ctx = std::env::var("HTX_EKM_EXPORTER_NO_CTX").ok().as_deref() == Some("1");
+    if no_ctx {
+        conn
+            .export_keying_material(&mut ekm, b"qnet inner", None)
+            .map_err(|_| ApiError::Tls)?;
+    } else {
+        conn
+            .export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
+            .map_err(|_| ApiError::Tls)?;
+    }
     // Build exporter wrapper that returns fixed EKM
     struct RustlsExporter {
         ekm: [u8; 32],
@@ -372,9 +384,21 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
     let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
     // Wrap conn + tcp into a StreamOwned for IO
+    // Avoid starving outgoing writes: set a small read timeout so the pump loop
+    // doesn't block indefinitely on reads and can interleave pending writes.
+    let _ = tcp.set_read_timeout(Some(Duration::from_millis(5)));
     let tls_stream = rustls::StreamOwned::new(conn, tcp);
     std::thread::spawn(move || spawn_tls_pump(tls_stream, to_net_rx, from_net_tx));
-    let mux = Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key);
+    // Dev-only: allow plaintext mux (L2) while keeping per-stream AEAD (L3) intact
+    let plaintext = std::env::var("HTX_INNER_PLAINTEXT").ok().as_deref() == Some("1");
+    if plaintext {
+        eprintln!("htx::api::dial: HTX_INNER_PLAINTEXT=1 — using PLAINTEXT mux (dev)");
+    }
+    let mux = if plaintext {
+        Mux::new(to_net_tx, from_net_rx)
+    } else {
+        Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key)
+    };
     Ok(Conn {
         mux,
         tx_key: inner.tx_key,
@@ -419,20 +443,37 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
 
     // Bind TCP and accept one connection (callers can loop)
     let listener = TcpListener::bind(bind).map_err(ApiError::Io)?;
-    listener.set_nonblocking(true).ok();
     // Accept a single client for simplicity
     let (mut tcp, _peer) = loop {
-        if let Ok(c) = listener.accept() { break c; }
-        std::thread::sleep(Duration::from_millis(5));
+        match listener.accept() {
+            Ok(c) => break c,
+            Err(e) => {
+                // When in blocking mode, accept should block; but to be safe, back off on transient errors
+                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::Interrupted {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+                return Err(ApiError::Io(e));
+            }
+        }
     };
-    tcp.set_nodelay(true).ok();
+    // Ensure the accepted socket is in blocking mode for rustls handshake progress
+    let _ = tcp.set_nonblocking(false);
+    let _ = tcp.set_nodelay(true);
 
     // Drive rustls handshake
     let mut conn = rustls::ServerConnection::new(std::sync::Arc::new(scfg)).map_err(|_| ApiError::Tls)?;
     while conn.is_handshaking() {
         match conn.complete_io(&mut tcp) {
             Ok(_) => {}
-            Err(e) => return Err(ApiError::Io(e)),
+            Err(e) => {
+                // Map WouldBlock/Interrupted to a short backoff; otherwise, propagate
+                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::Interrupted {
+                    std::thread::sleep(Duration::from_millis(2));
+                    continue;
+                }
+                return Err(ApiError::Io(e));
+            }
         }
     }
 
@@ -451,7 +492,16 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
     struct Bind<'a> { #[serde(with = "serde_bytes")] template_id: &'a [u8], caps: &'a Caps }
     let ctx = core_cbor::to_det_cbor(&Bind { template_id: &tid.0, caps: &caps }).map_err(|_| ApiError::Tls)?;
     let mut ekm = [0u8; 32];
-    conn.export_keying_material(&mut ekm, b"qnet inner", Some(&ctx)).map_err(|_| ApiError::Tls)?;
+    let no_ctx = std::env::var("HTX_EKM_EXPORTER_NO_CTX").ok().as_deref() == Some("1");
+    if no_ctx {
+        conn
+            .export_keying_material(&mut ekm, b"qnet inner", None)
+            .map_err(|_| ApiError::Tls)?;
+    } else {
+        conn
+            .export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
+            .map_err(|_| ApiError::Tls)?;
+    }
     let tls = TlsStream::new(RustlsExporterS { ekm });
     // Derive inner keys as server side
     let inner = open_inner_ekm_only(&tls, &caps, &tpl, false).map_err(|_| ApiError::Tls)?;
@@ -459,9 +509,20 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
     // Start mux over TLS stream
     let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
     let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
+    // Avoid starving outgoing writes: set a small read timeout so the pump loop
+    // doesn't block indefinitely on reads and can interleave pending writes.
+    let _ = tcp.set_read_timeout(Some(Duration::from_millis(5)));
     let tls_stream = rustls::StreamOwned::new(conn, tcp);
     std::thread::spawn(move || spawn_tls_pump(tls_stream, to_net_rx, from_net_tx));
-    let mux = Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key);
+    let plaintext = std::env::var("HTX_INNER_PLAINTEXT").ok().as_deref() == Some("1");
+    if plaintext {
+        eprintln!("htx::api::accept: HTX_INNER_PLAINTEXT=1 — using PLAINTEXT mux (dev)");
+    }
+    let mux = if plaintext {
+        Mux::new(to_net_tx, from_net_rx)
+    } else {
+        Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key)
+    };
     Ok(Conn { mux, tx_key: inner.tx_key, rx_key: inner.rx_key })
 }
 #[cfg(not(feature = "rustls-config"))]
@@ -547,7 +608,8 @@ fn spawn_socket_pump(
                         let len = ((buf[0] as usize) << 16)
                             | ((buf[1] as usize) << 8)
                             | (buf[2] as usize);
-                        let total = 4 + len; // 3 bytes len + 1 type + payload
+                        // [Len(u24) | Type | payload] => total = 3 + len
+                        let total = 3 + len;
                         if buf.len() < total {
                             break;
                         }

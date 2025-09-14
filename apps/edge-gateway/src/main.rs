@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{info, error};
+use tracing::{info, warn, error};
 use tracing_subscriber::EnvFilter;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
 
@@ -16,47 +16,56 @@ async fn main() -> Result<()> {
             Ok(c) => c,
             Err(e) => { error!(error=?e, "accept failed"); continue; }
         };
-        info!("outer TLS accepted; serving inner streams");
+    info!("outer TLS accepted; serving inner streams");
+    // Observability: log encryption epoch to validate mux is initialized
+    info!(epoch = conn.encryption_epoch(), "mux ready");
         // Handle inner streams until the peer disconnects
         let conn_cloned = conn.clone();
         std::thread::spawn(move || {
             loop {
                 if let Some(ss) = conn_cloned.accept_stream(5000) {
+                    info!("inner stream accepted");
                     std::thread::spawn(move || {
-                        if let Err(e) = handle_inner_stream(ss) { eprintln!("inner stream error: {e:?}"); }
+                        if let Err(e) = handle_inner_stream(ss) { error!(error=?e, "inner stream error"); }
                     });
                 } else {
                     // timeout; continue waiting
+                    tracing::debug!("accept_stream timeout; no incoming stream yet");
                 }
             }
         });
     }
 }
 fn read_connect_prelude_from_secure(ss: &htx::api::SecureStream) -> Result<String> {
-    let mut buf = vec![0u8; 4096];
+    // Accumulate bytes until we see CRLFCRLF (end of headers)
+    let mut buf: Vec<u8> = Vec::with_capacity(2048);
     loop {
         if let Some(chunk) = ss.read() {
             buf.extend_from_slice(&chunk);
             if buf.windows(4).any(|w| w == b"\r\n\r\n") { break; }
-            if buf.len() > 64*1024 { anyhow::bail!("CONNECT prelude too large"); }
+            if buf.len() > 64 * 1024 { anyhow::bail!("CONNECT prelude too large"); }
         } else {
+            let snippet = String::from_utf8_lossy(&buf);
+            warn!(first = %snippet.lines().next().unwrap_or(""), n=buf.len(), "eof before CONNECT; partial prelude");
             anyhow::bail!("eof before CONNECT");
         }
     }
-    let line = std::str::from_utf8(&buf).unwrap_or("");
-    // Very lenient parse
-    if let Some(rest) = line.strip_prefix("CONNECT ") {
-        if let Some(end) = rest.find(" \r\n") {
-            return Ok(rest[..end].to_string());
-        }
+    // Extract the request line (up to first CRLF)
+    let req = match std::str::from_utf8(&buf) { Ok(s) => s, Err(_) => "" };
+    if let Some(line_end) = req.find("\r\n") {
+        let line = &req[..line_end];
+        // Accept: "CONNECT host:port HTTP/1.1" or "CONNECT host:port"
+        let mut parts = line.split_whitespace();
+        let method = parts.next().unwrap_or("");
+        if method != "CONNECT" { anyhow::bail!("bad CONNECT method"); }
+        let authority = parts.next().unwrap_or("");
+        if authority.is_empty() { anyhow::bail!("missing CONNECT authority"); }
+        // Optional version part is ignored
+        info!(first_line=%line, %authority, "CONNECT prelude parsed");
+        return Ok(authority.to_string());
     }
-    // Fallback: try to find pattern CONNECT host:port
-    let pat = "CONNECT ";
-    if let Some(pos) = line.find(pat) {
-        if let Some(end2) = line[pos+pat.len()..].find("\r\n") {
-            return Ok(line[pos+pat.len()..pos+pat.len()+end2].to_string());
-        }
-    }
+    let first = req.lines().next().unwrap_or("");
+    warn!(first_line=%first, n=buf.len(), "bad CONNECT prelude");
     anyhow::bail!("bad CONNECT prelude")
 }
 

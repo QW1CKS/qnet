@@ -5883,6 +5883,7 @@ dependencies = [
  "directories",
  "hex",
  "htx",
+ "memchr",
  "reqwest 0.12.23",
  "serde",
  "serde_json",

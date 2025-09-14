@@ -594,27 +594,37 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             // Open inner stream and perform a CONNECT prelude to instruct the edge gateway
             let ss = conn.open_stream();
             let prelude = format!("CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n", host, port, host, port);
+            tracing::debug!(first_line=%prelude.lines().next().unwrap_or(""), "sending CONNECT prelude to edge");
             ss.write(prelude.as_bytes());
             // Wait for a 200 response before acknowledging SOCKS
-            let mut accum = Vec::new();
+            let start = StdInstant::now();
+            let deadline = StdDuration::from_millis(3000); // allow up to 3s for edge to respond
+            let mut accum = Vec::with_capacity(512);
             let mut ok = false;
-            for _ in 0..128 { // bounded attempts to read response head
+            while start.elapsed() < deadline {
                 if let Some(buf) = ss.try_read() {
-                    accum.extend_from_slice(&buf);
-                    if accum.windows(4).any(|w| w == b"\r\n\r\n") {
-                        // parse status line
-                        if let Some(line_end) = accum.iter().position(|&b| b == b'\n') {
-                            let line = String::from_utf8_lossy(&accum[..line_end+1]);
-                            ok = line.contains(" 200 ");
+                    if !buf.is_empty() {
+                        accum.extend_from_slice(&buf);
+                        if let Some(_) = memchr::memmem::find(&accum, b"\r\n\r\n") {
+                            // Parse status line (first CRLF-delimited line)
+                            if let Some(crlf) = memchr::memmem::find(&accum, b"\r\n") {
+                                let line = String::from_utf8_lossy(&accum[..crlf]);
+                                tracing::debug!(status_line=%line, total=accum.len(), "edge response to CONNECT");
+                                ok = line.starts_with("HTTP/1.1 200") || line.contains(" 200 ");
+                            }
+                            break;
                         }
-                        break;
                     }
                 } else {
-                    // small backoff
-                    std::thread::sleep(std::time::Duration::from_millis(2));
+                    // No data yet; back off briefly
+                    std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             }
-            if !ok { bail!("edge did not accept CONNECT prelude"); }
+            if !ok {
+                let preview = String::from_utf8_lossy(&accum);
+                tracing::warn!(first_line=%preview.lines().next().unwrap_or(""), total=accum.len(), "no 200 from edge within timeout");
+                bail!("edge did not accept CONNECT prelude");
+            }
             // Success reply to SOCKS client after edge accepted CONNECT
             send_reply(stream, 0x00).await?;
             // Mark app as connected
@@ -739,6 +749,39 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
 }
 
 fn ensure_decoy_env_from_signed() -> Result<()> {
+    // Dev override: route all decoys to a local edge gateway on localhost:4443
+    // Enable with STEALTH_DECOY_DEV_LOCAL=1. This sets an unsigned catalog in env
+    // and configures HTX_TRUST_PEM to trust certs/edge.crt, so you can use a local self-signed cert.
+    if std::env::var("STEALTH_DECOY_DEV_LOCAL").ok().as_deref() == Some("1") {
+        let unsigned = serde_json::json!({
+            "catalog": {
+                "version": 1,
+                "updated_at": 1_726_000_000u64,
+                "entries": [
+                    {"host_pattern": "*", "decoy_host": "localhost", "port": 4443, "alpn": ["h2","http/1.1"], "weight": 1}
+                ]
+            }
+        });
+        std::env::set_var("STEALTH_DECOY_ALLOW_UNSIGNED", "1");
+        std::env::set_var("STEALTH_DECOY_CATALOG_JSON", unsigned.to_string());
+        // Trust local edge cert if present
+        let edge_crt = std::path::Path::new("certs").join("edge.crt");
+        if edge_crt.exists() {
+            let p = edge_crt.to_string_lossy().to_string();
+            match std::env::var("HTX_TRUST_PEM") {
+                Ok(curr) => {
+                    // Append if not already present (case-insensitive contains check)
+                    if !curr.to_ascii_lowercase().contains(&p.to_ascii_lowercase()) {
+                        let val = if curr.is_empty() { p } else { format!("{};{}", curr, p) };
+                        std::env::set_var("HTX_TRUST_PEM", val);
+                    }
+                }
+                Err(_) => std::env::set_var("HTX_TRUST_PEM", p),
+            }
+        }
+        info!("dev-local decoy enabled: routing all origins to https://localhost:4443 (unsigned)");
+        return Ok(());
+    }
     // If already set externally, do nothing
     if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
         // Ensure pubkey is set too

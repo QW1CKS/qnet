@@ -255,14 +255,68 @@ pub fn build_client_hello(tpl: &Template) -> ClientConfig {
 #[cfg(feature = "rustls-config")]
 fn build_rustls_config(tpl: &Template) -> std::sync::Arc<rustls::ClientConfig> {
     use rustls::{ClientConfig as RClientConfig, RootCertStore};
+    use std::sync::Arc;
     let mut roots = RootCertStore::empty();
     for cert in rustls_native_certs::load_native_certs().expect("roots") {
         let _ = roots.add_parsable_certificates(std::slice::from_ref(&cert.0));
+    }
+    // DEV: Allow trusting additional PEM roots via env (semicolon-separated paths).
+    // Useful for local self-signed edge certificates without installing a system root.
+    if let Ok(paths) = std::env::var("HTX_TRUST_PEM") {
+        for p in paths.split(';').filter(|s| !s.is_empty()) {
+            if let Ok(bytes) = std::fs::read(p) {
+                let mut cursor: &[u8] = &bytes;
+                if let Ok(mut certs) = rustls_pemfile::certs(&mut cursor) {
+                    // Convert to rustls Certificate and add all
+                    let add = certs
+                        .drain(..)
+                        .map(|der| rustls::Certificate(der))
+                        .collect::<Vec<_>>();
+                    let _ = roots.add_parsable_certificates(&add.iter().map(|c| c.0.clone()).collect::<Vec<_>>());
+                }
+            }
+        }
     }
     let mut cfg = RClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth();
+    // DEV ONLY: allow bypassing certificate verification for local testing
+    if std::env::var("HTX_INSECURE_NO_VERIFY").ok().as_deref() == Some("1") {
+        struct NoVerifier;
+        impl rustls::client::ServerCertVerifier for NoVerifier {
+            fn verify_server_cert(
+                &self,
+                _end_entity: &rustls::Certificate,
+                _intermediates: &[rustls::Certificate],
+                _server_name: &rustls::ServerName,
+                _scts: &mut dyn Iterator<Item = &[u8]>,
+                _ocsp_response: &[u8],
+                _now: std::time::SystemTime,
+            ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+                Ok(rustls::client::ServerCertVerified::assertion())
+            }
+            #[allow(unused_variables)]
+            fn verify_tls12_signature(
+                &self,
+                _message: &[u8],
+                _cert: &rustls::Certificate,
+                _dss: &rustls::DigitallySignedStruct,
+            ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
+                Ok(rustls::client::HandshakeSignatureValid::assertion())
+            }
+            #[allow(unused_variables)]
+            fn verify_tls13_signature(
+                &self,
+                _message: &[u8],
+                _cert: &rustls::Certificate,
+                _dss: &rustls::DigitallySignedStruct,
+            ) -> Result<rustls::client::HandshakeSignatureValid, rustls::Error> {
+                Ok(rustls::client::HandshakeSignatureValid::assertion())
+            }
+        }
+        cfg.dangerous().set_certificate_verifier(Arc::new(NoVerifier));
+    }
     // ALPN
     cfg.alpn_protocols = tpl.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
     std::sync::Arc::new(cfg)
