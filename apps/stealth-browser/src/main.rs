@@ -116,6 +116,13 @@ async fn main() -> Result<()> {
         None
     };
 
+    // If running in masked mode, ensure decoy catalog env is set from our signed file (production path)
+    if cfg.mode == Mode::Masked {
+        if let Err(e) = ensure_decoy_env_from_signed() {
+            warn!(error=?e, "masked mode: no decoy env set; htx::api::dial will route direct");
+        }
+    }
+
     // Start SOCKS5 server and wait for shutdown
     let addr = format!("127.0.0.1:{}", cfg.socks_port);
     info!(%addr, mode = ?cfg.mode, "starting SOCKS5 server");
@@ -227,7 +234,7 @@ async fn navigate_url(url: String, state: tauri::State<'_, AppHandleState>) -> R
 enum Mode {
     Direct,
     HtxHttpEcho,
-    DecoyDirect,
+    Masked,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,7 +264,7 @@ impl Config {
             cfg.mode = match m.to_ascii_lowercase().as_str() {
                 "direct" => Mode::Direct,
                 "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
-                "decoy-direct" | "decoy_direct" | "decoy" => Mode::DecoyDirect,
+                "masked" | "qnet" | "stealth" => Mode::Masked,
                 other => { warn!(%other, "unknown STEALTH_MODE; defaulting to direct"); Mode::Direct }
             };
         }
@@ -291,8 +298,7 @@ struct StatusSnapshot {
     catalog_version: Option<u32>,
     catalog_expires_at: Option<String>,
     catalog_source: Option<String>,
-    // Decoy routing (if applicable)
-    last_decoy: Option<String>,
+    // Decoy inventory (loaded from signed file during Routine Checkup)
     decoy_count: Option<u32>,
     peers_online: Option<u32>,
     checkup_phase: Option<String>,
@@ -318,7 +324,6 @@ impl AppState {
             catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
             catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
             catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
-            last_decoy: None,
             decoy_count: None,
             peers_online: None,
             checkup_phase: Some("idle".into()),
@@ -410,16 +415,16 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
         let mut json = serde_json::json!({
             "socks_addr": socks_addr,
-            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::DecoyDirect => "decoy-direct" },
+            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
             // Surface effective bootstrap state: false when kill switch is active
             "bootstrap": app.cfg.bootstrap && !app.cfg.disable_bootstrap,
             "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
         });
+        if matches!(app.cfg.mode, Mode::Masked) { json["masked"] = serde_json::json!(true); }
     if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
     if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
     if let Some(exp) = &snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
     if let Some(src) = &snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
-    if let Some(d) = &snap.last_decoy { json["last_decoy"] = serde_json::json!(d); }
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     if let Some(n) = snap.peers_online { json["peers_online"] = serde_json::json!(n); }
     if let Some(p) = &snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
@@ -459,63 +464,11 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
         body = format!("<html><head><title>QNet Stealth</title></head><body><h3>QNet Stealth — Status</h3><pre id=out></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
         content_type = "text/html; charset=utf-8";
-    } else if first_line.starts_with("GET /resolve?") {
-        // Simple decoy resolver endpoint: /resolve?origin=https://host:port
-        // Relies on env-based decoy catalog: STEALTH_DECOY_CATALOG_JSON (and optional STEALTH_DECOY_PUBKEY_HEX)
-        let mut origin: Option<String> = None;
-        if let Some(qidx) = first_line.find('?') {
-            if let Some(sp) = first_line[qidx + 1..].find(' ') {
-                let query = &first_line[qidx + 1..qidx + 1 + sp];
-                for pair in query.split('&') {
-                    if let Some(eq) = pair.find('=') {
-                        let (k, v) = (&pair[..eq], &pair[eq + 1..]);
-                        if k == "origin" {
-                            // Minimal percent-decoding for common characters
-                            let v = v.replace("%3A", ":").replace("%2F", "/");
-                            origin = Some(v);
-                        }
-                    }
-                }
-            }
-        }
-        if let Some(orig) = origin {
-            if let Some(cat) = htx::decoy::load_from_env() {
-                if let Some((host, port, alpn)) = htx::decoy::resolve(&orig, &cat) {
-                    body = serde_json::json!({
-                        "origin": orig,
-                        "decoy_host": host,
-                        "decoy_port": port,
-                        "alpn": alpn,
-                    }).to_string();
-                    content_type = "application/json";
-                } else {
-                    body = serde_json::json!({
-                        "origin": orig,
-                        "error": "no-match",
-                        "hint": "ensure STEALTH_DECOY_CATALOG_JSON contains entries matching host_pattern"
-                    }).to_string();
-                    content_type = "application/json";
-                }
-            } else {
-                body = serde_json::json!({
-                    "origin": orig,
-                    "error": "no-catalog",
-                    "hint": "set STEALTH_DECOY_CATALOG_JSON (and optional STEALTH_DECOY_PUBKEY_HEX)"
-                }).to_string();
-                content_type = "application/json";
-            }
-        } else {
-            body = serde_json::json!({
-                "error": "missing-origin",
-                "usage": "/resolve?origin=https://wikipedia.org:443"
-            }).to_string();
-            content_type = "application/json";
-        }
     } else {
         body = serde_json::json!({"error":"not found"}).to_string();
         content_type = "application/json";
     }
-    let status = if path_status || path_update || path_root || first_line.starts_with("GET /resolve?") { "200 OK" } else { "404 Not Found" };
+    let status = if path_status || path_update || path_root { "200 OK" } else { "404 Not Found" };
     let resp = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
         ct=content_type,
@@ -565,7 +518,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
         bail!("unsupported cmd {cmd}");
     }
 
-    let (target, target_meta) = match atyp {
+    let (target, _target_meta) = match atyp {
         0x01 => { // IPv4
             let mut ip = [0u8;4];
             stream.read_exact(&mut ip).await?;
@@ -578,7 +531,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             stream.read_exact(&mut name).await?;
             let name = String::from_utf8_lossy(&name);
             let port = read_u16(stream).await?;
-            (format!("{}:{}", name, port), TargetMeta::Domain(name.to_string(), port))
+            (format!("{}:{}", name, port), TargetMeta::Domain)
         }
         0x04 => { // IPv6 (optional)
             let mut ip6 = [0u8;16];
@@ -627,38 +580,29 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             // Bridge TCP <-> SecureStream
             bridge_tcp_secure(stream, ss).await
         }
-        Mode::DecoyDirect => {
-            // If DOMAIN and decoy catalog present, try to resolve to decoy host:port
-            let mut connect_target = target.clone();
-            let mut decoy_used: Option<String> = None;
-            if let TargetMeta::Domain(host, port) = target_meta.clone() {
-                // Prefer app-loaded decoy catalog from Routine Checkup; fallback to env for dev
-                let cat_opt = app_state.as_ref().and_then(|app| app.decoy_catalog.lock().ok().and_then(|g| g.clone()));
-                if let Some(cat) = cat_opt.or_else(|| htx::decoy::load_from_env()) {
-                    let scheme = if port == 443 { "https" } else if port == 80 { "http" } else { "https" };
-                    let origin = format!("{}://{}:{}", scheme, host, port);
-                    if let Some((dhost, dport, _alpn)) = htx::decoy::resolve(&origin, &cat) {
-                        decoy_used = Some(format!("{}:{}", dhost, dport));
-                        connect_target = format!("{}:{}", dhost, dport);
-                    }
-                }
-            }
-            let mut outbound = TcpStream::connect(&connect_target).await
-                .with_context(|| format!("connect {connect_target}"))?;
-            // Success reply
+        Mode::Masked => {
+            // Production path (client-side):
+            // Open a decoy-shaped outer TLS tunnel to an edge using htx::api::dial(origin), then bridge bytes over inner stream.
+            // Note: Requires a cooperating edge server for end-to-end HTTPS; without it, traffic will not complete.
+
+            // Parse target into host:port
+            let (host, port) = parse_host_port(&target)?;
+            // Build origin URL for dial (scheme decides default ports and ALPN templates)
+            let origin = if port == 443 { format!("https://{}", host) } else { format!("https://{}:{}", host, port) };
+            // Attempt dial (htx will consult decoy env if present)
+            let conn = htx::api::dial(&origin).map_err(|e| anyhow!("htx dial failed: {:?}", e))?;
+            // Success reply to SOCKS client (we have an inner path ready)
             send_reply(stream, 0x00).await?;
+            // Mark app as connected
             if let Some(app) = &app_state {
                 let mut guard = app.status.lock().unwrap();
-                if !matches!(guard.0.state, ConnState::Connected) { info!(target=%connect_target, "connected (decoy-direct) via SOCKS CONNECT"); }
                 guard.0.state = ConnState::Connected;
                 guard.1 = Some(StdInstant::now());
                 guard.0.last_checked_ms_ago = Some(0);
-                if let Some(d) = decoy_used {
-                    guard.0.last_decoy = Some(d);
-                }
             }
-            let _bytes = tokio::io::copy_bidirectional(stream, &mut outbound).await?;
-            Ok(())
+            // Bridge TCP <-> SecureStream (one stream per CONNECT)
+            let ss = conn.open_stream();
+            bridge_tcp_secure(stream, ss).await
         }
     }
 }
@@ -666,7 +610,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
 #[derive(Clone, Debug)]
 enum TargetMeta {
     Ip,
-    Domain(String, u16),
+    Domain,
 }
 
 async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -> Result<()> {
@@ -758,6 +702,51 @@ async fn send_reply(s: &mut TcpStream, rep: u8) -> Result<()> {
     Ok(())
 }
 
+fn parse_host_port(target: &str) -> Result<(String, u16)> {
+    // target is in the form "host:port" or "[ipv6]:port"
+    if let Some(pos) = target.rfind(':') {
+        let (h, p) = target.split_at(pos);
+        let port: u16 = p[1..].parse().map_err(|_| anyhow!("bad port"))?;
+        let host = if h.starts_with('[') && h.ends_with(']') { h[1..h.len()-1].to_string() } else { h.to_string() };
+        Ok((host, port))
+    } else {
+        // Default to 443 if port missing (shouldn't happen for valid SOCKS)
+        Ok((target.to_string(), 443))
+    }
+}
+
+fn ensure_decoy_env_from_signed() -> Result<()> {
+    // If already set externally, do nothing
+    if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
+        // Ensure pubkey is set too
+        if std::env::var("STEALTH_DECOY_PUBKEY_HEX").is_err() {
+            let pk_hex = include_str!("../assets/publisher.pub")
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .collect::<String>();
+            std::env::set_var("STEALTH_DECOY_PUBKEY_HEX", pk_hex.trim());
+        }
+        return Ok(());
+    }
+    // Try repo template (dev) — in production this would be a bundled asset
+    let p = std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json");
+    if p.exists() {
+        let text = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
+        // Basic sanity: must contain signature_hex to be considered signed
+        if text.contains("\"signature_hex\"") {
+            std::env::set_var("STEALTH_DECOY_CATALOG_JSON", &text);
+            let pk_hex = include_str!("../assets/publisher.pub")
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .collect::<String>();
+            std::env::set_var("STEALTH_DECOY_PUBKEY_HEX", pk_hex.trim());
+            info!(path=%p.display(), "decoy catalog env set from signed file");
+            return Ok(());
+        }
+    }
+    bail!("no signed decoy catalog available")
+}
+
 // =====================
 // Routine Checkup (download+verify catalog, load decoys, stub peer discovery)
 // =====================
@@ -800,9 +789,7 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
     Ok(())
 }
 
-async fn try_catalog_update_once(cat: &CatalogState) {
-    let _ = cat; // legacy stub removed in favor of check_for_updates_now
-}
+// (legacy stub removed)
 
 async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> {
     // Prefer signed catalog file from repo templates (dev) or assets in release builds.
@@ -1095,7 +1082,7 @@ async fn check_for_updates_now(app: &Arc<AppState>) -> Result<UpdateInfo> {
                             if newer {
                                 cm.source = Some(u.clone());
                                 // Persist and swap
-                                let mut new_state = CatalogState { current: Some(cm.clone()) };
+                                let new_state = CatalogState { current: Some(cm.clone()) };
                                 let _ = new_state.persist_atomic().await;
                                 {
                                     let mut guard = app.catalog.lock().unwrap();

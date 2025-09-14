@@ -1,0 +1,93 @@
+{
+  "catalog": {
+    "version": 1,
+    "updated_at": 1726272000,
+    "entries": [
+      {
+        "host_pattern": "*.google.com",
+        "decoy_host": "www.youtube.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "wikipedia.org",
+        "decoy_host": "www.wikimedia.org",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.cloudflare.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.microsoft.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.amazon.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.apple.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.netflix.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.reddit.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.linkedin.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.yahoo.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.github.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      },
+      {
+        "host_pattern": "*",
+        "decoy_host": "www.stackoverflow.com",
+        "port": 443,
+        "alpn": ["h2", "http/1.1"],
+        "weight": 1
+      }
+    ]
+  },
+  "signature_hex": "REPLACE_WITH_REAL_SIGNATURE"
+}

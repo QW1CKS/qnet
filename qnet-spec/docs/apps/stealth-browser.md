@@ -52,6 +52,11 @@ Expose a minimal status struct via Tauri IPC:
 - `qnet-spec/templates/decoys.yml` — human-editable entries
 - `qnet-spec/templates/catalog.meta.yml` — metadata (`schema_version`, `catalog_version`, `publisher_id`, `update_urls`, optional `seed_fallback_urls`)
 
+### Decoy catalog (production-ready)
+- Edit or create a signed decoy catalog at `qnet-spec/templates/decoy-catalog.json` following the example format.
+- Sign it with the `catalog-signer` CLI (or your publisher workflow) using your Ed25519 key.
+- At runtime, the app’s Routine Checkup prefers a signed file on disk (or shipped in assets) over any environment-provided values. Env-based decoys are for development only when `STEALTH_DECOY_ALLOW_UNSIGNED=1` is explicitly set.
+
 ### Tests to include in M3 exit
 - Unit: signature verification (good/bad), deterministic DET-CBOR bytes, TTL handling (expired vs grace), atomic persist/rollback.
 - Integration: updater happy path (newer catalog), tamper rejection, mirror failover, rollback to last-known-good on partial writes.
@@ -109,3 +114,25 @@ On first open, the app runs a short Routine Checkup to ensure it starts from tru
 Status fields exposed during this flow: `checkup_phase`, `catalog_*`, `decoy_count`, `peers_online`.
 
 Masking policy: When a domain matches a `host_pattern` in the decoy catalog, the egress connection is made to the decoy host:port. Outsiders observe the decoy destination (e.g., youtube.com) rather than the original (e.g., google.com). Add catch-alls or specific mappings in the signed decoy catalog to expand coverage.
+
+### Masking policy defaults (M3)
+
+To provide sensible coverage out of the box while staying plausible, the default decoy catalog includes:
+
+- Specific high-signal pairs:
+  - `*.google.com` → `www.youtube.com` (same ecosystem; common cross-traffic)
+  - `wikipedia.org` → `www.wikimedia.org` (same foundation)
+- Diversified catch-all pool (rotated by weight):
+  - `www.cloudflare.com`, `www.microsoft.com`, `www.amazon.com`, `www.apple.com`,
+    `www.netflix.com`, `www.reddit.com`, `www.linkedin.com`, `www.yahoo.com`,
+    `www.github.com`, `www.stackoverflow.com`
+
+Precedence and selection:
+- Longest/most-specific `host_pattern` wins; wildcard `*` applies last.
+- Within a pattern, entries are selected by weight (weighted round-robin) to spread load and vary appearance.
+- ALPN is set per entry to align with the decoy’s common protocols (e.g., `h2,http/1.1`).
+
+Operations guidance:
+- Expand with region-specific decoys as you learn what’s common and reachable in target networks.
+- Keep pairs within the same ownership where possible (plausibility for DPI/log analysis).
+- Update via the signed catalog workflow; prefer CI-generated artifacts for consistency.

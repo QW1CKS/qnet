@@ -33,6 +33,19 @@ See the detailed YAML snippet in `specs/001-qnet/T6.7-playbook.md` under "catalo
 
 See also template: `qnet-spec/templates/catalog-publish-workflow.yml` for a ready-to-adapt workflow skeleton.
 
+### In-repo CI setup with GitHub Actions secret
+
+For keeping catalog publishing in the same QNet repo:
+1. Copy `qnet-spec/templates/catalog-publish-workflow.yml` to `.github/workflows/catalog-publish.yml` in the repo.
+2. Add `CATALOG_PRIVKEY` as a repository secret in GitHub Actions (the Ed25519 private key hex).
+3. On pushes to `qnet-spec/templates/` (e.g., changes to `decoys.yml` or `catalog.meta.yml`), CI will:
+   - Build and sign the catalog using the secret.
+   - Commit the signed `dist/catalog.json` and `dist/catalog.json.sig` back to the repo.
+4. Set `update_urls` in `catalog.meta.yml` to point to the repo's raw URLs (e.g., `https://raw.githubusercontent.com/QW1CKS/qnet/main/qnet-spec/templates/dist/catalog.json`).
+5. The stealth browser's Routine Checkup will fetch, verify with the pinned public key, and update if valid.
+
+This enables automated signing without manual steps, ensuring the browser can trust updates during checkup.
+
 ## Manual signing (for now)
 
 Until QNet scales up, manually sign catalogs locally to avoid CI setup overhead:
