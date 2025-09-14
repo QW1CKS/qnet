@@ -29,6 +29,7 @@
 - **🌐 Decentralized**: No central authorities, no DNS vulnerabilities, no single points of failure
 - **⚡ Scalable & Secure**: Built for millions of users with quantum-resistant cryptography
 - **🔧 Developer-Friendly**: Modular crates for building custom privacy tools
+- **📦 Catalog-First**: Signed configuration catalogs with automatic updates (M3 complete)
 
 ### 🎯 Real-World Impact
 
@@ -126,6 +127,7 @@ Demonstrate a full secure connection with catalog-first configuration (signed + 
 - ✅ Real TLS handshake + inner HTX secure stream
 - ✅ Decoy routing for censorship evasion
 - ✅ DPI capture and comparison (PASS if traffic looks like normal TLS)
+- ✅ Edge gateway for production masked browsing (M3 complete)
 
 See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format.
 
@@ -190,7 +192,7 @@ QNet is primarily a **toolkit and framework** for developers to build private, c
 | `core-crypto` | Cryptographic primitives | ✅ Complete |
 | `core-cbor` | Deterministic CBOR encoding | ✅ Complete |
 | `core-framing` | L2 frame handling | ✅ Complete |
-| `htx` | HTTP Tunneling Extension | 🚧 In Progress |
+| `htx` | HTTP Tunneling Extension | ✅ Complete (M3 catalog pipeline) |
 | `core-routing` | SCION routing | 🚧 In Progress |
 | `core-mesh` | Libp2p integration | 🚧 In Progress |
 
@@ -334,7 +336,7 @@ We welcome contributions from developers, security researchers, and protocol des
 ### Implementation Progress
 
 - ✅ **Phase 1**: Core Infrastructure (Complete)
-- ✅ **Phase 2**: HTX Proof-of-Concept (80% Complete)
+- ✅ **Phase 2**: HTX Proof-of-Concept (90% Complete - M3 catalog pipeline done)
 - 🚧 **Phase 3**: Routing & Mesh (In Progress)
 - ⏳ **Phase 4**: Privacy & Naming (Planned)
 - ⏳ **Phase 5**: Payments & Governance (Planned)
@@ -343,7 +345,7 @@ We welcome contributions from developers, security researchers, and protocol des
 
 - **M1**: Stealth Browser with SOCKS5 proxy ✅
 - **M2**: Enhanced stealth features (in progress)
-- **M3**: Full HTX tunneling
+- **M3**: Full HTX tunneling ✅
 - **M4**: Mixnet integration
 
 ### Performance Benchmarks
@@ -392,7 +394,7 @@ QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for deta
 ### Roadmap
 
 - **Q1 2025**: Core infrastructure and HTX PoC ✅
-- **Q2 2025**: Routing, mesh, and privacy features 🚧
+- **Q2 2025**: Routing, mesh, privacy features, and catalog pipeline ✅
 - **Q3 2025**: Payments, governance, and tools ⏳
 - **Q4 2025**: Production-ready release ⏳
 
