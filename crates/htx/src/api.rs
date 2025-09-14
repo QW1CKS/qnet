@@ -1,4 +1,4 @@
-use crate::inner::{open_inner, open_inner_with_compat, Caps, Exporter, TlsStream};
+use crate::inner::{open_inner, open_inner_with_compat, open_inner_ekm_only, Caps, Exporter, TlsStream};
 use crate::mux::{self, Mux, StreamHandle};
 use crate::tls_mirror::Template;
 use crate::Handshake;
@@ -366,10 +366,8 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
         }
     }
     let tls = TlsStream::new(RustlsExporter { ekm });
-    // Derive inner keys
-    // For this API, we run a local Noise XK to get base keys; in a full implementation, these would be negotiated with the peer.
-    let (init_hs, _resp_hs) = noise_xk_pair();
-    let inner = open_inner(&tls, &caps, &tpl, &init_hs).map_err(|_| ApiError::Tls)?;
+    // Derive inner keys using EKM-only mode (no extra handshake on the wire)
+    let inner = open_inner_ekm_only(&tls, &caps, &tpl, true).map_err(|_| ApiError::Tls)?;
     // Start mux over TLS stream
     let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
     let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
@@ -390,8 +388,81 @@ pub fn dial(_origin: &str) -> Result<Conn, ApiError> {
 }
 
 #[cfg(feature = "rustls-config")]
-pub fn accept(_bind: &str) -> Result<(), ApiError> {
-    Err(ApiError::NotImplemented)
+pub fn accept(bind: &str) -> Result<Conn, ApiError> {
+    use crate::tls_mirror::Template;
+    // Build a vanilla rustls ServerConfig using a self-signed cert loaded from env paths for PoC.
+    // PROD: Use a real certificate for decoy hostnames via ACME/issued certs.
+    let cert_path = std::env::var("HTX_TLS_CERT").map_err(|_| ApiError::Tls)?;
+    let key_path = std::env::var("HTX_TLS_KEY").map_err(|_| ApiError::Tls)?;
+    let cert_pem = std::fs::read(&cert_path).map_err(ApiError::Io)?;
+    let key_pem = std::fs::read(&key_path).map_err(ApiError::Io)?;
+    let certs = rustls_pemfile::certs(&mut &cert_pem[..])
+        .map_err(|_| ApiError::Tls)?
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect::<Vec<_>>();
+    let key = {
+        let mut pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &key_pem[..])
+            .map_err(|_| ApiError::Tls)?;
+        if let Some(k) = pkcs8.pop() { rustls::PrivateKey(k) } else {
+            let mut rsa = rustls_pemfile::rsa_private_keys(&mut &key_pem[..]).map_err(|_| ApiError::Tls)?;
+            rustls::PrivateKey(rsa.pop().ok_or(ApiError::Tls)?)
+        }
+    };
+    let mut scfg = rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|_| ApiError::Tls)?;
+    // ALPN: allow common protocols
+    scfg.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    // Bind TCP and accept one connection (callers can loop)
+    let listener = TcpListener::bind(bind).map_err(ApiError::Io)?;
+    listener.set_nonblocking(true).ok();
+    // Accept a single client for simplicity
+    let (mut tcp, _peer) = loop {
+        if let Ok(c) = listener.accept() { break c; }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    tcp.set_nodelay(true).ok();
+
+    // Drive rustls handshake
+    let mut conn = rustls::ServerConnection::new(std::sync::Arc::new(scfg)).map_err(|_| ApiError::Tls)?;
+    while conn.is_handshaking() {
+        match conn.complete_io(&mut tcp) {
+            Ok(_) => {}
+            Err(e) => return Err(ApiError::Io(e)),
+        }
+    }
+
+    // Exporter wrapper over rustls server
+    struct RustlsExporterS { ekm: [u8; 32] }
+    impl Exporter for RustlsExporterS {
+        fn export(&self, _label: &[u8], _context: &[u8], len: usize) -> Result<Vec<u8>, crate::inner::Error> {
+            Ok(self.ekm[..len.min(32)].to_vec())
+        }
+    }
+    // Use a conservative default template; ALPN negotiated is already reflected by outer TLS
+    let tpl = Template { alpn: vec!["h2".into(), "http/1.1".into()], sig_algs: vec!["rsa_pss_rsae_sha256".into()], groups: vec!["x25519".into()], extensions: vec![0,11,10,35,16,23,43,51] };
+    let caps = Caps::default();
+    let tid = crate::tls_mirror::compute_template_id(&tpl);
+    #[derive(serde::Serialize)]
+    struct Bind<'a> { #[serde(with = "serde_bytes")] template_id: &'a [u8], caps: &'a Caps }
+    let ctx = core_cbor::to_det_cbor(&Bind { template_id: &tid.0, caps: &caps }).map_err(|_| ApiError::Tls)?;
+    let mut ekm = [0u8; 32];
+    conn.export_keying_material(&mut ekm, b"qnet inner", Some(&ctx)).map_err(|_| ApiError::Tls)?;
+    let tls = TlsStream::new(RustlsExporterS { ekm });
+    // Derive inner keys as server side
+    let inner = open_inner_ekm_only(&tls, &caps, &tpl, false).map_err(|_| ApiError::Tls)?;
+
+    // Start mux over TLS stream
+    let (to_net_tx, to_net_rx) = mpsc::channel::<Bytes>();
+    let (from_net_tx, from_net_rx) = mpsc::channel::<Bytes>();
+    let tls_stream = rustls::StreamOwned::new(conn, tcp);
+    std::thread::spawn(move || spawn_tls_pump(tls_stream, to_net_rx, from_net_tx));
+    let mux = Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key);
+    Ok(Conn { mux, tx_key: inner.tx_key, rx_key: inner.rx_key })
 }
 #[cfg(not(feature = "rustls-config"))]
 pub fn accept(_bind: &str) -> Result<(), ApiError> {

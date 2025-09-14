@@ -136,3 +136,15 @@ Operations guidance:
 - Expand with region-specific decoys as you learn what’s common and reachable in target networks.
 - Keep pairs within the same ownership where possible (plausibility for DPI/log analysis).
 - Update via the signed catalog workflow; prefer CI-generated artifacts for consistency.
+
+## Edge Gateway (Option B production path)
+
+In Masked mode, the browser dials using `htx::api::dial()` which shapes the outer TLS to the chosen decoy. A cooperating edge gateway terminates this outer TLS and serves the inner multiplexed stream. The gateway expects an HTTP CONNECT prelude on the inner stream, responds `200 Connection Established`, and then tunnels TCP.
+
+- Gateway binary: `apps/edge-gateway` (env: `BIND`, `HTX_TLS_CERT`, `HTX_TLS_KEY`)
+- Library: `htx::api::accept(bind)` under `rustls-config` derives inner keys via TLS exporter (EKM-only) for quick deployments.
+
+Local smoke test (dev):
+- Generate a self-signed cert and set env as in `qnet-spec/templates/edge-gateway.example.env`.
+- Run the gateway, then run the browser with `STEALTH_MODE=masked` and a signed decoy catalog.
+- Issue a request over SOCKS to any HTTPS target; expect CONNECT success and `state: connected` in `/status`.

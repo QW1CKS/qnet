@@ -16,6 +16,7 @@ members = [
     "crates/catalog-signer",
     "examples/echo",
     "apps/stealth-browser",
+    "apps/edge-gateway",
     "tests/compliance",
 ]
 resolver = "2"

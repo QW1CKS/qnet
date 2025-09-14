@@ -296,6 +296,15 @@ HTX integrates with a signed decoy catalog as the primary configuration source, 
 - Seeds (fallback): Signed seed list used only when no valid catalog is available.
 - See: `../../docs/catalog-schema.md` and app behavior in `../../docs/apps/stealth-browser.md`.
 
+## Server accept (Edge Gateway)
+
+HTX exposes a minimal server-side API behind the `rustls-config` feature for edge gateways:
+
+- `htx::api::accept(bind: &str) -> Conn`: Accepts a rustls TLS connection on the given bind address using certificate/key from `HTX_TLS_CERT`/`HTX_TLS_KEY`, derives inner keys via TLS exporter (EKM-only), and returns a `Conn` with an inner mux.
+- `Conn::accept_stream(timeout_ms) -> Option<SecureStream>`: Accept streams multiplexed over the inner channel.
+
+This supports a simple HTTP CONNECT prelude on the first bytes of `SecureStream` for proxy-style gateways.
+
 ## Contributing
 
 See the main [Contributing Guide](../CONTRIBUTING.md) for development setup and contribution guidelines.

@@ -114,6 +114,29 @@ pub fn open_inner_with_compat(
     Ok(InnerConn { tx_key, rx_key })
 }
 
+/// Derive inner channel keys using only the TLS exporter (EKM) and binding context.
+/// This avoids requiring a separate Noise handshake across the wire and is suitable
+/// for simple edge gateway deployments where the outer TLS is the sole key agreement.
+///
+/// Role determines key direction mapping: the client transmits with c2s and receives with s2c,
+/// server uses the opposite.
+pub fn open_inner_ekm_only(
+    tls: &TlsStream,
+    caps: &Caps,
+    template: &Template,
+    is_client: bool,
+) -> Result<InnerConn, Error> {
+    let ctx = exporter_context(template, caps);
+    let ekm = tls.export(b"qnet inner", &ctx, 32)?; // 32B exporter secret
+    // prk = HKDF-Extract(salt=ekm, ikm="ekm-only")
+    let prk = crypto::hkdf::extract(&ekm, b"ekm-only");
+    // Derive directional keys deterministically
+    let c2s: [u8; 32] = crypto::hkdf::expand(&prk, b"c2s|key");
+    let s2c: [u8; 32] = crypto::hkdf::expand(&prk, b"s2c|key");
+    let (tx_key, rx_key) = if is_client { (c2s, s2c) } else { (s2c, c2s) };
+    Ok(InnerConn { tx_key, rx_key })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

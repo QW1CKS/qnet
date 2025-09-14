@@ -591,7 +591,31 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             let origin = if port == 443 { format!("https://{}", host) } else { format!("https://{}:{}", host, port) };
             // Attempt dial (htx will consult decoy env if present)
             let conn = htx::api::dial(&origin).map_err(|e| anyhow!("htx dial failed: {:?}", e))?;
-            // Success reply to SOCKS client (we have an inner path ready)
+            // Open inner stream and perform a CONNECT prelude to instruct the edge gateway
+            let ss = conn.open_stream();
+            let prelude = format!("CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n", host, port, host, port);
+            ss.write(prelude.as_bytes());
+            // Wait for a 200 response before acknowledging SOCKS
+            let mut accum = Vec::new();
+            let mut ok = false;
+            for _ in 0..128 { // bounded attempts to read response head
+                if let Some(buf) = ss.try_read() {
+                    accum.extend_from_slice(&buf);
+                    if accum.windows(4).any(|w| w == b"\r\n\r\n") {
+                        // parse status line
+                        if let Some(line_end) = accum.iter().position(|&b| b == b'\n') {
+                            let line = String::from_utf8_lossy(&accum[..line_end+1]);
+                            ok = line.contains(" 200 ");
+                        }
+                        break;
+                    }
+                } else {
+                    // small backoff
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+            }
+            if !ok { bail!("edge did not accept CONNECT prelude"); }
+            // Success reply to SOCKS client after edge accepted CONNECT
             send_reply(stream, 0x00).await?;
             // Mark app as connected
             if let Some(app) = &app_state {
@@ -601,7 +625,6 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                 guard.0.last_checked_ms_ago = Some(0);
             }
             // Bridge TCP <-> SecureStream (one stream per CONNECT)
-            let ss = conn.open_stream();
             bridge_tcp_secure(stream, ss).await
         }
     }

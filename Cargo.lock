@@ -1523,6 +1523,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "edge-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "htx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2479,6 +2490,7 @@ dependencies = [
  "ring 0.17.14",
  "rustls 0.21.12",
  "rustls-native-certs",
+ "rustls-pemfile",
  "serde",
  "serde_bytes",
  "serde_cbor",
@@ -6451,6 +6463,7 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",
