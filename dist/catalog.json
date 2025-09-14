@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "catalog_version": 1,
-  "generated_at": "2025-09-13T11:59:31.790952200Z",
-  "expires_at": "2025-09-20T11:59:31.790952200Z",
+  "generated_at": "2025-09-14T09:24:20.764687967Z",
+  "expires_at": "2025-09-21T09:24:20.764687967Z",
   "publisher_id": "qnet.main.ed25519.2025",
   "update_urls": [
     "https://raw.githubusercontent.com/<org>/qnet-catalogs/main/dist/catalog.json",
