@@ -80,12 +80,12 @@ if ($RunGateway) {
     Write-Host "[B] Launching gateway in a new background PowerShell window (logs -> $logPath)" -ForegroundColor Green
 
     $cmd = @"
-$env:BIND         = '0.0.0.0:$Port';
-$env:HTX_TLS_CERT = '$crt';
-$env:HTX_TLS_KEY  = '$key';
-$env:RUST_LOG     = '$rl';
-Set-Location '$BinDir';
-& (Join-Path '$BinDir' 'edge-gateway.exe') *>&1 | Tee-Object -FilePath '$logPath'
+$env:BIND         = "0.0.0.0:$Port";
+$env:HTX_TLS_CERT = "$crt";
+$env:HTX_TLS_KEY  = "$key";
+$env:RUST_LOG     = "$rl";
+Set-Location "$BinDir";
+& (Join-Path "$BinDir" 'edge-gateway.exe') *>&1 | Tee-Object -FilePath "$logPath"
 "@
 
     Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NoExit','-Command', $cmd -WindowStyle Minimized | Out-Null

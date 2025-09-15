@@ -59,17 +59,20 @@ $env:RUST_LOG = 'info'
 # Start client in background window
 if ($StartClient) {
     Write-Host "[A] Launching stealth-browser in a new background PowerShell window" -ForegroundColor Green
+    $json = $env:STEALTH_DECOY_CATALOG_JSON
     $cmd = @"
-$env:STEALTH_DECOY_ALLOW_UNSIGNED='1';
-$env:STEALTH_DECOY_CATALOG_JSON='${env:STEALTH_DECOY_CATALOG_JSON}';
-$env:STEALTH_LOG_DECOY_ONLY='1';
-$env:HTX_INSECURE_NO_VERIFY='1';
-$env:STEALTH_MODE='masked';
-$env:STEALTH_SOCKS_PORT='$SocksPort';
-$env:STEALTH_STATUS_PORT='$StatusPort';
-$env:RUST_LOG='info';
-Set-Location '$QNetRoot';
-& '$ClientExe'
+$env:STEALTH_DECOY_ALLOW_UNSIGNED="1";
+$env:STEALTH_DECOY_CATALOG_JSON=@"
+$json
+"@;
+$env:STEALTH_LOG_DECOY_ONLY="1";
+$env:HTX_INSECURE_NO_VERIFY="1";
+$env:STEALTH_MODE="masked";
+$env:STEALTH_SOCKS_PORT="$SocksPort";
+$env:STEALTH_STATUS_PORT="$StatusPort";
+$env:RUST_LOG="info";
+Set-Location "$QNetRoot";
+& "$ClientExe"
 "@
     Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NoExit','-Command', $cmd -WindowStyle Minimized | Out-Null
 }
