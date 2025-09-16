@@ -298,6 +298,9 @@ struct StatusSnapshot {
     state: ConnState,
     last_seed: Option<String>,
     last_checked_ms_ago: Option<u64>,
+    // Most recent SOCKS CONNECT target and decoy used (masked mode)
+    last_target: Option<String>,
+    last_decoy: Option<String>,
     // M3 catalog status (optional)
     catalog_version: Option<u32>,
     catalog_expires_at: Option<String>,
@@ -325,6 +328,8 @@ impl AppState {
             state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline },
             last_seed: None,
             last_checked_ms_ago: None,
+            last_target: None,
+            last_decoy: None,
             catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
             catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
             catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
@@ -426,6 +431,16 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
         });
         if matches!(app.cfg.mode, Mode::Masked) { json["masked"] = serde_json::json!(true); }
     if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
+    if let Some(t) = snap.last_target {
+            // Keep backward-compat last_target and add clearer alias current_target
+            json["last_target"] = serde_json::Value::String(t.clone());
+            json["current_target"] = serde_json::Value::String(t);
+        }
+    if let Some(d) = snap.last_decoy {
+            // Keep backward-compat last_decoy and add clearer alias current_decoy
+            json["last_decoy"] = serde_json::Value::String(d.clone());
+            json["current_decoy"] = serde_json::Value::String(d);
+        }
     if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
     if let Some(exp) = &snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
     if let Some(src) = &snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
@@ -465,8 +480,8 @@ async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
             }
         }
     } else if path_root {
-        let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
-        body = format!("<html><head><title>QNet Stealth</title></head><body><h3>QNet Stealth — Status</h3><pre id=out></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
+    let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
+    body = format!("<html><head><title>QNet Stealth</title><style>body{{font-family:sans-serif}} .mono{{font-family:monospace;color:#333}}</style></head><body><h3>QNet Stealth — Status</h3><div id=hdr class=mono></div><pre id=out class=mono></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{let tgt=j.current_target||j.last_target; let dec=j.current_decoy||j.last_decoy; let h=''; if(tgt) h += 'Current target: '+tgt+'\\n'; if(dec) h += 'Current decoy: '+dec+'\\n'; document.getElementById('hdr').textContent=h; document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
         content_type = "text/html; charset=utf-8";
     } else {
         body = serde_json::json!({"error":"not found"}).to_string();
@@ -593,6 +608,24 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             let (host, port) = parse_host_port(&target)?;
             // Build origin URL for dial (scheme decides default ports and ALPN templates)
             let origin = if port == 443 { format!("https://{}", host) } else { format!("https://{}:{}", host, port) };
+            // Try to resolve decoy using in-memory catalog (or env fallback) for visibility
+            let mut decoy_str: Option<String> = None;
+            if let Some(app) = &app_state {
+                // Prefer app-loaded catalog
+                let cat_opt = { app.decoy_catalog.lock().unwrap().clone() };
+                if let Some(cat) = cat_opt {
+                    if let Some((dh, dp, _)) = htx::decoy::resolve(&origin, &cat) {
+                        decoy_str = Some(format!("{}:{}", dh, dp));
+                    }
+                } else {
+                    // Fallback to env
+                    if let Some(cat) = htx::decoy::load_from_env() {
+                        if let Some((dh, dp, _)) = htx::decoy::resolve(&origin, &cat) {
+                            decoy_str = Some(format!("{}:{}", dh, dp));
+                        }
+                    }
+                }
+            }
             // Attempt dial (htx will consult decoy env if present)
             let conn = htx::api::dial(&origin).map_err(|e| anyhow!("htx dial failed: {:?}", e))?;
             // Open inner stream and perform a CONNECT prelude to instruct the edge gateway
@@ -637,6 +670,16 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                 guard.0.state = ConnState::Connected;
                 guard.1 = Some(StdInstant::now());
                 guard.0.last_checked_ms_ago = Some(0);
+                guard.0.last_target = Some(format!("{}:{}", host, port));
+                guard.0.last_decoy = decoy_str.clone();
+            }
+            // Emit a concise log line for operator visibility
+            if let Some(d) = &decoy_str {
+                info!(target = %format!("{}:{}", host, port), decoy=%d, "masked: CONNECT via decoy");
+                eprintln!("masked: target={}:{}, decoy={}", host, port, d);
+            } else {
+                info!(target = %format!("{}:{}", host, port), "masked: CONNECT (no decoy catalog found; direct template)");
+                eprintln!("masked: target={}:{}, decoy=(none)", host, port);
             }
             // Bridge TCP <-> SecureStream (one stream per CONNECT)
             bridge_tcp_secure(stream, ss).await

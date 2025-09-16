@@ -220,7 +220,7 @@ See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details a
 - **[Helper Guide](qnet-spec/docs/helper.md)**: Local Helper (stealth-browser) install, endpoints, and API
 - **[Browser Extension Guide](qnet-spec/docs/extension.md)**: Extension developer flow and integration
 - **[Physical Testing Playbook](qnet-spec/docs/physical-testing.md)**: Hands-on validation with captures and metrics
-- **[API Documentation](https://docs.rs/qnet)**: Generated Rust docs
+- **[API Documentation](docs/ARCHITECTURE.md)**: Architecture and component overview
 
 ### 🧪 Development Tools
 - **Go Spec Linter**: Compliance validation tool
@@ -449,8 +449,8 @@ QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for deta
 ## 🌍 Community
 
 - **📖 [Documentation](qnet-spec/docs/)**: Comprehensive guides and API references
-- **🐛 [Issues](https://github.com/QW1CKS/qnet/issues)**: Bug reports and feature requests
-- **💬 [Discussions](https://github.com/QW1CKS/qnet/discussions)**: General discussion and Q&A
+- **🐛 [Issues](https://github.com/QW1CKS/qnet)**: Bug reports and feature requests
+- **💬 [Discussions](https://github.com/QW1CKS/qnet)**: General discussion and Q&A
 - **📧 [Security](SECURITY.md)**: Security vulnerability reporting
 
 ---
