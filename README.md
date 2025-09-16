@@ -66,7 +66,7 @@ QNet's innovative **7-layer architecture** ensures seamless, secure connectivity
 | **L1** | Path Selection | SCION + HTX routing | Secure routing |
 | **L0** | Access Media | Any IP bearer | OS integration |
 
-### � Current Implementation Status
+### Current Implementation Status
 
 QNet is being developed in phases, with a pragmatic approach to delivering value:
 
@@ -102,7 +102,7 @@ QNet's innovative **7-layer architecture** combines immediate privacy benefits w
 **Current Focus**: The Browser Extension + Helper (L7 application) leverages the completed L2 Cover Transport layer to provide immediate privacy benefits through connection masking.
 
 
-### �🛠️ Technology Stack
+### 🛠️ Technology Stack
 
 **Core Technologies:**
 - **Rust**: Memory-safe, high-performance networking

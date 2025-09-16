@@ -249,7 +249,11 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-    Self { socks_port: 1080, mode: Mode::Direct, bootstrap: false, status_port: 0, disable_bootstrap: true }
+    // Defaults aligned with docs:
+    //  - SOCKS proxy: 127.0.0.1:1088
+    //  - Status API: 127.0.0.1:8088
+    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT).
+    Self { socks_port: 1088, mode: Mode::Direct, bootstrap: false, status_port: 8088, disable_bootstrap: true }
     }
 }
 
