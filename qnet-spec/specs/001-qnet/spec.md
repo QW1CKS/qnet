@@ -4,9 +4,8 @@
 QNet is a decentralized, censorship-resistant network designed to replace the public Internet. It provides strong user privacy, decentralized operation, and resistance to censorship through layered architecture and advanced cryptography.
 
 ## User Stories
-
+**As an end user**, I want a simple browser extension that, together with a small local Helper, mimics normal HTTPS traffic so that I can browse anonymously without ISP tracking or technical setup.
 ### Core Network Functionality
-- **As a user**, I want to connect to QNet using standard internet access so that I can access decentralized services without relying on centralized infrastructure.
 - **As a developer**, I want to build applications on QNet using self-certifying identities so that users can verify service authenticity without external authorities.
 - **As a privacy-conscious user**, I want my traffic to be routed through mixnodes so that observers cannot correlate my communications.
 - **As a developer**, I want to integrate QNet's protocol stack into my apps via modular crates (e.g., HTX for tunneling) so that I can build custom privacy tools without reinventing cryptography.
@@ -137,3 +136,83 @@ Docs status: M3 documentation is complete (schema, signer CLI, publisher guide, 
 - [x] Improvements over Betanet identified
 - [x] Bounties clearly defined
 - [x] Compliance points enumerated
+
+## Deployment recommendation (users)
+
+The recommended user-facing deployment is the Browser Extension + Helper model. The extension provides the UI and communicates with a local Helper service (the `stealth-browser` binary) which exposes a SOCKS5 proxy and a local status API. See `qnet-spec/docs/helper.md` and `qnet-spec/docs/extension.md` for installation and integration details. Default helper endpoints used in examples throughout this repo:
+
+- SOCKS5: `127.0.0.1:1088`
+- Status API: `http://127.0.0.1:8088`
+
+This approach keeps the user installation lightweight (small extension + helper service) and simplifies packaging for cross-platform distribution.
+
+## QNet Browser Extension: Complete User Experience
+
+This section defines the expected user experience for the Browser Extension + Helper deployment model.
+
+### Installation Process
+
+1. Initial Download
+	- User installs the QNet browser extension from the Chrome/Edge/Firefox store.
+	- Additionally, user downloads a small "QNet Helper" installer (~10–20 MB) that contains the Rust binaries (Helper runs the `stealth-browser` and can launch `edge-gateway` when needed). Browser extensions cannot run binaries directly, so the Helper is required.
+
+2. First-Run Setup
+	- Extension checks if the Helper is installed; if missing, it guides the user to install it.
+	- Helper installs as a background service with minimal/no UI.
+	- Extension connects to the Helper via Native Messaging (preferred) or a localhost dev API.
+	- Helper handles any one-time privilege prompts needed for system integration (e.g., hosts file editing if enabled by the user).
+
+### Using QNet
+
+1. Starting Protection
+	- User clicks the QNet extension icon and toggles "Connect".
+	- Extension signals the Helper to start the SOCKS proxy (`stealth-browser`).
+	- Extension configures browser proxy to use `127.0.0.1:1088` (SOCKS5).
+	- Extension icon turns green to indicate protection is active.
+
+2. Normal Browsing
+	- User browses normally.
+	- Browser sends requests through the local SOCKS proxy. The Helper selects a decoy from the signed catalog, and connections appear as if going to the decoy site; actual content is fetched from the real site via the HTX path.
+
+3. Status & Control
+	- Extension popup shows: protection status (active/inactive), current catalog version, toggle to enable/disable, and a settings page for advanced options.
+
+4. Disabling Protection
+	- User toggles off in the extension.
+	- Extension restores browser proxy to direct connection.
+	- Helper places the proxy in standby.
+
+### Behind the Scenes
+
+- Helper service:
+  - Runs `stealth-browser` (SOCKS5) and can launch `edge-gateway` when masked mode is required.
+  - Manages catalog updates (download + signature verification) and persistence.
+  - Handles system integration (optional hosts file changes when explicitly enabled, startup registration).
+  - Starts automatically with the system (optional).
+
+- Extension:
+  - Provides UI controls and manages the browser proxy settings.
+  - Communicates with the Helper via Native Messaging (production) or localhost HTTP/WebSocket (dev).
+
+### Technical Requirements
+
+1. Helper App
+	- ~10–20 MB download size (Rust binaries + certs when applicable).
+	- Admin rights for initial install only (service registration or native messaging manifest on some platforms).
+	- Small CPU/RAM footprint when running.
+
+2. Data Usage
+	- Minimal overhead beyond normal browsing.
+	- Small signed catalog updates (KBs) periodically.
+
+### Development Path
+
+1. Helper app
+	- Package the Rust components from this repo.
+	- Provide a stable local API for the extension (Native Messaging; dev HTTP endpoints behind a flag).
+	- Handle system integration tasks (proxy lifecycle, optional hosts edits with consent).
+
+2. Browser extension
+	- Provide simple UI controls and status.
+	- Manage browser proxy configuration while active.
+	- Communicate with the Helper for start/stop/status/update.

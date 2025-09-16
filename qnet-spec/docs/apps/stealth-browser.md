@@ -1,6 +1,6 @@
-# Stealth Browser
+# Stealth Browser (Helper service)
 
-This document focuses on M3 (Catalog pipeline) specifics for the Stealth Browser: how the app loads a signed, bundled catalog, verifies it, caches it with TTL, updates from mirrors, and exposes status to the UI. For the high-level playbook, see `specs/001-qnet/T6.7-playbook.md`. For the catalog format and signing, see `docs/catalog-schema.md`.
+This document focuses on M3 (Catalog pipeline) specifics for the Stealth Browser, which is now intended to run as a local Helper service that provides a SOCKS5 proxy and status API. The recommended user-facing deployment pairs a browser extension with this Helper service. For the high-level playbook, see `specs/001-qnet/T6.7-playbook.md`. For the catalog format and signing, see `docs/catalog-schema.md`.
 
 ## M3: Catalog-first pipeline
 
@@ -31,7 +31,7 @@ This document focuses on M3 (Catalog pipeline) specifics for the Stealth Browser
    - The response includes `{ updated, from, version, error, checked_at_ms }`. The `/status` payload also surfaces the last attempt under `last_update` with `checked_ms_ago`.
 
 ### Status API (for UI)
-Expose a minimal status struct via Tauri IPC:
+Expose a minimal status struct via the Helper's HTTP status API (used by a Tauri UI or the browser extension):
 ```
 {
   "catalog": {
@@ -137,14 +137,20 @@ Operations guidance:
 - Keep pairs within the same ownership where possible (plausibility for DPI/log analysis).
 - Update via the signed catalog workflow; prefer CI-generated artifacts for consistency.
 
-## Edge Gateway (Option B production path)
+## Edge Gateway (production path)
 
-In Masked mode, the browser dials using `htx::api::dial()` which shapes the outer TLS to the chosen decoy. A cooperating edge gateway terminates this outer TLS and serves the inner multiplexed stream. The gateway expects an HTTP CONNECT prelude on the inner stream, responds `200 Connection Established`, and then tunnels TCP.
+In Masked mode, the Helper (or a standalone client configured to use the catalog) will call `htx::api::dial()` which shapes the outer TLS to the chosen decoy. A cooperating edge gateway terminates this outer TLS and serves the inner multiplexed stream. The gateway expects an HTTP CONNECT prelude on the inner stream, responds `200 Connection Established`, and then tunnels TCP.
 
 - Gateway binary: `apps/edge-gateway` (env: `BIND`, `HTX_TLS_CERT`, `HTX_TLS_KEY`)
-- Library: `htx::api::accept(bind)` under `rustls-config` derives inner keys via TLS exporter (EKM-only) for quick deployments.
+- Library: `htx::api::accept(bind)` under `rustls-config` derives inner keys via TLS exporter (EKM-only).
 
 Local smoke test (dev):
 - Generate a self-signed cert and set env as in `qnet-spec/templates/edge-gateway.example.env`.
-- Run the gateway, then run the browser with `STEALTH_MODE=masked` and a signed decoy catalog.
+- Run the gateway, then run the Helper/stealth-browser with `STEALTH_MODE=masked` and a signed decoy catalog.
 - Issue a request over SOCKS to any HTTPS target; expect CONNECT success and `state: connected` in `/status`.
+
+### Default ports (Helper)
+- SOCKS proxy: `127.0.0.1:1088` (default)
+- Status API: `http://127.0.0.1:8088` (default)
+
+The browser extension should point the browser's proxy config to the Helper's SOCKS address and read status via the status API.

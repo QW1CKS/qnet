@@ -156,6 +156,20 @@ Documentation complete for a catalog-first distribution model:
 - Docker images on GitHub Container Registry
 - Source code with reproducible builds
 
+### Deployment recommendation (users)
+
+For end-user deployments we recommend the Browser Extension + Helper model:
+
+- Browser Extension: provides the user-facing UI, catalog chooser, and proxy lifecycle control.
+- Helper (the `stealth-browser` binary): runs locally as a background service exposing a SOCKS5 proxy and a local status API for UI/extension integration.
+
+See `qnet-spec/docs/helper.md` and `qnet-spec/docs/extension.md` for installation and integration details. Default helper endpoints used in examples throughout the repo:
+
+- SOCKS5: `127.0.0.1:1088`
+- Status API: `http://127.0.0.1:8088`
+
+This model reduces packaging complexity for users and lets the extension manage proxy configuration and the Helper lifecycle.
+
 ## Security Considerations
 
 ### Threat Mitigation
@@ -210,7 +224,7 @@ See Phase 6 Task T6.6 for detailed micro-benchmarks, zero-copy refactors, QUIC i
 ### Dual Audience Strategy
 QNet serves both developers (toolkit/framework users) and end users (ready-to-use applications). To balance this:
 - **Developer Focus**: Core crates in `crates/` and examples in `examples/` for integration (e.g., HTX crate for tunneling).
-- **User Focus**: Applications in `apps/` like the stealth browser for easy anonymous browsing.
+- **User Focus**: A Browser Extension + Helper (the `stealth-browser` binary) for easy anonymous browsing; the extension manages browser proxy settings and controls the Helper via native messaging.
 - **Documentation**: Separate guides—technical docs for devs, quick starts for users.
 
 ### Repository Organization
@@ -220,7 +234,7 @@ QNet serves both developers (toolkit/framework users) and end users (ready-to-us
 
 ### CI/CD Pipelines
 - **Toolkit Pipeline**: Fast Rust builds/tests for `crates/` (unit tests, fuzzing).
-- **Apps Pipeline**: Includes browser packaging (MSI/APK/DMG), integration tests, and pre-built binaries.
+- **Apps Pipeline**: Helper installers (MSI/PKG/DEB/DMG) and WebExtension builds for Chrome/Edge/Firefox, integration tests, and pre-built binaries.
 - Separate workflows: Toolkit on PRs, apps on releases for efficiency.
 
 ### Long-Term Ecosystem Growth

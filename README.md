@@ -59,7 +59,7 @@ QNet's innovative **7-layer architecture** ensures seamless, secure connectivity
 
 **Core Technologies:**
 - **Rust**: Memory-safe, high-performance networking
-- **Tauri**: Cross-platform desktop applications
+- **WebExtensions + Helper**: Browser Extension (Chrome/Edge/Firefox) + local Helper service for user delivery
 - **Tokio**: Async runtime for concurrency
 - **Ring**: Cryptographic primitives
 - **Libp2p**: P2P networking
@@ -81,32 +81,30 @@ QNet's innovative **7-layer architecture** ensures seamless, secure connectivity
 - **Windows**: Visual Studio Build Tools 2022 (C++ workload + Windows SDK)
 - **Linux/macOS**: Standard development tools
 
-### Demo: Stealth Browser
+### Demo: Browser Extension + Helper (recommended for users)
 
-Launch the working Stealth Browser demo (empty window with SOCKS5 proxy):
+For end users we recommend a lightweight browser extension paired with a small local Helper application (the "Helper"). This model provides the best user experience and security while leveraging the existing Rust networking components.
 
-**Windows (PowerShell):**
+What you get:
+- A browser extension (Chrome/Edge/Firefox) that provides a one-click UI and proxy control
+- A small Helper application (Rust binaries) installed once on the host that runs the `stealth-browser` SOCKS proxy and optional `edge-gateway` service
+
+Quick start (developer/demo): run the Helper locally and use the browser configured to use the local proxy.
+
+**Windows (PowerShell) — run stealth-browser directly for development:**
 ```powershell
-# From repo root
-cargo run -p stealth-browser --features with-tauri
+# From repo root (development only)
+cargo run -p stealth-browser
 ```
 
-**Linux/macOS (Bash):**
+**Smoke Test** (from another terminal — verifies local proxy):
 ```bash
-# From repo root
-cargo run -p stealth-browser --features with-tauri
+curl -I https://example.com --socks5-hostname 127.0.0.1:1088
 ```
 
-**Features:**
-- ✅ Launches empty window (demo)
-- ✅ SOCKS5 proxy on `127.0.0.1:1080`
-- ✅ Daily rotating logs
-- ✅ Cross-platform support
-
-**Smoke Test** (from another terminal):
-```bash
-curl -I http://example.com --socks5-hostname 127.0.0.1:1080
-```
+Notes:
+- The extension automates launching the Helper and configuring the browser to use `127.0.0.1:1088` (default) for SOCKS5.
+- For production distribution, the Helper should be packaged as an installer (Windows MSI, macOS PKG) and shipped alongside the browser extension.
 
 ### Demo: Secure Connection
 
@@ -129,7 +127,7 @@ Demonstrate a full secure connection with catalog-first configuration (signed + 
 - ✅ DPI capture and comparison (PASS if traffic looks like normal TLS)
 - ✅ Edge gateway for production masked browsing (M3 complete)
 
-See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format.
+See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format. For user components, see the [Helper Guide](qnet-spec/docs/helper.md) and [Browser Extension Guide](qnet-spec/docs/extension.md).
 
 ### Development Setup
 
@@ -172,6 +170,9 @@ See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details a
 - **[Architecture](qnet-spec/docs/ARCHITECTURE.md)**: System architecture details
 - **[Contributing](qnet-spec/docs/CONTRIBUTING.md)**: Development guidelines
 - **[Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md)**: Step-by-step secure connection demo
+- **[Helper Guide](qnet-spec/docs/helper.md)**: Local Helper (stealth-browser) install, endpoints, and API
+- **[Browser Extension Guide](qnet-spec/docs/extension.md)**: Extension developer flow and integration
+- **[Physical Testing Playbook](qnet-spec/docs/physical-testing.md)**: Hands-on validation with captures and metrics
 - **[API Documentation](https://docs.rs/qnet)**: Generated Rust docs
 
 ### 🧪 Development Tools
@@ -220,36 +221,30 @@ stream.write(b"hello world");
 
 ## 👤 For Users
 
-QNet provides **ready-to-use applications** for day-to-day users without requiring development knowledge.
+QNet provides a user-friendly deployment model composed of a browser extension and a small local Helper application. This approach minimizes installation friction while providing robust masking and catalog updates.
 
-### Stealth Browser
+### How users install and use QNet (recommended)
 
-A Tauri-based desktop application with an embedded SOCKS5 proxy for anonymous browsing.
+1. Install the QNet browser extension from the browser's extension store (Chrome Web Store, Firefox Add-ons, or Edge Add-ons).
+2. Download and install the QNet Helper for your platform (small installer that contains the Rust binaries).
+3. Open the browser and click the QNet extension icon. The extension will:
+   - Detect and start the local Helper if needed (or prompt for the Helper installer)
+   - Configure the browser's proxy settings to use the local SOCKS5 proxy (default 127.0.0.1:1088)
+   - Show status (connected, catalog version, toggle protection)
+4. Browse normally — QNet masks your connection using decoys from the catalog so observers see the decoy domain instead of your real destination.
 
-**Features:**
-- 🔄 SOCKS5 proxy on `127.0.0.1:1080`
-- 🎭 Traffic mimics normal HTTPS
-- 📝 Daily rotating logs
-- 🖥️ Cross-platform desktop app
-- 🔧 Configurable via environment variables
+More details: [Helper Guide](qnet-spec/docs/helper.md) • [Browser Extension Guide](qnet-spec/docs/extension.md)
 
-**Usage:**
+### Notes for power users / developers
 
-```bash
-# UI Mode (recommended)
-cargo run -p stealth-browser --features with-tauri
+- Developers can still run `stealth-browser` directly from source for debugging:
 
-# Headless Mode
+```powershell
+# Development only: run local proxy
 cargo run -p stealth-browser
 ```
 
-**Configuration:**
-```bash
-# Environment variables
-STEALTH_SOCKS_PORT=1080
-STEALTH_MODE=direct  # or htx-http-echo
-STEALTH_BOOTSTRAP=1
-```
+- For production the Helper should be packaged and installed once; the extension handles starting/stopping it and configuring the browser.
 
 ---
 
@@ -333,7 +328,9 @@ We welcome contributions from developers, security researchers, and protocol des
 
 ## 📊 Project Status
 
-### Implementation Progress
+This project serves two audiences. We now track progress along two parallel tracks: Toolkit (protocol crates, performance, compliance) and User Delivery (Browser Extension + Helper packaging and UX).
+
+### Toolkit track — Implementation Progress
 
 - ✅ **Phase 1**: Core Infrastructure (Complete)
 - ✅ **Phase 2**: HTX Proof-of-Concept (90% Complete - M3 catalog pipeline done)
@@ -341,12 +338,12 @@ We welcome contributions from developers, security researchers, and protocol des
 - ⏳ **Phase 4**: Privacy & Naming (Planned)
 - ⏳ **Phase 5**: Payments & Governance (Planned)
 
-### Current Milestones
+### User delivery track — Extension + Helper
 
-- **M1**: Stealth Browser with SOCKS5 proxy ✅
-- **M2**: Enhanced stealth features (in progress)
-- **M3**: Full HTX tunneling ✅
-- **M4**: Mixnet integration
+- **U1**: Helper service (stealth-browser SOCKS5 127.0.0.1:1088; status API 127.0.0.1:8088) ✅
+- **U2**: Browser Extension MVP (UI + proxy toggle + native messaging handshake) 🚧
+- **U3**: Catalog-first integration surfaced in UI (signed updates, status) ✅
+- **U4**: Store submissions and Helper installers (Win/macOS/Linux) ⏳
 
 ### Performance Benchmarks
 
@@ -390,12 +387,5 @@ QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for deta
 - **🐛 [Issues](https://github.com/QW1CKS/qnet/issues)**: Bug reports and feature requests
 - **💬 [Discussions](https://github.com/QW1CKS/qnet/discussions)**: General discussion and Q&A
 - **📧 [Security](SECURITY.md)**: Security vulnerability reporting
-
-### Roadmap
-
-- **Q1 2025**: Core infrastructure and HTX PoC ✅
-- **Q2 2025**: Routing, mesh, privacy features, and catalog pipeline ✅
-- **Q3 2025**: Payments, governance, and tools ⏳
-- **Q4 2025**: Production-ready release ⏳
 
 ---

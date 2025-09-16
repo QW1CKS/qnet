@@ -1,64 +1,35 @@
-# Stealth Browser
+# Stealth Browser (Helper service)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
 
-**Privacy-preserving web browser for QNet** - Anonymous browsing with integrated mixnet protection, decentralized identity, and secure communication.
+**Stealth Browser** in this repository refers to the local Helper service that provides the QNet masking functionality: a SOCKS5 proxy and a small HTTP status/control API. The recommended user-facing deployment pairs a browser extension (UI + control) with this Helper service.
 
 ## Overview
 
-The Stealth Browser is QNet's privacy-focused web browser that provides:
+The Helper provides:
 
-- **Anonymous Browsing**: Mixnet-protected web traffic
-- **Decentralized Identity**: Self-sovereign identity management
-- **Secure Communication**: End-to-end encrypted messaging
-- **Privacy Protection**: Anti-tracking and fingerprinting resistance
-- **Integrated Wallet**: Cryptocurrency and voucher management
-- **Decentralized Apps**: dApp browser with QNet integration
+- A local SOCKS5 proxy that applies decoy-based masking to outbound connections
+- A small HTTP status API (default `http://127.0.0.1:8088`) for UI/extension integration
+- Catalog loading, signature verification, and atomic updates
+- Developer-mode options for testing (unsigned dev catalogs, plaintext mux)
 
-## Features
+## Quick Start (Helper)
 
-- ✅ **Anonymous**: Mixnet-protected browsing
-- ✅ **Secure**: End-to-end encryption
-- ✅ **Private**: Anti-fingerprinting protection
-- ✅ **Integrated**: Built-in wallet and messaging
-- ✅ **Decentralized**: P2P networking and identity
+### Run from source (development)
 
-## Quick Start
+Run the Helper directly for development or testing. The Helper exposes a SOCKS5 proxy and status API.
 
-### Installation
-
-**From Source:**
-```bash
-# Clone the repository
-git clone https://github.com/QW1CKS/qnet.git
-cd qnet/apps/stealth-browser
-
-# Install dependencies
-npm install
-
-# Build the application
-npm run build
-
-# Run in development mode
-npm run dev
+```powershell
+# From repo root (development)
+cargo run -p stealth-browser
 ```
 
-**Pre-built Binaries:**
-```bash
-# Download from releases
-curl -L https://github.com/QW1CKS/qnet/releases/download/v0.1.0/stealth-browser-setup.exe -o setup.exe
-./setup.exe
-```
+By default the Helper listens on:
 
-### First Run
+- SOCKS proxy: `127.0.0.1:1088`
+- Status API: `http://127.0.0.1:8088`
 
-```bash
-# Start the stealth browser
-./stealth-browser
-
-# Or with SOCKS5 proxy for external applications
-./stealth-browser --socks5-port 1080
-```
+The browser extension (recommended) will point the browser to the SOCKS proxy and read status via the status API.
 
 ## User Interface
 
@@ -173,29 +144,21 @@ qnet.naming      // Alias resolution
 
 ## Network Integration
 
-### SOCKS5 Proxy
+### SOCKS5 Proxy (Helper)
 
-**System-wide Protection:**
-```bash
-# Start with SOCKS5 proxy
-./stealth-browser --socks5-port 1080
+The Helper provides a local SOCKS5 proxy that the browser extension will configure the browser to use. Default ports are shown above.
 
-# Configure system proxy
-# Linux: export http_proxy=socks5://127.0.0.1:1080
-# Windows: Set proxy in system settings
-# macOS: Set proxy in network preferences
-```
+**Application integration (development):**
 
-**Application Integration:**
 ```python
 import socks
 import socket
 
 # Configure SOCKS5 proxy
-socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, "127.0.0.1", 1080)
+socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, "127.0.0.1", 1088)
 socket.socket = socks.socksocket
 
-# All network requests now go through QNet
+# All network requests now go through the Helper proxy
 import requests
 response = requests.get("https://example.com")
 ```
@@ -313,29 +276,30 @@ Options:
   --help                   Show help
 ```
 
+
 ## Troubleshooting
 
 ### Common Issues
 
 **Connection Problems:**
-```bash
-# Check network status
-curl --socks5 127.0.0.1:1080 https://check.qnet.io
 
-# Restart with clean state
-rm -rf ~/.qnet/browser-data
-./stealth-browser
+```bash
+# Check network status via Helper status API
+curl http://127.0.0.1:8088/status
+
+# Test SOCKS proxy (example)
+curl --socks5-hostname 127.0.0.1:1088 https://check.qnet.io
 ```
 
-**Performance Issues:**
-- **Disable high privacy mode** for better performance
-- **Check system resources** (CPU, memory, network)
-- **Update to latest version** for performance improvements
+**If the extension can't reach the Helper:**
+- Ensure the Helper binary is installed and running
+- Confirm the Helper is listening on the expected ports (1088/8088)
+- Check local firewall rules that may block localhost sockets
 
 **Extension Problems:**
-- **Disable conflicting extensions**
-- **Check extension permissions**
-- **Update extensions to latest versions**
+- Ensure the extension has permission to modify proxy settings (browser prompt)
+- If auto-launch failed, the extension will show an installer prompt to guide the user
+
 
 ## Development
 

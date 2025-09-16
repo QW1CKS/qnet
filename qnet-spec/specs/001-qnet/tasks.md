@@ -42,10 +42,12 @@ This task list breaks down the QNet implementation plan into deeply actionable i
 - [x] T6.6: Performance Optimization
 - [ ] T6.7: Stealth Browser Application
     - Status: M1 complete. M2 code-complete in repo — stealth-mode feature plumbed; variable record sizing and bounded jitter integrated; STREAM padding applied pre-AEAD with back-compat decoder; plaintext zeroization after encode; ALPN/JA3 template rotation via env allow-list with 24h cache; targeted tests added (sizing/jitter determinism, padded AEAD round-trip, JA3 variance). Decoy resolver with signed catalog and bootstrap resilience (signed seeds, backoff+jitter, cache, health probe) integrated; DPI helper scripts added; JA3 fixtures/rotation cadence tests present. Pending: external bootstrap acceptance demo (<30s) and QUIC parity. M3 documentation complete (catalog-first schema, signer CLI, publisher guide, app behavior) and signer implementation landed (`crates/catalog-signer`); app bundling/updater integration to follow.
+    - Deployment note: For user-facing distribution prefer the Browser Extension + Helper model (extension UI + local `stealth-browser` helper). See `qnet-spec/docs/helper.md` and `qnet-spec/docs/extension.md` for integration details and installer guidance. Default helper endpoints used in examples: SOCKS5 `127.0.0.1:1088`, status API `http://127.0.0.1:8088`.
 - [ ] T6.8: Repository Organization for Dual Audience
 - [ ] T6.9: User Documentation and Quick Start Guides
 - [ ] T6.10: Repository Size Management
 - [ ] T6.11: Separate CI/CD Pipelines for Toolkit and Apps
+- [ ] T6.12: Physical Testing Playbook
 
 ## Phase 1: Core Infrastructure Setup (Priority: High)
 
@@ -501,6 +503,19 @@ Acceptance:
 - Toolkit builds in <5min; apps pipeline handles packaging without slowing core dev.
 - Pre-built binaries available via GitHub Releases for users.
 
+### T6.12: Physical Testing Playbook
+Objective: Move physical testing guidance into a dedicated, detailed playbook and wire it into tasks and acceptance.
+Priority: Medium | Dependencies: T6.7 (Helper/Extension), T6.6 (Perf) | Estimate: 2 days
+Deliverables:
+- New doc: `qnet-spec/docs/physical-testing.md` with objectives, topologies, prerequisites, Windows-friendly procedures, metrics templates, packet capture guidance, troubleshooting, and acceptance checklist. References `helper.md` and `extension.md` and uses default ports (SOCKS5 127.0.0.1:1088, status 127.0.0.1:8088).
+- Links from tasks and README where appropriate.
+Interfaces:
+- Docs only; uses Helper status API (GET http://127.0.0.1:8088/status) and SOCKS5 at 127.0.0.1:1088 for validation steps.
+Acceptance:
+- Physical testing table removed from `tasks.md` and replaced with a link to the playbook.
+- Playbook contains step-by-step procedures for: two-node LAN test, stealth capture, performance quick check, failure/recovery, decoy routing.
+- At least one run-through produces artifacts in `logs/` and a short report under `artifacts/` (pcap or perf summary) for traceability.
+
 ## Validation Matrix (Tasks → Compliance)
 - L2 framing + KEY_UPDATE: T1.3, T2.6 → Compliance 3, 12.
 - Origin mirroring/TemplateID: T2.1, T1.5 → Compliance 1, 4.
@@ -580,27 +595,7 @@ T1.1
 - All High tasks delivered; E2E HTX echo demo; compliance MINIMAL profile passes.
 - Modular crates ready for future extension.
 
-## Physical Testing Tasks
-This section tracks hands-on testing of QNet using physical setups (e.g., two local computers). Use the table below to log inputs, outputs, notes, and failure reasons for each test. Tasks progress from basic setup to advanced scenarios.
-
-| Task Description | Inputs | Expected Outputs | Actual Outputs | Notes/Failure Reason | Status |
-|------------------|--------|------------------|----------------|----------------------|--------|
-| Network Setup and Connectivity | Connect two computers via Ethernet/Wi-Fi on same subnet (e.g., 192.168.1.x). Assign static IPs. Verify ping between them. | Both computers can ping each other successfully (<1ms latency). No firewall blocks. | | | Pending |
-| QNet Daemon Build and Launch | On both computers: Clone repo, run `cargo build --release`, launch `./target/release/qnet-daemon --config local-config.toml` (with local IPs as seeds). | Daemons start without errors; logs show successful libp2p bootstrap and peer discovery. | | | Pending |
-| Basic Peer Discovery | Run daemons on both computers with gossipsub enabled. Check logs for peer connections. | Logs show mutual peer discovery; no connection timeouts. | | | Pending |
-| Simple HTTP Tunnel Test | Computer 1: Run QNet client daemon. Computer 2: Run daemon + `python -m http.server 8080`. From Computer 1, curl `http://computer2-ip:8080` via QNet proxy. | HTTP response received (e.g., directory listing); tunnel established without errors. | | | Pending |
-| Frame Encoding/Decoding Validation | Send test frames (STREAM, PING) between daemons. Use Wireshark to capture and inspect raw packets. | Frames decode correctly; AEAD tags verify; no corruption. | | | Pending |
-| Noise Handshake Verification | Initiate handshake between daemons. Log transcript hashes and transport secrets. | Handshake completes; derived keys match expected values; decryption succeeds. | | | Pending |
-| Stealth Mode Packet Mimicry | Enable TLS mimicry in htx/core-framing. Capture traffic with Wireshark; analyze for HTTPS-like patterns (e.g., spoofed SNI). | Packets indistinguishable from standard HTTPS; no QNet-specific headers or patterns detectable. | | | Pending |
-| Latency Benchmarking | Run `iperf` or custom ping tool over QNet tunnel (10MB transfer). Measure round-trip time. | Latency <50ms for local network; throughput >100Mbps. | | | Pending |
-| Censorship Bypass Simulation | On Computer 1, block Computer 2's IP/port via firewall (e.g., `iptables`). Attempt QNet routing to bypass. | Traffic routes successfully via mixnet; HTTP response received despite block. | | | Pending |
-| Browser Extension Prototype | Build and install WebExtension on Computer 1. Set QNet daemon as proxy. Browse `test.qnet` (redirects to Computer 2's server). | Extension intercepts request; tunnels via QNet; page loads. | | | Pending |
-| Stealth Browser Application Test | Build full stealth browser (fork Firefox/Chromium) with QNet embedded. Install on Computer 1. Browse censored sites (e.g., simulate blocked URL) via QNet routing to Computer 2. | Browser auto-connects to QNet; traffic mimics HTTPS; censored content loads without detection. | | | Pending |
-| Performance Under Load | Simulate high traffic (e.g., 100 concurrent connections) using tools like `wrk` or `ab` over QNet. | No crashes; latency <100ms; CPU/memory usage stable. | | | Pending |
-| Edge Case: Network Disruption | Disconnect/reconnect network cable during active tunnel. Test recovery. | Tunnel resumes automatically; no data loss; logs show graceful handling. | | | Pending |
-| Advanced Stealth: Decoy Routing | Configure decoy domains (e.g., google.com). Route through decoy node first, then to real destination. | ISP-like logs show decoy IP; real destination hidden. | | | Pending |
-
-- **Instructions**: Update "Actual Outputs" and "Notes/Failure Reason" after each test. Mark "Status" as Pass, Fail, or Pending. Add new rows for additional tests as needed.
+> Note: Physical testing has moved to a dedicated playbook. See `qnet-spec/docs/physical-testing.md`.
 
 #### M3 Tasks — Catalog pipeline
 - [x] T6.7-M3.1: Catalog signer templates
