@@ -24,11 +24,22 @@
 
 ### ✨ Key Features
 
-- **🔒 Censorship-Proof**: Route around blocks with stealthy, mixnet-powered tunnels
-- **🛡️ Privacy-First**: Traffic mimics normal HTTPS, undetectable by ISPs or governments
-- **🌐 Decentralized**: No central authorities, no DNS vulnerabilities, no single points of failure
-- **⚡ Scalable & Secure**: Built for millions of users with quantum-resistant cryptography
+- **🔒 Censorship Resistance**:
+   - *Available Now*: Connection masking via decoys makes your traffic appear to visit different sites
+   - *Coming Soon*: Route around blocks with stealthy, mixnet-powered tunnels
+  
+- **🛡️ Privacy-First**:
+   - *Available Now*: Traffic mimics normal HTTPS, undetectable by ISPs or governments
+   - *Coming Soon*: Optional mixnet routing for enhanced anonymity
+  
+- **🌐 Decentralization**:
+   - *Available Now*: Catalog-based decoy configuration with signed updates
+   - *Coming Soon*: No central authorities, no DNS vulnerabilities, no single points of failure
+  
+- **⚡ Scalable & Secure**: Built with quantum-resistant cryptography
+  
 - **🔧 Developer-Friendly**: Modular crates for building custom privacy tools
+  
 - **📦 Catalog-First**: Signed configuration catalogs with automatic updates (M3 complete)
 
 ### 🎯 Real-World Impact
@@ -55,7 +66,43 @@ QNet's innovative **7-layer architecture** ensures seamless, secure connectivity
 | **L1** | Path Selection | SCION + HTX routing | Secure routing |
 | **L0** | Access Media | Any IP bearer | OS integration |
 
-### 🛠️ Technology Stack
+### � Current Implementation Status
+
+QNet is being developed in phases, with a pragmatic approach to delivering value:
+
+1. **Phase 1 (Available Now) - Browser Extension + Helper**:
+   - A browser extension paired with a local Helper application
+   - Connection masking via decoys (makes traffic appear to visit different sites)
+   - Client-server model with privacy enhancements
+   - Simple to install and use immediately
+
+2. **Future Phases - Full P2P Network**:
+   - Peer-to-peer routing capabilities
+   - Mixnet integration for enhanced anonymity
+   - Fully decentralized operation
+   - Resilient mesh networking
+
+This phased approach allows users to benefit from QNet's privacy features immediately while the more advanced P2P capabilities are being developed.
+
+## Architecture (status view)
+
+QNet's innovative **7-layer architecture** combines immediate privacy benefits with a vision for a fully decentralized future:
+
+| Layer | Name | Purpose | Status |
+|-------|------|---------|--------|
+| **L7** | Applications | Web-layer replacement services | ✅ Browser Extension available |
+| **L6** | Payments | Micro-payments via Lightning | ⏳ Future release |
+| **L5** | Naming & Trust | Self-certifying IDs + alias ledger | ⏳ Future release |
+| **L4** | Privacy Hops | Nym mixnet for anonymity | 🚧 In development |
+| **L3** | Overlay Mesh | P2P connections via libp2p | 🚧 In development |
+| **L2** | Cover Transport | HTX over TCP-443/QUIC-443 | ✅ Complete |
+| **L1** | Path Selection | SCION + HTX routing | 🚧 In development |
+| **L0** | Access Media | Any IP bearer | ✅ Complete |
+
+**Current Focus**: The Browser Extension + Helper (L7 application) leverages the completed L2 Cover Transport layer to provide immediate privacy benefits through connection masking.
+
+
+### �🛠️ Technology Stack
 
 **Core Technologies:**
 - **Rust**: Memory-safe, high-performance networking
@@ -223,6 +270,12 @@ stream.write(b"hello world");
 
 QNet provides a user-friendly deployment model composed of a browser extension and a small local Helper application. This approach minimizes installation friction while providing robust masking and catalog updates.
 
+### Current Implementation: Browser Extension + Helper
+
+The current user experience is intentionally pragmatic: a browser extension (UI + proxy control) works with a small local Helper (the `stealth-browser` binary) to provide immediate censorship resistance via connection masking. In this deployment the flow is effectively a client-server model (your browser → local Helper → remote site), but the Helper applies decoys and HTX transport to make the observed connections look like ordinary HTTPS.
+
+This model is easier to install and understand for end users and provides strong practical benefits today. The broader P2P and mixnet components described elsewhere in this repository are a planned evolution that will be integrated into the Helper over time, making peer routing optional and transparent to users.
+
 ### How users install and use QNet (recommended)
 
 1. Install the QNet browser extension from the browser's extension store (Chrome Web Store, Firefox Add-ons, or Edge Add-ons).
@@ -234,6 +287,17 @@ QNet provides a user-friendly deployment model composed of a browser extension a
 4. Browse normally — QNet masks your connection using decoys from the catalog so observers see the decoy domain instead of your real destination.
 
 More details: [Helper Guide](qnet-spec/docs/helper.md) • [Browser Extension Guide](qnet-spec/docs/extension.md)
+
+## Some Questions
+
+### Is QNet currently using P2P/mixnet technology?
+The current Browser Extension + Helper implementation uses a client-server model enhanced with connection masking (decoys + HTX). The P2P mesh networking and mixnet integration are under active development and will be incorporated into the Helper in future releases as optional routing modes.
+
+### Why an Extension + Helper instead of full P2P today?
+Delivering robust censorship-resistance now requires a pragmatic, low-friction client that users can install easily. The Extension+Helper approach delivers measurable privacy improvements today while allowing the toolkit (crates and mesh) to mature for future P2P deployments.
+
+### Will the Helper become a peer in the mesh?
+Yes — the long-term plan is for the Helper to optionally participate in peer routing (or use peers as relays) when configured or when direct connections are blocked. That capability will be added once the overlay mesh and discovery features are production-ready.
 
 ### Notes for power users / developers
 
@@ -344,6 +408,7 @@ This project serves two audiences. We now track progress along two parallel trac
 - **U2**: Browser Extension MVP (UI + proxy toggle + native messaging handshake) 🚧
 - **U3**: Catalog-first integration surfaced in UI (signed updates, status) ✅
 - **U4**: Store submissions and Helper installers (Win/macOS/Linux) ⏳
+- **U5**: P2P routing integration in Helper (leveraging Phase 3 toolkit components) ⏳
 
 ### Performance Benchmarks
 
