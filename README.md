@@ -178,22 +178,56 @@ See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details a
 
 ### Quick Masked Connection Smoke Test (Windows / PowerShell 7+)
 
-Use this to verify end‑to‑end masking locally.
+Use the dedicated helper script for a clean, reproducible masked CONNECT check. It builds the binaries (debug), launches an in‑process decoy `edge-gateway`, starts `stealth-browser` in masked mode, waits for readiness, performs a SOCKS request, and prints a concise summary with status fields and log paths.
 
-Prerequisites: PowerShell 7+, Rust 1.70+, valid decoy catalog (or dev catalog with `--allow-unsigned-decoy`), `curl` in PATH.
+Script: `scripts/test-masked-connect.ps1`
 
-One‑liner:
-
+Basic run (detached windows for processes):
 ```powershell
-pwsh -NoProfile -Command "cargo build -q -p stealth-browser; Start-Process -PassThru -WindowStyle Hidden target\\debug\\stealth-browser.exe --mode masked; for($i=0;$i -lt 40;$i++){ try { $s=Invoke-RestMethod http://127.0.0.1:8088/status; if($s.state -eq 'connected'){break}; Start-Sleep 1 } catch {}; }; curl.exe -I https://www.wikipedia.org --socks5-hostname 127.0.0.1:1088"
+pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
 ```
 
-Expected:
-- `/status` reaches `connected`
-- `curl` prints HTTP headers (200/301/302) from origin
-- `/status` shows `mode: "masked"`, decoy stats incrementing
+Inline mode (everything stays in the current window; easier for CI / copying logs):
+```powershell
+pwsh ./scripts/test-masked-connect.ps1 -Target www.roblox.com -Inline -Verbose
+```
 
-If it stalls: check `logs/`, then fetch `http://127.0.0.1:8088/status.txt`.
+Specify custom ports (if defaults in use):
+```powershell
+pwsh ./scripts/test-masked-connect.ps1 -SocksPort 2080 -StatusPort 8188 -EdgePort 54443 -Target en.wikipedia.org
+```
+
+After launch, open the live status page in a browser:
+```
+http://127.0.0.1:8088/
+```
+You will see the sticky header with Current Target / IP and Current Decoy / IP lines updating.
+
+What the script verifies:
+1. Status endpoint becomes reachable (`/ready` then `/status`).
+2. Decoy catalog (dev unsigned) loads (non‑zero `decoy_count`).
+3. Masked CONNECT succeeds (state transitions to `connected`).
+4. `last_target` / `last_decoy` (and their IP forms) are populated.
+5. A real HTTPS fetch over SOCKS (curl) returns headers (200/301/302).
+
+Outputs include log file paths; review them for lines containing `state-transition:connected` and `masked:`. The status UI also shows a rolling heartbeat and the terminate button.
+
+Flags of interest:
+- `-Inline`   Run both processes in the same console (no extra windows).
+- `-KeepAlive` Leave processes running after summary (default for detached mode).
+- `-Verbose`  Prints extra progress hints (polling, curl command, etc.).
+
+Security / Dev Note: The script enables `STEALTH_DECOY_ALLOW_UNSIGNED=1` and injects a synthetic in‑memory catalog pointing all traffic at a local edge-gateway for rapid local development. Do not use this catalog or those env vars in production.
+
+If something fails:
+- Visit `http://127.0.0.1:8088/status` (or `/status.txt`) for a raw snapshot.
+- Check the referenced log paths for warnings (look for `last_masked_error`).
+- Ensure no stale `stealth-browser` / `edge-gateway` processes are still running (`Get-Process stealth-browser,edge-gateway`).
+
+Exit & cleanup:
+```powershell
+Get-Process stealth-browser,edge-gateway -ErrorAction SilentlyContinue | Stop-Process -Force
+```
 
 ### Development Setup
 
