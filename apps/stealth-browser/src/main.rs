@@ -486,6 +486,9 @@ struct AppState {
     last_masked_connect: Mutex<Option<StdInstant>>,
     // Masked stats (attempt/success/failure counters + last error)
     masked_stats: Mutex<MaskedStats>,
+    // Resolved IP forms (best-effort) of current target / decoy
+    last_target_ip: Mutex<Option<String>>,
+    last_decoy_ip: Mutex<Option<String>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -515,7 +518,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None) }
     }
 }
 
@@ -606,6 +609,8 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     let (snap, since_opt) = { let g = app.status.lock().unwrap(); (g.0.clone(), g.1) };
     let masked_stats = app.masked_stats.lock().ok().map(|g| g.clone());
     let last_update = app.last_update.lock().ok().and_then(|g| g.clone());
+    let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
+    let decoy_ip = app.last_decoy_ip.lock().ok().and_then(|g| g.clone());
     let mut json = serde_json::json!({
         "socks_addr": socks_addr,
         "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
@@ -615,6 +620,8 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::json!(url); }
     if let Some(t) = snap.last_target { json["last_target"] = serde_json::json!(t.clone()); json["current_target"] = serde_json::json!(t); }
     if let Some(d) = snap.last_decoy { json["last_decoy"] = serde_json::json!(d.clone()); json["current_decoy"] = serde_json::json!(d); }
+    if let Some(ip) = target_ip { json["current_target_ip"] = serde_json::json!(ip); }
+    if let Some(ip) = decoy_ip { json["current_decoy_ip"] = serde_json::json!(ip); }
     if let Some(ms) = masked_stats.as_ref() {
         json["masked_attempts"] = serde_json::json!(ms.attempts);
         json["masked_successes"] = serde_json::json!(ms.successes);
@@ -676,6 +683,14 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         let active = STATUS_CONN_ACTIVE.load(Ordering::Relaxed);
         let total = STATUS_CONN_TOTAL.load(Ordering::Relaxed);
         (format!("{{\"status_conn_active\":{},\"status_conn_total\":{}}}", active, total), "application/json", true)
+    } else if path_token == "/terminate" {
+        // Terminate helper process after short delay so response can flush.
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+            eprintln!("terminate-endpoint: exiting process");
+            std::process::exit(0);
+        });
+        ("{\"terminating\":true}".to_string(), "application/json", true)
     } else if path_token == "/ping" {
         let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
         (format!("{{\"ok\":true,\"ts\":{}}}", now_ms), "application/json", true)
@@ -723,7 +738,7 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         let pre_hdr = pre_hdr_lines.join("\n");
         let init_json = js.to_string();
         let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
-        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:14px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap} button.reload{margin-left:8px}</style></head><body><h3>QNet Stealth — Status <button class='reload' onclick='location.reload()'>Reload</button></h3><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\n'+new Date().toISOString()+' '+m).trimStart();}function render(j){if(!j)return;const tgt=j.current_target||j.last_target;const dec=j.current_decoy||j.last_decoy;let h='State: '+j.state;let cls='state-'+j.state;h+='\nMode: '+j.mode+(j.masked?' (masked)':'');if(tgt)h+='\nCurrent target: '+tgt;if(dec)h+='\nCurrent decoy: '+dec;if(typeof j.decoy_count==='number')h+='\nDecoy count: '+j.decoy_count;if(j.catalog_version)h+='\nCatalog version: '+j.catalog_version;if(j.peers_online!==undefined)h+='\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);})();</script><p class='mono'>SOCKS: __SOCKS_ADDR__</p><p class='mono'><a href='/status'>/status JSON</a> | <a href='/status.txt'>/status.txt</a> | <a href='/ping'>/ping</a> | <a href='/config'>/config</a></p></body></html>"#;
+    let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgt=j.current_target||j.last_target;const dec=j.current_decoy||j.last_decoy;const tgtIp=j.current_target_ip;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\nMode: '+j.mode;if(tgt)h+='\nCurrent Target: '+tgt;if(tgtIp)h+='\nCurrent Target IP: '+tgtIp;if(dec)h+='\nCurrent Decoy: '+dec;if(decIp)h+='\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\nDecoy count: '+j.decoy_count;if(j.catalog_version)h+='\nCatalog version: '+j.catalog_version;if(j.peers_online!==undefined)h+='\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
         let html = html_template.replace("__STATE_CLASS__", state_cls)
             .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
             .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
@@ -938,6 +953,17 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                     guard.0.last_decoy = decoy_str.clone();
                     // Update last_masked_connect while we still hold status lock so monitor can't observe new state without timestamp
                     if let Ok(mut lm) = app.last_masked_connect.lock() { *lm = Some(now); }
+                    // Resolve host & decoy to IPs (best effort, do not block long)
+                    if let Ok(mut tip) = app.last_target_ip.lock() {
+                        if let Ok(mut iter) = (|| std::net::ToSocketAddrs::to_socket_addrs(&(format!("{}:{}", host, port))))() { if let Some(addr) = iter.find(|a| a.is_ipv4()) { *tip = Some(addr.ip().to_string()); } }
+                    }
+                    if let Some(decoy_hostport) = &decoy_str {
+                        if let Some((dh, dp)) = decoy_hostport.split_once(':') {
+                            if let Ok(mut dip) = app.last_decoy_ip.lock() {
+                                if let Ok(mut iter) = (|| std::net::ToSocketAddrs::to_socket_addrs(&(format!("{}:{}", dh, dp))))() { if let Some(addr) = iter.find(|a| a.is_ipv4()) { *dip = Some(addr.ip().to_string()); } }
+                            }
+                        }
+                    }
                 }
                 eprintln!(
                     "state-transition:connected mode=masked target={}:{} decoy={}",
