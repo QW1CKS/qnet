@@ -203,6 +203,8 @@ http://127.0.0.1:8088/
 ```
 You will see the sticky header with Current Target / IP and Current Decoy / IP lines updating.
 
+Note: The smoke test script uses curl with `--socks5-hostname` so that the SOCKS CONNECT request carries the original domain name (ATYP=DOMAIN). This lets the status page show the human‑readable host under "Current Target" while also resolving and showing a separate "Current Target IP".
+
 What the script verifies:
 1. Status endpoint becomes reachable (`/ready` then `/status`).
 2. Decoy catalog (dev unsigned) loads (non‑zero `decoy_count`).

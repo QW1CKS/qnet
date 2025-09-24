@@ -215,7 +215,9 @@ $url = "https://$Target/"
 Write-Verbose "Curl Path: $curl"
 Write-Verbose "Curl URL: $url"
 $curlOut = New-TemporaryFile
-& $curl --socks5 "127.0.0.1:$SocksPort" --max-time 15 -o $curlOut -s -S -D - $url 2>&1 | Tee-Object -Variable curlVerbose | Out-Null
+# Use --socks5-hostname so the domain (not a pre-resolved IP) is sent in the SOCKS5 CONNECT.
+# This keeps Current Target as the hostname while the helper separately resolves and displays Current Target IP.
+& $curl --socks5-hostname "127.0.0.1:$SocksPort" --max-time 15 -o $curlOut -s -S -D - $url 2>&1 | Tee-Object -Variable curlVerbose | Out-Null
 $socksResult = if ($LASTEXITCODE -eq 0) { 'Success' } else { "Failure($LASTEXITCODE)" }
 
 Write-Host '[6/6] Fetching status snapshot…'
