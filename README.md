@@ -187,9 +187,19 @@ Basic run (detached windows for processes):
 pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
 ```
 
+You can also pass a full URL (the script normalizes and extracts the host):
+```powershell
+pwsh ./scripts/test-masked-connect.ps1 -Target https://www.wikipedia.org/
+```
+
+Passing an `http://` URL is also accepted; it is automatically upgraded to HTTPS (scheme stripped and request performed with `https://`). Example:
+```powershell
+pwsh ./scripts/test-masked-connect.ps1 -Target http://www.wikipedia.org
+```
+
 Inline mode (everything stays in the current window; easier for CI / copying logs):
 ```powershell
-pwsh ./scripts/test-masked-connect.ps1 -Target www.roblox.com -Inline -Verbose
+pwsh ./scripts/test-masked-connect.ps1 -Target www.x.com -Inline -Verbose
 ```
 
 Specify custom ports (if defaults in use):

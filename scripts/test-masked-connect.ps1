@@ -23,6 +23,7 @@ Prerequisites:
 
 Usage:
   pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
+  pwsh ./scripts/test-masked-connect.ps1 -Target https://www.wikipedia.org/   # URL form also accepted (normalized)
   pwsh ./scripts/test-masked-connect.ps1 -Target en.wikipedia.org -Verbose
 
 Parameters:
@@ -50,6 +51,27 @@ param(
   [int]$ReadyTimeoutSec = 25,
   [switch]$Inline    # If specified, do NOT detach (legacy inline mode)
 )
+function Normalize-TargetHost {
+  param([string]$InputHost)
+  if (-not $InputHost) { return $InputHost }
+  $hval = $InputHost
+  if ($hval -match '^[a-zA-Z][a-zA-Z0-9+.-]*://') {
+    try {
+      $u = [Uri]$hval
+      $hval = $u.Host
+      if ($u.Port -and $u.Port -ne 443 -and $u.Port -ne 80) { $hval = "$hval`:$($u.Port)" }
+      if ($u.Scheme -eq 'http') { $script:TargetWasHttp = $true }
+    } catch { $hval = $hval -replace '^[a-zA-Z][a-zA-Z0-9+.-]*://','' }
+  }
+  $hval = $hval.TrimEnd('/')
+  if ($hval -match '^[^/]+/') { $hval = $hval.Split('/')[0] }
+  return $hval
+}
+
+# Normalize early before strict mode (avoid accidental constant assignment issues)
+$TargetOriginal = $Target
+$Target = Normalize-TargetHost -InputHost $Target
+# (Old normalization function removed / replaced above)
 function Stop-ExistingIfNeeded {
   param([switch]$Skip)
   if ($Skip) { return }
@@ -212,6 +234,7 @@ if (-not (Wait-StatusReady -Port $StatusPort -TimeoutSec $ReadyTimeoutSec -Steal
 Write-Host '[5/6] Performing masked SOCKS5 request via curl…'
 $curl = Find-Curl -Override $CurlPath
 $url = "https://$Target/"
+if ($TargetWasHttp) { Write-Host 'Note: input used http:// scheme; automatically upgraded request to https://' -ForegroundColor DarkYellow }
 Write-Verbose "Curl Path: $curl"
 Write-Verbose "Curl URL: $url"
 $curlOut = New-TemporaryFile
