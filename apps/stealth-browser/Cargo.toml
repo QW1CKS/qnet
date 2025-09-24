@@ -16,6 +16,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 anyhow = "1"
 thiserror = "1"
+sysinfo = { version = "0.30", default-features = false, features=["multithread"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal", "fs"] }
 
@@ -31,6 +32,7 @@ hex = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 directories = "5"
 memchr = "2"
+html-escape = "0.2"
 
 # Optional UI shell (enabled with `--features with-tauri`) — not default to keep builds green on CI without GUI deps
 tauri = { version = "2.4.1", optional = true, default-features = false, features = ["wry"] }

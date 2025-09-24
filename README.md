@@ -176,6 +176,25 @@ Demonstrate a full secure connection with catalog-first configuration (signed + 
 
 See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format. For user components, see the [Helper Guide](qnet-spec/docs/helper.md) and [Browser Extension Guide](qnet-spec/docs/extension.md).
 
+### Quick Masked Connection Smoke Test (Windows / PowerShell 7+)
+
+Use this to verify end‑to‑end masking locally.
+
+Prerequisites: PowerShell 7+, Rust 1.70+, valid decoy catalog (or dev catalog with `--allow-unsigned-decoy`), `curl` in PATH.
+
+One‑liner:
+
+```powershell
+pwsh -NoProfile -Command "cargo build -q -p stealth-browser; Start-Process -PassThru -WindowStyle Hidden target\\debug\\stealth-browser.exe --mode masked; for($i=0;$i -lt 40;$i++){ try { $s=Invoke-RestMethod http://127.0.0.1:8088/status; if($s.state -eq 'connected'){break}; Start-Sleep 1 } catch {}; }; curl.exe -I https://www.wikipedia.org --socks5-hostname 127.0.0.1:1088"
+```
+
+Expected:
+- `/status` reaches `connected`
+- `curl` prints HTTP headers (200/301/302) from origin
+- `/status` shows `mode: "masked"`, decoy stats incrementing
+
+If it stalls: check `logs/`, then fetch `http://127.0.0.1:8088/status.txt`.
+
 ### Development Setup
 
 1. **Clone the repository:**

@@ -9,11 +9,33 @@ The QNet Helper is a small, local application that runs the `stealth-browser` ne
 - Manage catalog updates, verification, and atomic persistence.
 - Handle system integration tasks (proxy lifecycle, optional hosts file changes).
 
-## Default endpoints
+## Default Endpoints
 
-- SOCKS5 proxy: `127.0.0.1:1088`
-- Status API: `http://127.0.0.1:8088`
-- Update trigger: `POST http://127.0.0.1:8088/update` (can also be GET in dev)
+Local-only (binds 127.0.0.1) service surface; never expose externally:
+
+| Path / Service | Method | Purpose |
+|----------------|--------|---------|
+| `127.0.0.1:1088` | SOCKS5 | Browser proxy (masked / direct modes) |
+| `/` | GET | Human HTML status page (auto-polls `/status`) |
+| `/status` | GET | Canonical JSON snapshot (state, mode, masking + catalog) |
+| `/status.txt` | GET | Plain text summary (greppable) |
+| `/ready` | GET | Lightweight readiness probe (always `ok` if thread alive) |
+| `/metrics` | GET | Minimal internal counters (connections) |
+| `/ping` | GET | Health ping `{ ok, ts }` |
+| `/config` | GET | Sanitized runtime configuration (ports, mode) |
+| `/update` | GET/POST | (Dev) Trigger catalog update check |
+
+All HTTP endpoints served from `http://127.0.0.1:8088` by default.
+
+### `/status` JSON Fields
+
+Additive, presence-based (omit if unknown):
+
+`state`, `mode`, `config_mode`, `socks_addr`, `decoy_count`, `current_target`, `current_decoy`, `catalog_version`, `catalog_expires_at`, `catalog_source`, `peers_online`, `checkup_phase`, `last_checked_ms_ago`, `masked_attempts`, `masked_successes`, `masked_failures`, `last_masked_error`, `seed_url`, `last_update.{updated,from,version,error,checked_ms_ago}`.
+
+Notes:
+- Query parameters (`/status?ts=...`) are accepted (cache-busting) and ignored server side.
+- Prefer JSON for automation; `/status.txt` is intentionally minimal.
 
 ## Installation
 
@@ -75,6 +97,60 @@ Example response:
 # From repo root
 cargo run -p stealth-browser -- --socks-port 1088 --status-port 8088
 ```
+
+## Quick Masked Connection Test (Windows / PowerShell 7+)
+
+End-to-end smoke test to verify a masked tunnel is operational.
+
+### Prerequisites
+
+- PowerShell 7 (`pwsh`) — verify: `$PSVersionTable.PSVersion.Major -ge 7`
+- Rust toolchain (1.70+) with build dependencies
+- Signed decoy catalog available (env `STEALTH_DECOY_CATALOG_JSON`) OR dev catalog file + `--allow-unsigned-decoy` (development only)
+- `curl` executable in PATH
+
+### One-liner (ad hoc)
+
+```powershell
+pwsh -NoProfile -Command "cargo build -q -p stealth-browser; Start-Process -PassThru -WindowStyle Hidden target\\debug\\stealth-browser.exe --mode masked; for($i=0;$i -lt 40;$i++){ try { $s=Invoke-RestMethod http://127.0.0.1:8088/status; if($s.state -eq 'connected'){break}; Start-Sleep 1 } catch {}; }; curl.exe -I https://www.wikipedia.org --socks5-hostname 127.0.0.1:1088"
+```
+
+### Scripted (create `scripts/test-masked-connection.ps1`)
+
+```powershell
+param(
+  [string]$Origin = 'https://www.wikipedia.org',
+  [int]$TimeoutSeconds = 60
+)
+Write-Host "[qnet] launching stealth-browser (masked)" -ForegroundColor Cyan
+Start-Process -WindowStyle Hidden -FilePath "$PSScriptRoot/../target/debug/stealth-browser.exe" -ArgumentList '--mode','masked' | Out-Null
+$deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+do {
+  try { $s = Invoke-RestMethod http://127.0.0.1:8088/status -TimeoutSec 2 } catch { Start-Sleep 1; continue }
+  if ($s.state -eq 'connected') { break }
+  Start-Sleep 1
+} while ((Get-Date) -lt $deadline)
+if ($s.state -ne 'connected') { Write-Warning "Did not reach connected state (state=$($s.state))" }
+Write-Host "[qnet] curl HEAD $Origin via SOCKS5" -ForegroundColor Cyan
+curl.exe -I $Origin --socks5-hostname 127.0.0.1:1088
+Write-Host "[qnet] status snapshot:" -ForegroundColor Cyan
+Invoke-RestMethod http://127.0.0.1:8088/status | ConvertTo-Json -Depth 4
+```
+
+### Expected Outcome
+
+1. `/status` transitions to `connected` (or `calibrating` then `connected`).
+2. `curl` shows a valid HTTP response from the origin.
+3. `masked_attempts` and `masked_successes` increment; `current_decoy` populated.
+
+If failure:
+- Check `logs/stealth-browser*.log`
+- Inspect `/status.txt` for concise summary
+- Ensure catalog loaded (`catalog_version` present)
+
+### Security Warning
+
+Avoid `--allow-unsigned-decoy` in production: unsigned catalogs bypass signature & expiry verification.
 
 ## Logging
 

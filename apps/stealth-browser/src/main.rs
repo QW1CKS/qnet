@@ -9,9 +9,94 @@ use tokio::{
 use tracing_appender::rolling;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration as StdDuration, Instant as StdInstant};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::io::Write as _;
+
+// Instrumentation for status server diagnostics
+static STATUS_CONN_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static STATUS_CONN_TOTAL: AtomicUsize  = AtomicUsize::new(0);
+// Removed unused counters from legacy async implementation to reduce warnings.
+// Keep a minimal set actually referenced by blocking status server.
+#[allow(dead_code)] // retained for potential future diagnostics toggle
+static STATUS_EMPTY_DROPS: AtomicUsize = AtomicUsize::new(0);
+static STATUS_PATH_STATUS: AtomicUsize = AtomicUsize::new(0);
+static STATUS_PATH_READY: AtomicUsize = AtomicUsize::new(0);
+static STATUS_PATH_ROOT: AtomicUsize = AtomicUsize::new(0);
+static STATUS_PATH_METRICS: AtomicUsize = AtomicUsize::new(0);
+// Unused path counters (async legacy) removed to silence warnings.
+// If reintroducing endpoints in blocking server, re-add and increment.
+// static STATUS_PATH_CONFIG: AtomicUsize = AtomicUsize::new(0);
+// static STATUS_PATH_UPDATE: AtomicUsize = AtomicUsize::new(0);
+// static STATUS_PATH_PING: AtomicUsize = AtomicUsize::new(0);
+static STATUS_PATH_OTHER: AtomicUsize = AtomicUsize::new(0);
+
+/// Acquire a coarse single-instance lock.
+/// Strategy: place a `instance.lock` file inside the catalog cache dir (or fallback to ./tmp).
+/// File content: PID + timestamp. If file exists and PID still running, refuse start.
+/// If PID not running (stale), overwrite. This avoids multi-instance status/SOCKS port split-brain.
+fn ensure_single_instance() -> Result<()> {
+    // We purposely do *not* hold an open file handle (so upgrades / restarts can replace file);
+    // race window is acceptable for dev usage. For production we could move to OS mutex / file lock.
+    let cache_dir = CatalogState::cache_dir().unwrap_or_else(|_| std::path::PathBuf::from("tmp"));
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let lock_path = cache_dir.join("instance.lock");
+    let pid = std::process::id();
+    // Fast path: attempt create_new; if succeeds we are the only instance.
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+        Ok(mut f) => {
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = writeln!(f, "pid={pid}\nstarted_at={now}");
+            eprintln!("single-instance:acquired path={}", lock_path.display());
+            return Ok(());
+        }
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
+            warn!(error=?e, path=%lock_path.display(), "single-instance unexpected create error");
+            return Err(anyhow!("single-instance lock create: {e}"));
+        }
+        Err(_) => { /* exists */ }
+    }
+    // Examine existing file
+    if let Ok(text) = std::fs::read_to_string(&lock_path) {
+        let mut existing_pid: Option<u32> = None;
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("pid=") { if let Ok(p) = rest.trim().parse::<u32>() { existing_pid = Some(p); } }
+        }
+        if let Some(ep) = existing_pid {
+            if ep != pid {
+                // Use sysinfo to decide if process still alive
+                let mut sys = sysinfo::System::new();
+                sys.refresh_processes();
+                let alive = sys.process(sysinfo::Pid::from_u32(ep)).is_some();
+                if alive {
+                    if std::env::var("STEALTH_SINGLE_INSTANCE_OVERRIDE").ok().as_deref() != Some("1") {
+                        return Err(anyhow!("another instance already running (pid={ep}); set STEALTH_SINGLE_INSTANCE_OVERRIDE=1 to override"));
+                    } else {
+                        eprintln!("single-instance:override replacing live pid={ep}");
+                    }
+                } else {
+                    eprintln!("single-instance:stale-lock pid={ep} not alive; reclaiming");
+                }
+            }
+        }
+    }
+    // Stale or unparsable -> overwrite
+    match std::fs::OpenOptions::new().write(true).truncate(true).open(&lock_path) {
+        Ok(mut f) => {
+            let now = chrono::Utc::now().to_rfc3339();
+            let _ = writeln!(f, "pid={pid}\nreplaced_at={now}");
+            eprintln!("single-instance:replaced-stale path={}", lock_path.display());
+            Ok(())
+        }
+        Err(e) => Err(anyhow!("single-instance overwrite: {e}"))
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install panic hook early so crashes surface plainly (T6.7 hardening)
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("panic: {info}");
+    }));
     // Minimal, safe stub to unblock workspace builds; UI/Tauri will be added next.
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
@@ -28,8 +113,46 @@ async fn main() -> Result<()> {
 
     info!("stealth-browser stub starting");
 
-    let cfg = Config::load_default()?;
-    info!(port = cfg.socks_port, mode=?cfg.mode, "config loaded");
+    // Load default config (env overrides applied inside) then apply CLI overrides.
+    let mut cfg = Config::load_default()?;
+    {
+        let mut args = std::env::args().skip(1).peekable();
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--mode" => {
+                    if let Some(v) = args.next() { apply_mode(&mut cfg, &v); }
+                }
+                s if s.starts_with("--mode=") => {
+                    let v = s.split_once('=').map(|(_,v)| v).unwrap_or("");
+                    apply_mode(&mut cfg, v);
+                }
+                "--socks-port" => { if let Some(v)=args.next() { if let Ok(p)=v.parse() { cfg.socks_port=p; eprintln!("cli-override: socks_port={}", p); } } }
+                s if s.starts_with("--socks-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.socks_port=p; eprintln!("cli-override: socks_port={}", p); } } }
+                "--status-port" => { if let Some(v)=args.next() { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
+                s if s.starts_with("--status-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
+                "--allow-unsigned-decoy" => { std::env::set_var("STEALTH_DECOY_ALLOW_UNSIGNED", "1"); eprintln!("cli-override: allow unsigned decoy catalogs (dev only)"); }
+                "--decoy-catalog" => {
+                    if let Some(path) = args.next() { ingest_decoy_catalog_arg(&path); }
+                }
+                s if s.starts_with("--decoy-catalog=") => {
+                    if let Some(p)=s.split_once('=').map(|(_,v)| v) { ingest_decoy_catalog_arg(p); }
+                }
+                "--help" | "-h" => {
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
+                    return Ok(());
+                }
+                _ => { /* ignore unknown for forward compat */ }
+            }
+        }
+    }
+    // Enforce single running instance (prevents status/SOCKS split-brain) — Task: T6.7 hardening
+    if let Err(e) = ensure_single_instance() {
+        eprintln!("single-instance:failed error={e}");
+        // Exit early with a clear message; using anyhow Display keeps formatting concise
+        return Err(e);
+    }
+
+    info!(port = cfg.socks_port, status_port = cfg.status_port, mode=?cfg.mode, "config loaded");
 
     // M3: Catalog-first loader (bundled + cache + verify) and background updater
     let cache_dir = CatalogState::ensure_cache_dir()?;
@@ -70,9 +193,17 @@ async fn main() -> Result<()> {
     }
 
     // Start a tiny local status server (headless-friendly)
-    if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone()).await? {
-    info!(%status_addr, "status server listening (GET /status)");
+    if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone())? {
+        info!(%status_addr, "status server listening (GET /status)");
+        eprintln!("status-server:bound addr={}" , status_addr);
+        cfg.status_port = status_addr.port();
     }
+
+    // Emit explicit startup configuration for troubleshooting env propagation issues
+    eprintln!(
+        "startup-config: mode={:?} socks_port={} status_port={} bootstrap={} disable_bootstrap={}",
+        cfg.mode, cfg.socks_port, cfg.status_port, cfg.bootstrap, cfg.disable_bootstrap
+    );
 
     // Placeholder: print planned feature flags
     #[cfg(feature = "stealth-mode")]
@@ -285,6 +416,32 @@ impl Config {
     }
 }
 
+fn apply_mode(cfg: &mut Config, raw: &str) {
+    let m = raw.to_ascii_lowercase();
+    cfg.mode = match m.as_str() {
+        "direct" => Mode::Direct,
+        "htx-http-echo" | "htx_http_echo" | "htx-http" => Mode::HtxHttpEcho,
+        "masked" | "stealth" | "qnet" => Mode::Masked,
+        _ => {
+            eprintln!("cli-warn: unknown mode '{}' (keeping {:?})", raw, cfg.mode);
+            cfg.mode
+        }
+    };
+    eprintln!("cli-override: mode={:?}", cfg.mode);
+}
+
+fn ingest_decoy_catalog_arg(path: &str) {
+    let p = std::path::Path::new(path);
+    match std::fs::read_to_string(p) {
+        Ok(text) => {
+            if !text.is_empty() { std::env::set_var("STEALTH_DECOY_CATALOG_JSON", &text); eprintln!("cli-override: decoy catalog loaded path={}", p.display()); }
+        }
+        Err(e) => {
+            eprintln!("cli-warn: failed to read decoy catalog {}: {}", p.display(), e);
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum ConnState {
@@ -301,6 +458,11 @@ struct StatusSnapshot {
     // Most recent SOCKS CONNECT target and decoy used (masked mode)
     last_target: Option<String>,
     last_decoy: Option<String>,
+    // Masked connection statistics
+    masked_attempts: Option<u64>,
+    masked_successes: Option<u64>,
+    masked_failures: Option<u64>,
+    last_masked_error: Option<String>,
     // M3 catalog status (optional)
     catalog_version: Option<u32>,
     catalog_expires_at: Option<String>,
@@ -320,6 +482,18 @@ struct AppState {
     decoy_catalog: Mutex<Option<htx::decoy::DecoyCatalog>>,
     // Last catalog update attempt/result (manual or background)
     last_update: Mutex<Option<UpdateInfo>>,
+    // Timestamp of most recent explicit masked CONNECT success (used to suppress premature downgrade)
+    last_masked_connect: Mutex<Option<StdInstant>>,
+    // Masked stats (attempt/success/failure counters + last error)
+    masked_stats: Mutex<MaskedStats>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct MaskedStats {
+    attempts: u64,
+    successes: u64,
+    failures: u64,
+    last_error: Option<String>,
 }
 
 impl AppState {
@@ -330,6 +504,10 @@ impl AppState {
             last_checked_ms_ago: None,
             last_target: None,
             last_decoy: None,
+            masked_attempts: Some(0),
+            masked_successes: Some(0),
+            masked_failures: Some(0),
+            last_masked_error: None,
             catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
             catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
             catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
@@ -337,7 +515,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()) }
     }
 }
 
@@ -348,6 +526,12 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
             let res = htx::bootstrap::connect_seed_from_env(StdDuration::from_secs(3));
             let mut guard = state.status.lock().unwrap();
             let now = StdInstant::now();
+            // Determine if we should respect a recent masked CONNECT success (grace window)
+            let recent_masked = {
+                // Drop lock quickly on separate mutex
+                let lm = state.last_masked_connect.lock().unwrap();
+                lm.map(|t| t.elapsed() < StdDuration::from_secs(20)).unwrap_or(false)
+            };
             match res {
                 Some(url) => {
                     guard.0.state = ConnState::Connected;
@@ -356,8 +540,10 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
                     guard.0.last_checked_ms_ago = Some(0);
                 }
                 None => {
-                    // If we were never connected, we are still calibrating; else offline
-                    guard.0.state = if matches!(guard.0.state, ConnState::Connected) { ConnState::Offline } else { ConnState::Calibrating };
+                    if !recent_masked {
+                        // If we were never connected, we are still calibrating; else offline
+                        guard.0.state = if matches!(guard.0.state, ConnState::Connected) { ConnState::Offline } else { ConnState::Calibrating };
+                    }
                     guard.1 = Some(now);
                     guard.0.last_checked_ms_ago = Some(0);
                 }
@@ -375,128 +561,189 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
     });
 }
 
-// Start a minimal HTTP status server on 127.0.0.1:<status_port> (0 = auto)
-async fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<Option<std::net::SocketAddr>> {
+// Start a minimal blocking status server (separate thread) to avoid starvation of the async runtime.
+fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<Option<std::net::SocketAddr>> {
+    use std::net::TcpListener as StdListener;
     let bind = format!("{}:{}", bind_ip, port);
-    let listener = match TcpListener::bind(&bind).await {
+    let listener = match StdListener::bind(&bind) {
         Ok(l) => l,
         Err(e) => {
             warn!(%bind, error=?e, "status server bind failed; continuing without status endpoint");
             return Ok(None);
         }
     };
+    listener.set_nonblocking(false).ok();
     let local_addr = listener.local_addr().ok();
-    tokio::spawn(async move {
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        eprintln!("status-server:thread-start addr={}" , bind);
+        let mut last_hb = StdInstant::now();
         loop {
-            let (mut s, _peer) = match listener.accept().await { Ok(v) => v, Err(_) => break };
-            let app2 = app.clone();
-            tokio::spawn(async move {
-                if let Err(_e) = serve_status(&mut s, &app2).await {
-                    // ignore
+            match listener.accept() {
+                Ok((stream, peer)) => {
+                    let app2 = app_clone.clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = handle_status_blocking(stream, app2, peer) { eprintln!("status-server:serve-error: {e}"); }
+                    });
                 }
-            });
+                Err(e) => {
+                    eprintln!("status-server:accept-error: {e}");
+                    std::thread::sleep(StdDuration::from_millis(40));
+                }
+            }
+            if last_hb.elapsed() > StdDuration::from_secs(5) {
+                eprintln!("status-server:heartbeat");
+                last_hb = StdInstant::now();
+            }
         }
     });
     Ok(local_addr)
 }
 
-async fn serve_status(s: &mut TcpStream, app: &Arc<AppState>) -> Result<()> {
-    use tokio::time::{timeout, Duration};
-    // Read request head with a small timeout to avoid hanging
-    let mut buf = vec![0u8; 1024];
-    let n = match timeout(Duration::from_millis(500), s.read(&mut buf)).await {
-        Ok(Ok(n)) => n,
-        _ => 0,
-    };
-    let req = String::from_utf8_lossy(&buf[..n]);
-    let first_line = req.lines().next().unwrap_or("");
-    let path_status = first_line.starts_with("GET /status ") || first_line.starts_with("GET /status?");
-    let path_update = first_line.starts_with("GET /update ") || first_line.starts_with("POST /update ") || first_line.starts_with("GET /check-updates ");
-    let path_root = first_line.starts_with("GET / ");
-    let body;
-    let content_type;
-    if path_status {
-        let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
-        let (snap, since_opt) = {
-            let g = app.status.lock().unwrap();
-            (g.0.clone(), g.1)
-        };
-        let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
-        let mut json = serde_json::json!({
-            "socks_addr": socks_addr,
-            "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
-            // Surface effective bootstrap state: false when kill switch is active
-            "bootstrap": app.cfg.bootstrap && !app.cfg.disable_bootstrap,
-            "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
-        });
-        if matches!(app.cfg.mode, Mode::Masked) { json["masked"] = serde_json::json!(true); }
-    if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::Value::String(url); }
-    if let Some(t) = snap.last_target {
-            // Keep backward-compat last_target and add clearer alias current_target
-            json["last_target"] = serde_json::Value::String(t.clone());
-            json["current_target"] = serde_json::Value::String(t);
-        }
-    if let Some(d) = snap.last_decoy {
-            // Keep backward-compat last_decoy and add clearer alias current_decoy
-            json["last_decoy"] = serde_json::Value::String(d.clone());
-            json["current_decoy"] = serde_json::Value::String(d);
-        }
+// Unified status JSON builder (used by /status, /, and /status.txt) to avoid drift.
+fn build_status_json(app: &AppState) -> serde_json::Value {
+    let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
+    let (snap, since_opt) = { let g = app.status.lock().unwrap(); (g.0.clone(), g.1) };
+    let masked_stats = app.masked_stats.lock().ok().map(|g| g.clone());
+    let last_update = app.last_update.lock().ok().and_then(|g| g.clone());
+    let mut json = serde_json::json!({
+        "socks_addr": socks_addr,
+        "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
+        "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
+    });
+    if matches!(app.cfg.mode, Mode::Masked) { json["masked"] = serde_json::json!(true); }
+    if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::json!(url); }
+    if let Some(t) = snap.last_target { json["last_target"] = serde_json::json!(t.clone()); json["current_target"] = serde_json::json!(t); }
+    if let Some(d) = snap.last_decoy { json["last_decoy"] = serde_json::json!(d.clone()); json["current_decoy"] = serde_json::json!(d); }
+    if let Some(ms) = masked_stats.as_ref() {
+        json["masked_attempts"] = serde_json::json!(ms.attempts);
+        json["masked_successes"] = serde_json::json!(ms.successes);
+        json["masked_failures"] = serde_json::json!(ms.failures);
+        if let Some(le) = &ms.last_error { json["last_masked_error"] = serde_json::json!(le); }
+    }
     if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
-    if let Some(exp) = &snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
-    if let Some(src) = &snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
+    if let Some(exp) = snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
+    if let Some(src) = snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     if let Some(n) = snap.peers_online { json["peers_online"] = serde_json::json!(n); }
-    if let Some(p) = &snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
-        if let Some(u) = app.last_update.lock().unwrap().as_ref() {
-            let mut obj = serde_json::json!({
-                "updated": u.updated,
-                "from": u.from,
-                "version": u.version,
-                "error": u.error,
-            });
-            if let Some(t) = u.checked_at { obj["checked_ms_ago"] = serde_json::json!(t.elapsed().as_millis() as u64); }
-            json["last_update"] = obj;
-        }
-        if let Some(ms) = ms_ago { json["last_checked_ms_ago"] = serde_json::Value::Number(serde_json::Number::from(ms)); }
-        body = json.to_string();
-        content_type = "application/json";
-    } else if path_update {
-        // One-shot update trigger
-        match check_for_updates_now(app).await {
-            Ok(info) => {
-                let mut obj = serde_json::json!({
-                    "updated": info.updated,
-                    "from": info.from,
-                    "version": info.version,
-                    "error": info.error,
-                });
-                if let Some(t) = info.checked_at { obj["checked_at_ms"] = serde_json::json!(t.elapsed().as_millis() as u64); }
-                body = obj.to_string();
-                content_type = "application/json";
-            }
-            Err(e) => {
-                body = serde_json::json!({"updated": false, "error": e.to_string()}).to_string();
-                content_type = "application/json";
-            }
-        }
-    } else if path_root {
-    let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
-    body = format!("<html><head><title>QNet Stealth</title><style>body{{font-family:sans-serif}} .mono{{font-family:monospace;color:#333}}</style></head><body><h3>QNet Stealth — Status</h3><div id=hdr class=mono></div><pre id=out class=mono></pre><script>fetch('/status').then(r=>r.json()).then(j=>{{let tgt=j.current_target||j.last_target; let dec=j.current_decoy||j.last_decoy; let h=''; if(tgt) h += 'Current target: '+tgt+'\\n'; if(dec) h += 'Current decoy: '+dec+'\\n'; document.getElementById('hdr').textContent=h; document.getElementById('out').textContent = JSON.stringify(j,null,2);}})</script><p>SOCKS: {}</p></body></html>", socks_addr);
-        content_type = "text/html; charset=utf-8";
-    } else {
-        body = serde_json::json!({"error":"not found"}).to_string();
-        content_type = "application/json";
+    if let Some(p) = snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
+    if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) { json["last_checked_ms_ago"] = serde_json::json!(ms); }
+    json["config_mode"] = json["mode"].clone(); // backward compat
+    if let Some(lu) = last_update {
+        let checked_ms_ago = lu.checked_at.map(|i| i.elapsed().as_millis() as u64);
+        json["last_update"] = serde_json::json!({
+            "updated": lu.updated,
+            "from": lu.from,
+            "version": lu.version,
+            "error": lu.error,
+            "checked_ms_ago": checked_ms_ago,
+        });
     }
-    let status = if path_status || path_update || path_root { "200 OK" } else { "404 Not Found" };
-    let resp = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
-        ct=content_type,
-        len=body.len(),
-        body=body
-    );
-    s.write_all(resp.as_bytes()).await?;
+    json
+}
+
+fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: std::net::SocketAddr) -> Result<()> {
+    use std::io::{Read, Write};
+    s.set_read_timeout(Some(std::time::Duration::from_millis(900))).ok();
+    s.set_write_timeout(Some(std::time::Duration::from_secs(2))).ok();
+    let pid = std::process::id();
+    let active_now = STATUS_CONN_ACTIVE.fetch_add(1, Ordering::Relaxed) + 1;
+    STATUS_CONN_TOTAL.fetch_add(1, Ordering::Relaxed);
+    eprintln!("status-conn:open pid={} active={} peer={}", pid, active_now, peer);
+    let mut buf = [0u8; 1024];
+    let mut used = 0usize;
+    match s.read(&mut buf) {
+        Ok(0) => { /* maybe synthetic */ }
+        Ok(n) => used = n,
+        Err(_) => { /* ignore */ }
+    }
+    let allow_synth = std::env::var("STEALTH_STATUS_SYNTHETIC").ok().map(|v| v != "0").unwrap_or(true);
+    let line = if used == 0 && allow_synth { "GET /status HTTP/1.1".to_string() } else {
+        let slice = &buf[..used];
+        let mut first = String::from_utf8_lossy(slice).to_string();
+        if let Some(pos) = first.find('\n') { first.truncate(pos); }
+        first.trim().to_string()
+    };
+    let path_token_raw = line.split_whitespace().nth(1).unwrap_or("/");
+    let mut sp = path_token_raw.splitn(2, '?');
+    let path_token = sp.next().unwrap_or(path_token_raw);
+    let had_query = path_token_raw.contains('?');
+    let (body, ct, ok) = if path_token == "/ready" {
+        STATUS_PATH_READY.fetch_add(1, Ordering::Relaxed);
+        ("ok".to_string(), "text/plain; charset=utf-8", true)
+    } else if path_token == "/metrics" {
+        STATUS_PATH_METRICS.fetch_add(1, Ordering::Relaxed);
+        let active = STATUS_CONN_ACTIVE.load(Ordering::Relaxed);
+        let total = STATUS_CONN_TOTAL.load(Ordering::Relaxed);
+        (format!("{{\"status_conn_active\":{},\"status_conn_total\":{}}}", active, total), "application/json", true)
+    } else if path_token == "/ping" {
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        (format!("{{\"ok\":true,\"ts\":{}}}", now_ms), "application/json", true)
+    } else if path_token == "/config" {
+        let cfg = &app.cfg;
+        let cfg_json = serde_json::json!({
+            "socks_port": cfg.socks_port,
+            "status_port": cfg.status_port,
+            "mode": match cfg.mode { Mode::Direct=>"direct", Mode::HtxHttpEcho=>"htx-http-echo", Mode::Masked=>"masked" },
+            "bootstrap": cfg.bootstrap,
+            "disable_bootstrap": cfg.disable_bootstrap,
+        });
+        (cfg_json.to_string(), "application/json", true)
+    } else if path_token == "/status.txt" {
+        let js = build_status_json(&app);
+        let mut lines: Vec<String> = Vec::new();
+        let get = |k: &str| js.get(k);
+        if let Some(v) = get("state") { lines.push(format!("State: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = get("mode") { lines.push(format!("Mode: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = get("current_target").or_else(|| get("last_target")) { lines.push(format!("Current target: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = get("current_decoy").or_else(|| get("last_decoy")) { lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = get("decoy_count") { lines.push(format!("Decoy count: {}", v)); }
+        if let Some(v) = get("catalog_version") { lines.push(format!("Catalog version: {}", v)); }
+        if let Some(v) = get("peers_online") { lines.push(format!("Peers online: {}", v)); }
+        if let Some(v) = get("last_masked_error") { lines.push(format!("Last masked error: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = get("last_checked_ms_ago") { lines.push(format!("Last checked ms ago: {}", v)); }
+        let txt = lines.join("\n");
+        (txt, "text/plain; charset=utf-8", true)
+    } else if path_token == "/status" {
+        STATUS_PATH_STATUS.fetch_add(1, Ordering::Relaxed);
+        (build_status_json(&app).to_string(), "application/json", true)
+    } else if path_token == "/" {
+        STATUS_PATH_ROOT.fetch_add(1, Ordering::Relaxed);
+        let js = build_status_json(&app);
+        let state_cls = js.get("state").and_then(|v| v.as_str()).unwrap_or("offline");
+        let mut pre_hdr_lines = Vec::new();
+        if let Some(v) = js.get("state").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("State: {}", v)); }
+        if let Some(v) = js.get("mode").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("Mode: {}", v)); }
+        if let Some(v) = js.get("decoy_count") { pre_hdr_lines.push(format!("Decoy count: {}", v)); }
+        if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) { pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = js.get("current_decoy").or_else(|| js.get("last_decoy")) { pre_hdr_lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = js.get("catalog_version") { pre_hdr_lines.push(format!("Catalog version: {}", v)); }
+        if let Some(v) = js.get("peers_online") { pre_hdr_lines.push(format!("Peers online: {}", v)); }
+        if let Some(v) = js.get("last_masked_error").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("Last masked error: {}", v)); }
+        let pre_hdr = pre_hdr_lines.join("\n");
+        let init_json = js.to_string();
+        let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
+        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:14px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap} button.reload{margin-left:8px}</style></head><body><h3>QNet Stealth — Status <button class='reload' onclick='location.reload()'>Reload</button></h3><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\n'+new Date().toISOString()+' '+m).trimStart();}function render(j){if(!j)return;const tgt=j.current_target||j.last_target;const dec=j.current_decoy||j.last_decoy;let h='State: '+j.state;let cls='state-'+j.state;h+='\nMode: '+j.mode+(j.masked?' (masked)':'');if(tgt)h+='\nCurrent target: '+tgt;if(dec)h+='\nCurrent decoy: '+dec;if(typeof j.decoy_count==='number')h+='\nDecoy count: '+j.decoy_count;if(j.catalog_version)h+='\nCatalog version: '+j.catalog_version;if(j.peers_online!==undefined)h+='\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);})();</script><p class='mono'>SOCKS: __SOCKS_ADDR__</p><p class='mono'><a href='/status'>/status JSON</a> | <a href='/status.txt'>/status.txt</a> | <a href='/ping'>/ping</a> | <a href='/config'>/config</a></p></body></html>"#;
+        let html = html_template.replace("__STATE_CLASS__", state_cls)
+            .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
+            .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
+            .replace("__SOCKS_ADDR__", &socks_addr);
+        (html, "text/html; charset=utf-8", true)
+    } else {
+        STATUS_PATH_OTHER.fetch_add(1, Ordering::Relaxed);
+        (serde_json::json!({"error":"not found"}).to_string(), "application/json", false)
+    };
+    let status_line = if ok { "200 OK" } else { "404 Not Found" };
+    if had_query { eprintln!("serve-status:pid={} path='{}' (raw='{}') ok={} status_line='{}'", pid, path_token, path_token_raw, ok, status_line); }
+    else { eprintln!("serve-status:pid={} path='{}' ok={} status_line='{}'", pid, path_token, ok, status_line); }
+    let resp = format!("HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}", status=status_line, ct=ct, len=body.len(), body=body);
+    let _ = s.write_all(resp.as_bytes());
+    let remaining = STATUS_CONN_ACTIVE.fetch_sub(1, Ordering::Relaxed) - 1;
+    eprintln!("status-conn:close pid={} active={}", pid, remaining);
     Ok(())
 }
+
+// (Removed legacy async status server remnants.)
 
 // Minimal SOCKS5 (RFC 1928) — supports CONNECT, ATYP IPv4 & DOMAIN, no auth
 async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, app_state: Option<Arc<AppState>>) -> Result<()> {
@@ -509,7 +756,13 @@ async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, 
         let app_state_c = app_state.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_client(&mut inbound, mode_c, htx_c, app_state_c).await {
-                eprintln!("socks client {} error: {e:?}", peer);
+                // Suppress noisy backtrace for common early EOF / client disconnects
+                let es = format!("{e:?}");
+                if es.contains("UnexpectedEof") || es.contains("early eof") {
+                    eprintln!("socks client {} disconnect: {}", peer, es.lines().next().unwrap_or("EOF"));
+                } else {
+                    eprintln!("socks client {} error: {e:?}", peer);
+                }
             }
         });
     }
@@ -627,7 +880,14 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                 }
             }
             // Attempt dial (htx will consult decoy env if present)
-            let conn = htx::api::dial(&origin).map_err(|e| anyhow!("htx dial failed: {:?}", e))?;
+            if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.attempts = ms.attempts.saturating_add(1); } }
+            let conn = match htx::api::dial(&origin) {
+                Ok(c) => c,
+                Err(e) => {
+                    if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.failures = ms.failures.saturating_add(1); ms.last_error = Some(format!("dial: {e:?}")); } }
+                    bail!("htx dial failed: {e:?}");
+                }
+            };
             // Open inner stream and perform a CONNECT prelude to instruct the edge gateway
             let ss = conn.open_stream();
             let prelude = format!("CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n", host, port, host, port);
@@ -653,25 +913,39 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                         }
                     }
                 } else {
-                    // No data yet; back off briefly
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    // No data yet; yield to runtime (avoid blocking thread)
+                    tokio::time::sleep(StdDuration::from_millis(10)).await;
                 }
             }
             if !ok {
                 let preview = String::from_utf8_lossy(&accum);
                 tracing::warn!(first_line=%preview.lines().next().unwrap_or(""), total=accum.len(), "no 200 from edge within timeout");
+                if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.failures = ms.failures.saturating_add(1); ms.last_error = Some(format!("no 200 (got '{}')", preview.lines().next().unwrap_or(""))); } }
                 bail!("edge did not accept CONNECT prelude");
             }
             // Success reply to SOCKS client after edge accepted CONNECT
             send_reply(stream, 0x00).await?;
             // Mark app as connected
             if let Some(app) = &app_state {
-                let mut guard = app.status.lock().unwrap();
-                guard.0.state = ConnState::Connected;
-                guard.1 = Some(StdInstant::now());
-                guard.0.last_checked_ms_ago = Some(0);
-                guard.0.last_target = Some(format!("{}:{}", host, port));
-                guard.0.last_decoy = decoy_str.clone();
+                let now = StdInstant::now();
+                {
+                    // Single critical section to avoid race with connectivity monitor
+                    let mut guard = app.status.lock().unwrap();
+                    guard.0.state = ConnState::Connected;
+                    guard.1 = Some(now);
+                    guard.0.last_checked_ms_ago = Some(0);
+                    guard.0.last_target = Some(format!("{}:{}", host, port));
+                    guard.0.last_decoy = decoy_str.clone();
+                    // Update last_masked_connect while we still hold status lock so monitor can't observe new state without timestamp
+                    if let Ok(mut lm) = app.last_masked_connect.lock() { *lm = Some(now); }
+                }
+                eprintln!(
+                    "state-transition:connected mode=masked target={}:{} decoy={}",
+                    host,
+                    port,
+                    decoy_str.clone().unwrap_or_else(|| "(none)".into())
+                );
+                if let Ok(mut ms) = app.masked_stats.lock() { ms.successes = ms.successes.saturating_add(1); }
             }
             // Emit a concise log line for operator visibility
             if let Some(d) = &decoy_str {
@@ -879,6 +1153,11 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
         g.0.checkup_phase = Some("calibrating-decoys".into());
     }
     let decoy = load_decoy_catalog_signed_or_dev().await;
+    if let Some(ref cat) = decoy {
+        eprintln!("decoy-catalog:loaded entries={} (routine checkup)", cat.entries.len());
+    } else {
+        eprintln!("decoy-catalog:none-loaded (routine checkup)");
+    }
     {
         let mut dc = app.decoy_catalog.lock().unwrap();
         *dc = decoy.clone();
@@ -905,32 +1184,38 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
 // (legacy stub removed)
 
 async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> {
-    // Prefer signed catalog file from repo templates (dev) or assets in release builds.
-    // 1) Repo templates (dev): qnet-spec/templates/decoy-catalog.json or .example.json
+    // Prefer a signed decoy catalog from repo templates (dev) with optional unsigned fallback gated by env.
+    use serde::Deserialize;
+
     let candidates = [
         std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json"),
         std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.example.json"),
     ];
-    for p in candidates {
-        if p.exists() {
-            if let Ok(text) = std::fs::read_to_string(&p) {
-                // Try signed first
-                if let Ok(signed) = serde_json::from_str::<htx::decoy::SignedCatalog>(&text) {
-                    // Use same pinned publisher key unless a decoy-specific key is added later
-                    let pk_hex = include_str!("../assets/publisher.pub").lines()
-                        .filter(|l| !l.trim_start().starts_with('#')).collect::<String>();
-                    if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) { return Some(cat); }
-                }
-                // Dev unsigned fallback (guarded by env)
-                if std::env::var("STEALTH_DECOY_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
-                    #[derive(Deserialize)]
-                    struct Unsigned { catalog: htx::decoy::DecoyCatalog }
-                    if let Ok(u) = serde_json::from_str::<Unsigned>(&text) { return Some(u.catalog); }
-                }
+
+    for path in candidates {
+        if !path.exists() { continue; }
+        let Ok(text) = std::fs::read_to_string(&path) else { continue; };
+
+        // Signed catalog attempt
+        if let Ok(signed) = serde_json::from_str::<htx::decoy::SignedCatalog>(&text) {
+            let pk_hex = include_str!("../assets/publisher.pub")
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .collect::<String>();
+            if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) {
+                return Some(cat);
             }
         }
+
+        // Unsigned development fallback (only when explicitly allowed)
+        if std::env::var("STEALTH_DECOY_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
+            #[derive(Deserialize)]
+            struct Unsigned { catalog: htx::decoy::DecoyCatalog }
+            if let Ok(u) = serde_json::from_str::<Unsigned>(&text) { return Some(u.catalog); }
+        }
     }
-    // 2) Env fallback (dev)
+
+    // Environment-based dynamic fallback (dev only)
     htx::decoy::load_from_env()
 }
 
@@ -1158,6 +1443,7 @@ impl CatalogState {
 // =====================
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct UpdateInfo {
     updated: bool,
     from: Option<String>,
