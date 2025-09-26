@@ -69,6 +69,7 @@ function Normalize-TargetHost {
 }
 
 # Normalize early before strict mode (avoid accidental constant assignment issues)
+$script:TargetWasHttp = $false
 $TargetOriginal = $Target
 $Target = Normalize-TargetHost -InputHost $Target
 # (Old normalization function removed / replaced above)
