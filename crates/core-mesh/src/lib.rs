@@ -9,6 +9,9 @@ pub mod relay;
 pub mod circuit;
 
 #[cfg(feature = "with-libp2p")]
+pub mod mesh_network;
+
+#[cfg(feature = "with-libp2p")]
 mod libp2p_impl {
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     use futures::prelude::*;
@@ -454,6 +457,9 @@ mod libp2p_impl {
 
 #[cfg(feature = "with-libp2p")]
 pub use libp2p_impl::*;
+
+#[cfg(feature = "with-libp2p")]
+pub use mesh_network::{MeshNetwork, MeshError};
 
 #[cfg(not(feature = "with-libp2p"))]
 pub mod stub {

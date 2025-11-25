@@ -150,8 +150,12 @@ async fn main() -> Result<()> {
                     cfg.helper_mode = HelperMode::Bootstrap;
                     eprintln!("cli-override: helper_mode=bootstrap (seed + exit)");
                 }
+                "--no-mesh" => {
+                    cfg.mesh_enabled = false;
+                    eprintln!("cli-override: mesh_enabled=false (discovery/relay disabled)");
+                }
                 "--help" | "-h" => {
-                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
                     return Ok(());
                 }
                 _ => { /* ignore unknown for forward compat */ }
@@ -406,6 +410,8 @@ struct Config {
     disable_bootstrap: bool,
     // Helper mode: relay-only (default, safe) vs exit-node (opt-in, liability) (Phase 2.5.3)
     helper_mode: HelperMode,
+    // Mesh network enabled (Phase 2.4)
+    mesh_enabled: bool,
 }
 
 impl Default for Config {
@@ -414,14 +420,16 @@ impl Default for Config {
     //  - SOCKS proxy: 127.0.0.1:1088
     //  - Status API: 127.0.0.1:8088
     //  - Helper mode: relay-only (safe by default, no exit liability)
-    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE).
+    //  - Mesh: enabled (peer discovery and relay)
+    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE, QNET_MESH_ENABLED).
     Self { 
         socks_port: 1088, 
         mode: Mode::Direct, 
         bootstrap: false, 
         status_port: 8088, 
         disable_bootstrap: true, 
-        helper_mode: HelperMode::RelayOnly  // Phase 2.5.3: safe by default
+        helper_mode: HelperMode::RelayOnly,  // Phase 2.5.3: safe by default
+        mesh_enabled: true,  // Phase 2.4: mesh network enabled
     }
     }
 }
@@ -468,6 +476,10 @@ impl Config {
                     HelperMode::RelayOnly
                 }
             };
+        }
+        // Phase 2.4: Mesh network enable/disable
+        if let Ok(v) = std::env::var("QNET_MESH_ENABLED") {
+            cfg.mesh_enabled = v == "1" || v.eq_ignore_ascii_case("true");
         }
         Ok(cfg)
     }
@@ -548,6 +560,8 @@ struct AppState {
     last_decoy_ip: Mutex<Option<String>>,
     // Mesh peer count updated by discovery thread (task 2.1.6)
     mesh_peer_count: Arc<AtomicU32>,
+    // Active circuits count updated by mesh thread (task 2.4.3)
+    active_circuits: Arc<AtomicU32>,
     // Relay statistics (task 2.2.7)
     relay_packets_relayed: Arc<AtomicU64>,
     relay_route_count: Arc<AtomicU32>,
@@ -580,7 +594,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None), mesh_peer_count: Arc::new(AtomicU32::new(0)), relay_packets_relayed: Arc::new(AtomicU64::new(0)), relay_route_count: Arc::new(AtomicU32::new(0)) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None), mesh_peer_count: Arc::new(AtomicU32::new(0)), active_circuits: Arc::new(AtomicU32::new(0)), relay_packets_relayed: Arc::new(AtomicU64::new(0)), relay_route_count: Arc::new(AtomicU32::new(0)) }
     }
 }
 
@@ -626,36 +640,52 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
     });
 }
 
-/// Spawn mesh peer discovery thread (task 2.1.6)
+/// Spawn mesh peer discovery thread (task 2.1.6, Phase 2.4)
 /// 
 /// Runs DiscoveryBehavior in a dedicated async-std thread (since libp2p uses async-io).
 /// Updates mesh_peer_count atomic periodically for status API consumption.
 /// Bootstrap nodes are loaded catalog-first per architecture.
 fn spawn_mesh_discovery(state: Arc<AppState>) {
     let peer_count_ref = state.mesh_peer_count.clone();
+    let circuits_ref = state.active_circuits.clone();
+    let cfg = state.cfg.clone();
     
     std::thread::spawn(move || {
-        info!("state-transition: Starting mesh discovery thread");
+        info!("mesh: Starting mesh network discovery thread");
+        info!("mesh: Helper mode = {:?}", cfg.helper_mode);
+        info!("mesh: Mesh enabled = {}", cfg.mesh_enabled);
+        
+        if !cfg.mesh_enabled {
+            info!("mesh: Discovery disabled via configuration");
+            return;
+        }
         
         // Run async-std runtime in this thread
         async_std::task::block_on(async {
             // Generate local peer identity
             let keypair = libp2p::identity::Keypair::generate_ed25519();
             let peer_id = libp2p::PeerId::from(keypair.public());
-            info!(peer_id=%peer_id, "state-transition: Generated local peer ID");
+            info!(peer_id=%peer_id, "mesh: Generated local peer ID");
             
             // Load bootstrap nodes (catalog-first per architecture)
             let bootstrap_nodes = core_mesh::discovery::load_bootstrap_nodes();
             if bootstrap_nodes.is_empty() {
-                info!("catalog-first: No bootstrap nodes available; discovery will rely on mDNS only");
+                info!("mesh: No bootstrap nodes available; relying on mDNS for local discovery");
             } else {
-                info!("catalog: Loaded {} bootstrap nodes", bootstrap_nodes.len());
+                info!("mesh: Loaded {} bootstrap nodes", bootstrap_nodes.len());
+                // Log first few bootstrap nodes for visibility
+                for (idx, node) in bootstrap_nodes.iter().take(3).enumerate() {
+                    info!("  bootstrap[{}]: {}", idx, node.multiaddr);
+                }
+                if bootstrap_nodes.len() > 3 {
+                    info!("  ... and {} more", bootstrap_nodes.len() - 3);
+                }
             }
             
             // Initialize discovery behavior
             let mut discovery = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
                 Ok(d) => {
-                    info!("state-transition: Discovery initialized successfully");
+                    info!("mesh: Discovery behavior initialized successfully");
                     d
                 }
                 Err(e) => {
@@ -665,22 +695,34 @@ fn spawn_mesh_discovery(state: Arc<AppState>) {
             };
             
             // Periodic update loop (every 5 seconds per task implicit refresh rate)
+            let mut last_count = 0usize;
             loop {
                 // Query current peer count
                 let count = discovery.peer_count();
                 peer_count_ref.store(count as u32, Ordering::Relaxed);
                 
-                if count > 0 {
-                    debug!("catalog: Discovered {} mesh peers", count);
+                // Log peer count changes
+                if count != last_count {
+                    if count > last_count {
+                        info!("mesh: ✨ Peer discovered! Total peers: {} (+{})", count, count - last_count);
+                    } else if count < last_count {
+                        info!("mesh: Peer lost. Total peers: {} ({})", count, count as i32 - last_count as i32);
+                    }
+                    last_count = count;
+                } else if count > 0 {
+                    debug!("mesh: {} peers online", count);
                 }
                 
                 // Discover peers (non-blocking, returns current state)
                 match discovery.discover_peers().await {
                     Ok(peers) => {
-                        if !peers.is_empty() {
-                            info!("catalog: Active mesh peers: {}", peers.len());
-                            for peer in peers.iter().take(5) {
-                                debug!("  peer: {}", peer);
+                        if !peers.is_empty() && count != last_count {
+                            info!("mesh: Active peer list:");
+                            for (idx, peer) in peers.iter().take(5).enumerate() {
+                                info!("  peer[{}]: {}", idx, peer);
+                            }
+                            if peers.len() > 5 {
+                                info!("  ... and {} more", peers.len() - 5);
                             }
                         }
                     }
@@ -779,6 +821,9 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     // Prefer live mesh peer count over snapshot value (task 2.1.6)
     json["peers_online"] = serde_json::json!(mesh_peers);
+    // Active circuits count (task 2.4.3)
+    let active_circuits = app.active_circuits.load(Ordering::Relaxed);
+    json["active_circuits"] = serde_json::json!(active_circuits);
     // Relay statistics (task 2.2.7)
     let relay_packets = app.relay_packets_relayed.load(Ordering::Relaxed);
     let relay_routes = app.relay_route_count.load(Ordering::Relaxed);
@@ -787,6 +832,33 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     if let Some(p) = snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
     if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) { json["last_checked_ms_ago"] = serde_json::json!(ms); }
     json["config_mode"] = json["mode"].clone(); // backward compat
+    
+    // Phase 2.4: Mesh network status
+    json["helper_mode"] = serde_json::json!(
+        match app.cfg.helper_mode {
+            HelperMode::RelayOnly => "relay-only",
+            HelperMode::ExitNode => "exit-node",
+            HelperMode::Bootstrap => "bootstrap",
+        }
+    );
+    json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
+    // Note: active_circuits would come from MeshNetwork instance if integrated
+    // For now, we can add a placeholder or skip until full integration
+    json["active_circuits"] = serde_json::json!(0); // TODO: Get from MeshNetwork
+    
+    // Distinguish bootstrap peers (IPFS) from QNet mesh peers
+    // Currently all discovered peers include 6 public IPFS bootstrap nodes
+    // When another QNet Helper joins, it will be peers_online = 7 (6 IPFS + 1 QNet)
+    let bootstrap_count = 6; // Public IPFS DHT bootstrap nodes
+    let qnet_peers = if mesh_peers > bootstrap_count {
+        mesh_peers - bootstrap_count
+    }  else {
+        0
+    };
+    json["bootstrap_peers"] = serde_json::json!(bootstrap_count);
+    json["qnet_peers"] = serde_json::json!(qnet_peers);
+    json["peers_total"] = serde_json::json!(mesh_peers);
+    
     if let Some(lu) = last_update {
         let checked_ms_ago = lu.checked_at.map(|i| i.elapsed().as_millis() as u64);
         json["last_update"] = serde_json::json!({

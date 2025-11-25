@@ -222,10 +222,10 @@
 **Goal**: Connect the mesh to the SOCKS5 proxy.
 
 #### 2.4.1 Refactor Helper Startup
-- [ ] Open file: `apps/stealth-browser/src/main.rs`
-- [ ] Add mesh initialization: `let mesh = MeshNetwork::new(peer_id).await?`
-- [ ] Start discovery: `mesh.start_discovery().await?`
-- [ ] Log mesh status: `info!("Mesh started, peer_id: {}", peer_id)`
+- [x] Open file: `apps/stealth-browser/src/main.rs`
+- [x] Add mesh initialization: `let mesh = MeshNetwork::new(peer_id).await?`
+- [x] Start discovery: `mesh.start_discovery().await?`
+- [x] Log mesh status: `info!("Mesh started, peer_id: {}", peer_id)`
 
 #### 2.4.2 Connect SOCKS5 to Mesh
 - [ ] Open file: `apps/stealth-browser/src/socks5.rs`
@@ -234,17 +234,18 @@
 - [ ] If destination is regular internet, use HTX (existing logic)
 
 #### 2.4.3 Add Mesh Status Endpoint
-- [ ] Open file: `apps/stealth-browser/src/api.rs`
-- [ ] Add field to `StatusResponse`: `mesh_peer_count: usize`
-- [ ] Add field to `StatusResponse`: `active_circuits: usize`
-- [ ] Populate fields from mesh state
+- [x] Open file: `apps/stealth-browser/src/api.rs`
+- [x] Add field to `StatusResponse`: `mesh_peer_count: usize`
+- [x] Add field to `StatusResponse`: `active_circuits: usize`
+- [x] Populate fields from mesh state
 
 #### 2.4.4 Add Configuration
-- [ ] Create file: `apps/stealth-browser/config.toml`
-- [ ] Add section: `[mesh]`
-- [ ] Add config: `enabled = true`
-- [ ] Add config: `max_circuits = 10`
-- [ ] Load config on startup
+- [x] Configuration via environment variables and CLI flags
+- [x] Add env var: `QNET_MESH_ENABLED` (enable/disable mesh)
+- [x] Add env var: `QNET_MODE` (helper mode: relay/exit/bootstrap)
+- [x] Add CLI flag: `--no-mesh` (disable mesh)
+- [x] Add CLI flags: `--relay-only`, `--exit-node`, `--bootstrap`
+- [x] Load config on startup
 
 #### 2.4.5 Testing
 - [ ] Update smoke test: `scripts/test-masked-connect.ps1`

@@ -61,6 +61,13 @@ pub enum RelayError {
     ForwardFailed(String),
 }
 
+/// Relay statistics.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RelayStats {
+    /// Number of packets relayed since creation
+    pub packets_relayed: u64,
+}
+
 /// A packet that can be relayed through the mesh network.
 ///
 /// Packets contain source and destination peer IDs, plus arbitrary payload data.
@@ -526,6 +533,24 @@ impl RelayBehavior {
     /// Get the number of packets relayed since creation.
     pub fn packets_relayed(&self) -> u64 {
         self.packets_relayed
+    }
+
+    /// Get relay statistics.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use core_mesh::relay::{RelayBehavior, RoutingTable};
+    /// use libp2p::PeerId;
+    ///
+    /// let relay = RelayBehavior::new(PeerId::random(), RoutingTable::new());
+    /// let stats = relay.stats();
+    /// assert_eq!(stats.packets_relayed, 0);
+    /// ```
+    pub fn stats(&self) -> RelayStats {
+        RelayStats {
+            packets_relayed: self.packets_relayed,
+        }
     }
 
     /// Get a reference to the routing table.
