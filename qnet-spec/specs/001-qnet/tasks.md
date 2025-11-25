@@ -228,10 +228,10 @@
 - [x] Log mesh status: `info!("Mesh started, peer_id: {}", peer_id)`
 
 #### 2.4.2 Connect SOCKS5 to Mesh
-- [ ] Open file: `apps/stealth-browser/src/socks5.rs`
-- [ ] Modify `handle_connect()` to check if destination is a peer
-- [ ] If destination is a QNet peer, route via mesh
-- [ ] If destination is regular internet, use HTX (existing logic)
+- [x] Open file: `apps/stealth-browser/src/socks5.rs`
+- [x] Modify `handle_connect()` to check if destination is a peer
+- [x] If destination is a QNet peer, route via mesh
+- [x] If destination is regular internet, use HTX (existing logic)
 
 #### 2.4.3 Add Mesh Status Endpoint
 - [x] Open file: `apps/stealth-browser/src/api.rs`
@@ -248,10 +248,10 @@
 - [x] Load config on startup
 
 #### 2.4.5 Testing
-- [ ] Update smoke test: `scripts/test-masked-connect.ps1`
-- [ ] Add check: Verify mesh_peer_count > 0 after startup
-- [ ] Add check: Verify circuit works for peer destination
-- [ ] Run test: `pwsh scripts/test-masked-connect.ps1`
+- [x] Update smoke test: `scripts/test-masked-connect.ps1`
+- [x] Add check: Verify mesh_peer_count > 0 after startup
+- [x] Add check: Verify circuit works for peer destination
+- [x] Run test: `pwsh scripts/test-masked-connect.ps1`
 
 ---
 

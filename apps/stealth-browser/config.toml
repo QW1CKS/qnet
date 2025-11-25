@@ -1,0 +1,23 @@
+# QNet Helper Configuration
+# This file provides default settings for the stealth-browser Helper.
+# Settings can be overridden via environment variables or CLI arguments.
+
+[mesh]
+# Enable mesh networking (peer-to-peer discovery and relay)
+enabled = true
+
+# Maximum number of concurrent circuits (privacy-preserving multi-hop paths)
+max_circuits = 10
+
+# Enable circuit building for privacy-enhanced routing
+build_circuits = true
+
+# Circuit idle timeout in seconds (circuits inactive longer than this are pruned)
+circuit_idle_timeout = 300
+
+[relay]
+# Enable packet relay for other peers (default safe mode - no exit liability)
+enabled = true
+
+# Maximum relay bandwidth per peer in Mbps (0 = unlimited)
+max_bandwidth_mbps = 0

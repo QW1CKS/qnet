@@ -414,6 +414,9 @@ struct Config {
     helper_mode: HelperMode,
     // Mesh network enabled (Phase 2.4)
     mesh_enabled: bool,
+    // Mesh network configuration (Phase 2.4.4)
+    mesh_max_circuits: usize,
+    mesh_build_circuits: bool,
 }
 
 impl Default for Config {
@@ -432,6 +435,8 @@ impl Default for Config {
         disable_bootstrap: true, 
         helper_mode: HelperMode::RelayOnly,  // Phase 2.5.3: safe by default
         mesh_enabled: true,  // Phase 2.4: mesh network enabled
+        mesh_max_circuits: 10,  // Phase 2.4.4: circuit limit
+        mesh_build_circuits: true,  // Phase 2.4.4: enable circuit building
     }
     }
 }
@@ -440,6 +445,25 @@ impl Config {
     fn load_default() -> Result<Self> {
     // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP, QNET_MODE
         let mut cfg = Self::default();
+        
+        // Load config.toml if it exists (Phase 2.4.4)
+        if let Ok(toml_str) = std::fs::read_to_string("config.toml") {
+            if let Ok(toml_cfg) = toml::from_str::<toml::Value>(&toml_str) {
+                // Parse mesh section
+                if let Some(mesh) = toml_cfg.get("mesh").and_then(|v| v.as_table()) {
+                    if let Some(enabled) = mesh.get("enabled").and_then(|v| v.as_bool()) {
+                        cfg.mesh_enabled = enabled;
+                    }
+                    if let Some(max_circuits) = mesh.get("max_circuits").and_then(|v| v.as_integer()) {
+                        cfg.mesh_max_circuits = max_circuits as usize;
+                    }
+                    if let Some(build_circuits) = mesh.get("build_circuits").and_then(|v| v.as_bool()) {
+                        cfg.mesh_build_circuits = build_circuits;
+                    }
+                }
+            }
+        }
+        
         if let Ok(p) = std::env::var("STEALTH_SOCKS_PORT") {
             if let Ok(n) = p.parse::<u16>() { cfg.socks_port = n; }
         }
@@ -1059,6 +1083,21 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             bail!("unsupported atyp {atyp}");
         }
     };
+
+    // Task 2.4.2: Check if destination is a QNet peer and route via mesh
+    // QNet peers are identified by special .qnet TLD or peer-<id>.qnet format
+    if let Some(_app) = &app_state {
+        if target.contains(".qnet") || target.starts_with("peer-") {
+            // TODO: Implement full mesh routing when MeshNetwork supports send/receive
+            // For now, log the attempt and fall through to regular routing
+            info!(target=%target, "detected QNet peer destination (mesh routing not yet implemented)");
+            // Future implementation:
+            // 1. Parse PeerId from target
+            // 2. Build circuit to peer if needed
+            // 3. Route SOCKS stream through mesh circuit
+            // 4. Return early after bridging stream
+        }
+    }
 
     match mode {
         Mode::Direct => {

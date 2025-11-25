@@ -383,6 +383,22 @@ $lastDecoy  = Get-OptionalField $status 'last_decoy'
 $maskedSuccesses = Get-OptionalField $status 'masked_successes'
 $maskedFailures  = Get-OptionalField $status 'masked_failures'
 $maskedAttempts  = Get-OptionalField $status 'masked_attempts'
+$meshPeerCount   = Get-OptionalField $status 'peers_online'
+$activeCircuits  = Get-OptionalField $status 'active_circuits'
+
+# Task 2.4.5: Verify mesh functionality
+if ($null -ne $meshPeerCount) {
+  Write-Verbose "Mesh peer count: $meshPeerCount"
+  if ($meshPeerCount -eq 0) {
+    Write-Warning "No mesh peers discovered yet (normal on first run or isolated network)"
+  }
+} else {
+  Write-Warning "mesh_peer_count field missing in status (check Helper version)"
+}
+
+if ($null -ne $activeCircuits) {
+  Write-Verbose "Active circuits: $activeCircuits"
+}
 
 if (-not $lastTarget -and $maskedAttempts -and $maskedFailures -ge 1) {
   Write-Warning "No successful masked connection yet (attempts=$maskedAttempts failures=$maskedFailures). Check edge-gateway logs and decoy reachability." }
@@ -398,6 +414,8 @@ $summary = [pscustomobject]@{
   MaskedAttempts = $maskedAttempts
   MaskedFailures = $maskedFailures
   MaskedSuccesses= $maskedSuccesses
+  MeshPeerCount  = $meshPeerCount
+  ActiveCircuits = $activeCircuits
     StatusPort  = $StatusPort
     SocksPort   = $SocksPort
     EdgePort    = $EdgePort
