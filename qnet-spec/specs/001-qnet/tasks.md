@@ -161,41 +161,41 @@
 **Goal**: Construct multi-hop paths for privacy.
 
 #### 2.3.1 Setup Circuit Module
-- [ ] Create file: `crates/core-mesh/src/circuit.rs`
-- [ ] Add module declaration in `crates/core-mesh/src/lib.rs`
-- [ ] Define circuit constants (MAX_HOPS = 3)
+- [x] Create file: `crates/core-mesh/src/circuit.rs`
+- [x] Add module declaration in `crates/core-mesh/src/lib.rs`
+- [x] Define circuit constants (MAX_HOPS = 3)
 
 #### 2.3.2 Define Circuit Structure
-- [ ] Create struct: `Circuit { id: u64, hops: Vec<PeerId>, created_at: Instant }`
-- [ ] Implement method: `fn new(hops: Vec<PeerId>) -> Self`
-- [ ] Implement method: `fn next_hop(&self, current: &PeerId) -> Option<PeerId>`
-- [ ] Add unit test for circuit creation
+- [x] Create struct: `Circuit { id: u64, hops: Vec<PeerId>, created_at: Instant }`
+- [x] Implement method: `fn new(hops: Vec<PeerId>) -> Self`
+- [x] Implement method: `fn next_hop(&self, current: &PeerId) -> Option<PeerId>`
+- [x] Add unit test for circuit creation
 
 #### 2.3.3 Implement Circuit Builder
-- [ ] Create struct: `CircuitBuilder { discovery: Arc<DiscoveryBehavior> }`
-- [ ] Implement method: `async fn build_circuit(&self, dst: PeerId, num_hops: usize) -> Result<Circuit>`
-- [ ] Select random intermediate peers from discovered peers
-- [ ] Ensure no peer appears twice in the circuit
-- [ ] Return constructed circuit
+- [x] Create struct: `CircuitBuilder { discovery: Arc<DiscoveryBehavior> }`
+- [x] Implement method: `async fn build_circuit(&self, dst: PeerId, num_hops: usize) -> Result<Circuit>`
+- [x] Select random intermediate peers from discovered peers
+- [x] Ensure no peer appears twice in the circuit
+- [x] Return constructed circuit
 
 #### 2.3.4 Integrate with Routing
-- [ ] Update `RoutingTable` to store circuits
-- [ ] Add method: `fn add_circuit(&mut self, circuit: Circuit)`
-- [ ] Modify `find_route()` to use circuits when available
-- [ ] Add method: `fn get_circuit(&self, id: u64) -> Option<&Circuit>`
+- [x] Update `RoutingTable` to store circuits
+- [x] Add method: `fn add_circuit(&mut self, circuit: Circuit)`
+- [x] Modify `find_route()` to use circuits when available
+- [x] Add method: `fn get_circuit(&self, id: u64) -> Option<&Circuit>`
 
 #### 2.3.5 Implement Circuit Handshake
-- [ ] Define handshake message: `CircuitRequest { circuit_id, next_hop }`
-- [ ] Send handshake to first hop
-- [ ] Each hop forwards to next hop
-- [ ] Last hop sends `CircuitReady` back to client
-- [ ] Add timeout for circuit establishment (10 seconds)
+- [x] Define handshake message: `CircuitRequest { circuit_id, next_hop }`
+- [x] Send handshake to first hop
+- [x] Each hop forwards to next hop
+- [x] Last hop sends `CircuitReady` back to client
+- [x] Add timeout for circuit establishment (10 seconds)
 
 #### 2.3.6 Implement Circuit Teardown
-- [ ] Define teardown message: `CircuitClose { circuit_id }`
-- [ ] Send teardown when circuit no longer needed
-- [ ] Each hop removes circuit from local table
-- [ ] Add automatic teardown after 5 minutes of inactivity
+- [x] Define teardown message: `CircuitClose { circuit_id }`
+- [x] Send teardown when circuit no longer needed
+- [x] Each hop removes circuit from local table
+- [x] Add automatic teardown after 5 minutes of inactivity
 
 #### 2.3.7 Integration with Helper
 - [ ] Add `CircuitBuilder` to Helper
@@ -204,17 +204,17 @@
 - [ ] Add circuit info to Status API (active_circuits count)
 
 #### 2.3.8 Testing
-- [ ] Create file: `tests/integration/mesh_circuit.rs`
-- [ ] Test: Build 1-hop circuit, verify traffic flows
-- [ ] Test: Build 3-hop circuit, verify traffic flows
-- [ ] Test: Verify circuit teardown works
-- [ ] Run test: `cargo test --test mesh_circuit`
+- [x] Create file: `tests/integration/mesh_circuit.rs`
+- [x] Test: Build 1-hop circuit, verify traffic flows
+- [x] Test: Build 3-hop circuit, verify traffic flows
+- [x] Test: Verify circuit teardown works
+- [x] Run test: `cargo test --test mesh_circuit`
 
 #### 2.3.9 Documentation
-- [ ] Add doc comment to `circuit.rs` module
-- [ ] Document circuit handshake protocol
-- [ ] Update `qnet-spec/docs/ARCHITECTURE.md` with circuit flow
-- [ ] Add example to `examples/mesh_circuit.rs`
+- [x] Add doc comment to `circuit.rs` module
+- [x] Document circuit handshake protocol
+- [x] Update `qnet-spec/docs/ARCHITECTURE.md` with circuit flow
+- [x] Add example to `examples/mesh_circuit.rs`
 
 ---
 

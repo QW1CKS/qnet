@@ -104,6 +104,48 @@ Packet Flow:
 - `relay_packets_relayed`: Total packets forwarded (exposed in Helper Status API)
 - `relay_route_count`: Active route table size
 
+**Circuit Building:**
+
+QNet implements privacy-preserving multi-hop circuits for endpoint unlinkability:
+
+```
+Circuit Construction:
+┌──────────┐                                                    ┌──────────┐
+│ Source   │ ─────build_circuit(dest, 3)────────────────────> │  Circuit │
+│          │                                                    │  Builder │
+└──────────┘                                                    └─────┬────┘
+                                                                      │
+                  ┌───────────────────────────────────────────────────┘
+                  ▼
+        Select 3 random intermediate peers from DHT
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│ Circuit: [Hop1] → [Hop2] → [Hop3] → [Destination]      │
+│ • Each hop knows only prev/next                         │
+│ • Source and destination unlinkable                     │
+│ • Automatic teardown after 5min idle                    │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Circuit Properties:**
+- Maximum 3 hops (`MAX_HOPS`) for latency/privacy balance
+- Random peer selection from discovered peers (no peer appears twice)
+- Unique 64-bit circuit ID (timestamp + random bits)
+- Activity tracking: `last_activity`, `created_at` timestamps
+- Automatic idle pruning after 5 minutes inactivity
+
+**Circuit Messages:**
+- `CircuitRequest { circuit_id, next_hop }`: Handshake initiation
+- `CircuitReady { circuit_id }`: Establishment confirmation
+- `CircuitClose { circuit_id }`: Teardown notification
+
+**Routing Integration:**
+- Circuits stored in `RoutingTable` alongside direct routes
+- `find_route()` prefers circuit paths over direct forwarding
+- `add_circuit()` maps destination to circuit ID
+- `prune_idle_circuits()` removes expired circuits
+
 ### Layer 4: Privacy Hops (L4)
 **Purpose**: Anonymous routing through mixnet topology
 **Components**:

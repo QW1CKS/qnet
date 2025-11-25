@@ -18,3 +18,8 @@ harness = true
 name = "mesh_relay"
 path = "mesh_relay.rs"
 harness = true
+
+[[test]]
+name = "mesh_circuit"
+path = "mesh_circuit.rs"
+harness = true

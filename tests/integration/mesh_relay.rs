@@ -17,11 +17,11 @@ async fn test_three_node_relay() {
     // Setup routing tables
     // A knows B is the route to C
     let mut routing_a = RoutingTable::new();
-    routing_a.add_route(peer_c, peer_b);
+    routing_a.add_route(peer_c, peer_b, None);
 
     // B knows C directly
     let mut routing_b = RoutingTable::new();
-    routing_b.add_route(peer_c, peer_c);
+    routing_b.add_route(peer_c, peer_c, None);
 
     // Create relay behaviors
     let mut relay_a = RelayBehavior::new(peer_a, routing_a);
@@ -77,7 +77,7 @@ async fn test_relay_with_route_invalidation() {
 
     // A knows route to C via B
     let mut routing_a = RoutingTable::new();
-    routing_a.add_route(peer_c, peer_b);
+    routing_a.add_route(peer_c, peer_b, None);
 
     let mut relay_a = RelayBehavior::new(peer_a, routing_a);
 
@@ -104,7 +104,7 @@ async fn test_relay_statistics() {
     let next_hop = PeerId::random();
 
     let mut routing = RoutingTable::new();
-    routing.add_route(dst, next_hop);
+    routing.add_route(dst, next_hop, None);
 
     let mut relay = RelayBehavior::new(local_peer, routing);
 
@@ -162,8 +162,8 @@ async fn test_concurrent_relay() {
     let next_hop2 = PeerId::random();
 
     let mut routing = RoutingTable::new();
-    routing.add_route(dst1, next_hop1);
-    routing.add_route(dst2, next_hop2);
+    routing.add_route(dst1, next_hop1, None);
+    routing.add_route(dst2, next_hop2, None);
 
     let mut relay = RelayBehavior::new(local_peer, routing);
 

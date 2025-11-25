@@ -243,6 +243,64 @@ The Helper Status API exposes relay metrics:
 }
 ```
 
+### Circuit Building
+
+QNet supports privacy-preserving multi-hop circuits:
+
+**Building a Circuit:**
+
+```rust
+use core_mesh::circuit::{CircuitBuilder, Circuit};
+use std::sync::{Arc, Mutex};
+
+// Create circuit builder
+let builder = CircuitBuilder::new(Arc::new(Mutex::new(discovery)));
+
+// Build 3-hop circuit to destination
+let circuit = builder.build_circuit(destination_peer, 3).await?;
+
+// Circuit automatically selects random intermediate peers
+println!("Circuit hops: {:?}", circuit.hops);
+```
+
+**Routing Table Integration:**
+
+```rust
+use core_mesh::relay::RoutingTable;
+
+let mut routing_table = RoutingTable::new();
+
+// Add circuit (automatically maps destination to circuit)
+routing_table.add_circuit(circuit)?;
+
+// Route lookups prefer circuit paths
+let next_hop = routing_table.find_route(&destination)?;
+```
+
+**Circuit Lifecycle:**
+
+- **Creation**: `CircuitBuilder::build_circuit()` selects random hops
+- **Handshake**: `CircuitRequest` → intermediates → `CircuitReady`
+- **Activity**: Track with `circuit.mark_active()`
+- **Teardown**: `CircuitClose` or automatic after 5min idle
+- **Pruning**: `routing_table.prune_idle_circuits()`
+
+**Circuit Messages:**
+
+```rust
+use core_mesh::circuit::{CircuitRequest, CircuitReady, CircuitClose};
+
+// Handshake
+let request = CircuitRequest::new(circuit_id, next_hop);
+let encoded = request.encode()?;
+
+// Confirmation
+let ready = CircuitReady::new(circuit_id);
+
+// Teardown
+let close = CircuitClose::new(circuit_id);
+```
+
 ## Security Considerations
 
 ### Authentication

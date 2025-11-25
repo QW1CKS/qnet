@@ -368,7 +368,7 @@ impl DiscoveryRoutingTable {
     /// * `peer_id` - The peer that was discovered
     pub fn on_peer_discovered(&mut self, peer_id: PeerId) {
         // Add direct route to discovered peer (via itself)
-        self.routing_table.add_route(peer_id, peer_id);
+        self.routing_table.add_route(peer_id, peer_id, Some(std::time::Duration::from_secs(300)));
         log::debug!("relay: peer discovered, added route to {}", peer_id);
     }
 
@@ -494,6 +494,20 @@ impl DiscoveryBehavior {
             count += bucket.num_entries();
         }
         count
+    }
+
+    /// Get the list of currently discovered peer IDs.
+    ///
+    /// Returns all peers currently in the Kademlia routing table.
+    /// Useful for circuit building and peer selection.
+    pub fn get_peers(&mut self) -> Vec<PeerId> {
+        let mut peers = Vec::new();
+        for bucket in self.kademlia.kbuckets() {
+            for entry in bucket.iter() {
+                peers.push(*entry.node.key.preimage());
+            }
+        }
+        peers
     }
 }
 

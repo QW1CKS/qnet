@@ -6,6 +6,9 @@ pub mod discovery;
 pub mod relay;
 
 #[cfg(feature = "with-libp2p")]
+pub mod circuit;
+
+#[cfg(feature = "with-libp2p")]
 mod libp2p_impl {
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     use futures::prelude::*;

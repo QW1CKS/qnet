@@ -36,7 +36,10 @@
 
 use libp2p::PeerId;
 use std::collections::HashMap;
+use std::time::Duration;
 use thiserror::Error;
+
+use crate::circuit::Circuit;
 
 /// Errors that can occur during relay operations.
 #[derive(Debug, Error)]
@@ -196,10 +199,15 @@ impl Packet {
 ///
 /// The routing table maps destination peers to the next-hop peer through which
 /// packets should be forwarded. It supports multiple potential routes per destination.
+/// Additionally, it stores circuit information for multi-hop privacy paths.
 #[derive(Debug, Clone)]
 pub struct RoutingTable {
     /// Maps destination peer to list of potential next-hop peers
     routes: HashMap<PeerId, Vec<PeerId>>,
+    /// Maps circuit ID to circuit structure
+    circuits: HashMap<u64, Circuit>,
+    /// Maps destination peer to circuit ID (for circuit-based routing)
+    circuit_routes: HashMap<PeerId, u64>,
 }
 
 impl RoutingTable {
@@ -207,6 +215,8 @@ impl RoutingTable {
     pub fn new() -> Self {
         Self {
             routes: HashMap::new(),
+            circuits: HashMap::new(),
+            circuit_routes: HashMap::new(),
         }
     }
 
@@ -223,9 +233,11 @@ impl RoutingTable {
     /// let mut table = RoutingTable::new();
     /// let destination = PeerId::random();
     /// let next_hop = PeerId::random();
-    /// table.add_route(destination, next_hop);
+    /// table.add_route(destination, next_hop, None);
     /// ```
-    pub fn add_route(&mut self, dst: PeerId, via: PeerId) {
+    pub fn add_route(&mut self, dst: PeerId, via: PeerId, ttl: Option<Duration>) {
+        // TTL support is placeholder for future implementation
+        let _ = ttl;
         self.routes
             .entry(dst)
             .or_default()
@@ -235,7 +247,7 @@ impl RoutingTable {
 
     /// Find a route to a destination peer.
     ///
-    /// Returns the first available next-hop peer for the destination.
+    /// Prefers circuit-based routes if available, otherwise returns direct route.
     ///
     /// # Example
     ///
@@ -246,11 +258,20 @@ impl RoutingTable {
     /// let mut table = RoutingTable::new();
     /// let destination = PeerId::random();
     /// let next_hop = PeerId::random();
-    /// table.add_route(destination, next_hop);
+    /// table.add_route(destination, next_hop, None);
     ///
     /// assert_eq!(table.find_route(&destination), Some(&next_hop));
     /// ```
     pub fn find_route(&self, dst: &PeerId) -> Option<&PeerId> {
+        // Check for circuit-based route first
+        if let Some(&circuit_id) = self.circuit_routes.get(dst) {
+            if let Some(circuit) = self.circuits.get(&circuit_id) {
+                // Return first hop of the circuit
+                return circuit.hops.first();
+            }
+        }
+        
+        // Fall back to direct route
         self.routes.get(dst).and_then(|hops| hops.first())
     }
 
@@ -265,7 +286,7 @@ impl RoutingTable {
     /// let mut table = RoutingTable::new();
     /// let destination = PeerId::random();
     /// let next_hop = PeerId::random();
-    /// table.add_route(destination, next_hop);
+    /// table.add_route(destination, next_hop, None);
     /// table.remove_route(&destination);
     ///
     /// assert_eq!(table.find_route(&destination), None);
@@ -274,11 +295,115 @@ impl RoutingTable {
         if self.routes.remove(dst).is_some() {
             log::debug!("relay: removed routes to dst={}", dst);
         }
+        // Also remove any circuit route
+        self.circuit_routes.remove(dst);
     }
 
     /// Get the number of known routes.
     pub fn route_count(&self) -> usize {
         self.routes.len()
+    }
+
+    /// Add a circuit to the routing table.
+    ///
+    /// The circuit's destination (last hop) will be mapped to this circuit ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if circuit ID already exists.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use core_mesh::relay::RoutingTable;
+    /// use core_mesh::circuit::Circuit;
+    /// use libp2p::PeerId;
+    ///
+    /// let mut table = RoutingTable::new();
+    /// let circuit = Circuit::new(vec![PeerId::random(), PeerId::random()]);
+    /// table.add_circuit(circuit).unwrap();
+    /// ```
+    pub fn add_circuit(&mut self, circuit: Circuit) -> Result<(), crate::circuit::CircuitError> {
+        use crate::circuit::CircuitError;
+        
+        if self.circuits.contains_key(&circuit.id) {
+            return Err(CircuitError::AlreadyExists(circuit.id));
+        }
+
+        let destination = *circuit.hops.last().expect("circuit must have hops");
+        let circuit_id = circuit.id;
+        
+        self.circuits.insert(circuit_id, circuit);
+        self.circuit_routes.insert(destination, circuit_id);
+        
+        log::info!("relay: added circuit {} to dst={}", circuit_id, destination);
+        Ok(())
+    }
+
+    /// Get a circuit by ID.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use core_mesh::relay::RoutingTable;
+    /// use core_mesh::circuit::Circuit;
+    /// use libp2p::PeerId;
+    ///
+    /// let mut table = RoutingTable::new();
+    /// let circuit = Circuit::new(vec![PeerId::random()]);
+    /// let circuit_id = circuit.id;
+    /// table.add_circuit(circuit).unwrap();
+    ///
+    /// assert!(table.get_circuit(circuit_id).is_some());
+    /// ```
+    pub fn get_circuit(&self, id: u64) -> Option<&Circuit> {
+        self.circuits.get(&id)
+    }
+
+    /// Get a mutable reference to a circuit by ID.
+    pub fn get_circuit_mut(&mut self, id: u64) -> Option<&mut Circuit> {
+        self.circuits.get_mut(&id)
+    }
+
+    /// Remove a circuit from the routing table.
+    ///
+    /// Also removes the circuit route mapping for its destination.
+    pub fn remove_circuit(&mut self, id: u64) -> Option<Circuit> {
+        if let Some(circuit) = self.circuits.remove(&id) {
+            let destination = *circuit.hops.last().expect("circuit must have hops");
+            self.circuit_routes.remove(&destination);
+            log::info!("relay: removed circuit {} to dst={}", id, destination);
+            Some(circuit)
+        } else {
+            None
+        }
+    }
+
+    /// Get the number of active circuits.
+    pub fn circuit_count(&self) -> usize {
+        self.circuits.len()
+    }
+
+    /// Remove idle circuits based on inactivity timeout.
+    ///
+    /// Returns the number of circuits removed.
+    pub fn prune_idle_circuits(&mut self) -> usize {
+        let idle_ids: Vec<u64> = self
+            .circuits
+            .iter()
+            .filter(|(_, circuit)| circuit.is_idle())
+            .map(|(id, _)| *id)
+            .collect();
+
+        let count = idle_ids.len();
+        for id in idle_ids {
+            self.remove_circuit(id);
+        }
+        
+        if count > 0 {
+            log::info!("relay: pruned {} idle circuits", count);
+        }
+        count
     }
 }
 
@@ -367,7 +492,7 @@ impl RelayBehavior {
     /// let next_hop = PeerId::random();
     ///
     /// let mut routing_table = RoutingTable::new();
-    /// routing_table.add_route(destination, next_hop);
+    /// routing_table.add_route(destination, next_hop, None);
     ///
     /// let mut relay = RelayBehavior::new(local_peer, routing_table);
     /// let packet = Packet::new(PeerId::random(), destination, vec![1, 2, 3]);
@@ -536,7 +661,7 @@ mod tests {
         assert_eq!(table.find_route(&dst), None);
 
         // Add route
-        table.add_route(dst, via);
+        table.add_route(dst, via, None);
         assert_eq!(table.find_route(&dst), Some(&via));
         assert_eq!(table.route_count(), 1);
 
@@ -553,8 +678,8 @@ mod tests {
         let via1 = PeerId::random();
         let via2 = PeerId::random();
 
-        table.add_route(dst, via1);
-        table.add_route(dst, via2);
+        table.add_route(dst, via1, None);
+        table.add_route(dst, via2, None);
 
         // Should return first hop
         assert_eq!(table.find_route(&dst), Some(&via1));
@@ -598,7 +723,7 @@ mod tests {
         let next_hop = PeerId::random();
 
         let mut routing_table = RoutingTable::new();
-        routing_table.add_route(dst, next_hop);
+        routing_table.add_route(dst, next_hop, None);
 
         let mut relay = RelayBehavior::new(local_peer, routing_table);
 
@@ -616,7 +741,7 @@ mod tests {
         let next_hop = PeerId::random();
 
         let mut routing_table = RoutingTable::new();
-        routing_table.add_route(dst, next_hop);
+        routing_table.add_route(dst, next_hop, None);
 
         let mut relay = RelayBehavior::new(local_peer, routing_table);
 
@@ -658,7 +783,7 @@ mod tests {
         let next_hop = PeerId::random();
 
         let mut routing_table = RoutingTable::new();
-        routing_table.add_route(dst, next_hop);
+        routing_table.add_route(dst, next_hop, None);
 
         let mut relay = RelayBehavior::new(local_peer, routing_table);
 
