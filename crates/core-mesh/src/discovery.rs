@@ -226,14 +226,88 @@ fn parse_catalog_entries(catalog: &impl serde::Serialize) -> Result<Vec<Bootstra
     Ok(nodes)
 }
 
+/// Public libp2p/IPFS DHT bootstrap nodes (Primary, Free).
+///
+/// These are well-known IPFS bootstrap nodes maintained by the global IPFS community.
+/// QNet leverages this existing infrastructure for decentralized peer discovery at zero cost.
+///
+/// **No QNet-specific servers required for bootstrap!**
+fn public_libp2p_seeds() -> Vec<BootstrapNode> {
+    // Well-known IPFS bootstrap nodes from https://github.com/ipfs/kubo
+    let bootstrap_addrs = [
+        // IPFS bootstrap nodes (maintained by Protocol Labs & community)
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+        "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+        
+        // Fallback to IP addresses in case DNS fails
+        "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
+        "/ip4/104.236.179.241/tcp/4001/p2p/QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM",
+    ];
+    
+    let mut nodes = Vec::new();
+    for addr_str in &bootstrap_addrs {
+        if let Ok(multiaddr) = addr_str.parse::<Multiaddr>() {
+            // Extract PeerId from multiaddr
+            if let Some(protocol) = multiaddr.iter().find(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_))) {
+                if let libp2p::multiaddr::Protocol::P2p(peer_id) = protocol {
+                    nodes.push(BootstrapNode::new(peer_id, multiaddr));
+                }
+            }
+        } else {
+            log::warn!("Failed to parse public libp2p bootstrap address: {}", addr_str);
+        }
+    }
+    
+    log::info!("Loaded {} public libp2p DHT bootstrap nodes", nodes.len());
+    nodes
+}
+
+/// QNet operator seed nodes (Secondary, Minimal Cost).
+///
+/// DigitalOcean droplets ($8-18/month) run by the network operator.
+/// Serve dual purpose:
+/// 1. Backup bootstrap if public DHT unavailable
+/// 2. Primary exit nodes for actual web requests
+///
+/// **Update this when deploying official QNet seed nodes.**
+fn qnet_operator_seeds() -> Vec<BootstrapNode> {
+    // TODO: Replace with actual operator droplet IPs when deployed
+    // Example deployment:
+    // - Droplet 1 (NYC): 198.51.100.10:4001
+    // - Droplet 2 (Amsterdam): 198.51.100.20:4001
+    // - Droplet 3 (Singapore): 198.51.100.30:4001
+    
+    // For now, return empty - will be populated after Phase 2.5.5 (droplet deployment)
+    Vec::new()
+}
+
 /// Hardcoded seed nodes for resilience when catalog is unavailable.
 ///
-/// These are fallback nodes maintained by the QNet project.
-/// Update this list when adding new trusted seed nodes.
+/// **Hybrid Bootstrap Strategy**:
+/// 1. Primary: Public libp2p DHT (free, decentralized)
+/// 2. Secondary: QNet operator seeds (backup bootstrap + primary exits)
+/// 3. Tertiary: Community volunteer seeds (future)
 fn hardcoded_seed_nodes() -> Vec<BootstrapNode> {
-    // TODO: Replace with actual QNet seed nodes when deployed
-    // For now, return empty to avoid invalid seeds
-    Vec::new()
+    let mut nodes = Vec::new();
+    
+    // Primary: Public libp2p/IPFS DHT nodes (free infrastructure)
+    nodes.extend(public_libp2p_seeds());
+    
+    // Secondary: Operator droplets (if deployed)
+    nodes.extend(qnet_operator_seeds());
+    
+    if nodes.is_empty() {
+        log::warn!("No bootstrap nodes available! Network discovery may fail.");
+    } else {
+        log::info!("Bootstrap: {} total seed nodes available ({} public DHT + {} operator)", 
+                   nodes.len(),
+                   public_libp2p_seeds().len(),
+                   qnet_operator_seeds().len());
+    }
+    
+    nodes
 }
 
 
@@ -440,10 +514,17 @@ mod tests {
     }
 
     #[test]
-    fn test_load_bootstrap_nodes_empty_without_catalog() {
-        // Without catalog integration, should return empty to avoid seed fallback
+    fn test_load_bootstrap_nodes_includes_public_dht() {
+        // With Phase 2.5.1: Should load public libp2p DHT nodes (free infrastructure)
         let nodes = load_bootstrap_nodes();
-        assert_eq!(nodes.len(), 0);
+        
+        // Should have at least some public libp2p bootstrap nodes
+        assert!(nodes.len() > 0, "Should have bootstrap nodes from public libp2p DHT");
+        
+        // Verify structure: each node should have peer_id and multiaddr
+        for node in &nodes {
+            assert!(!node.multiaddr.to_string().is_empty());
+        }
     }
 
     #[async_std::test]

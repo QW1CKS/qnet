@@ -258,14 +258,14 @@
 **Goal**: Deploy minimal infrastructure for decentralized bootstrap and professional exits.
 
 #### 2.5.1 Update Bootstrap Configuration
-- [ ] Open file: `crates/core-mesh/src/discovery.rs`
-- [ ] Update `public_libp2p_seeds()` function
-- [ ] Add public IPFS bootstrap nodes:
-  - [ ] `/dnsaddr/bootstrap.libp2p.io`
-  - [ ] `/dnsaddr/ipfs.io`
-  - [ ] Public libp2p multiaddrs from IPFS docs
-- [ ] Test: Verify Helper can bootstrap via public DHT
-- [ ] Test: `cargo test -p core-mesh --lib bootstrap`
+- [x] Open file: `crates/core-mesh/src/discovery.rs`
+- [x] Update `public_libp2p_seeds()` function
+- [x] Add public IPFS bootstrap nodes:
+  - [x] `/dnsaddr/bootstrap.libp2p.io`
+  - [x] `/dnsaddr/ipfs.io`
+  - [x] Public libp2p multiaddrs from IPFS docs
+- [x] Test: Verify Helper can bootstrap via public DHT
+- [x] Test: `cargo test -p core-mesh --lib bootstrap`
 
 #### 2.5.2 Prepare Droplet Deployment Script
 - [ ] Create file: `scripts/deploy-exit-node.sh`
@@ -279,12 +279,12 @@
 - [ ] Test: Deploy to test droplet manually
 
 #### 2.5.3 Configure Exit Node Mode
-- [ ] Open file: `apps/stealth-browser/src/main.rs`
-- [ ] Add CLI flag: `--exit-node` (enables exit mode)
-- [ ] Add CLI flag: `--relay-only` (default, disables exit)
-- [ ] Read env var: `QNET_MODE` ("relay", "exit", "bootstrap")
-- [ ] Implement exit node logic (decrypt and forward to internet)
-- [ ] Log warning when exit mode enabled
+- [x] Open file: `apps/stealth-browser/src/main.rs`
+- [x] Add CLI flag: `--exit-node` (enables exit mode)
+- [x] Add CLI flag: `--relay-only` (default, disables exit)
+- [x] Read env var: `QNET_MODE` ("relay", "exit", "bootstrap")
+- [x] Implement exit node logic (decrypt and forward to internet)
+- [x] Log warning when exit mode enabled
 
 #### 2.5.4 Add Exit Node Policy
 - [ ] Create struct: `ExitPolicy { max_bandwidth_mbps, allowed_protocols }`

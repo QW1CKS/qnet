@@ -137,8 +137,21 @@ async fn main() -> Result<()> {
                 s if s.starts_with("--decoy-catalog=") => {
                     if let Some(p)=s.split_once('=').map(|(_,v)| v) { ingest_decoy_catalog_arg(p); }
                 }
+                "--relay-only" => {
+                    cfg.helper_mode = HelperMode::RelayOnly;
+                    eprintln!("cli-override: helper_mode=relay-only (safe, no exit liability)");
+                }
+                "--exit-node" => {
+                    cfg.helper_mode = HelperMode::ExitNode;
+                    eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
+                    eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
+                }
+                "--bootstrap" => {
+                    cfg.helper_mode = HelperMode::Bootstrap;
+                    eprintln!("cli-override: helper_mode=bootstrap (seed + exit)");
+                }
                 "--help" | "-h" => {
-                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
                     return Ok(());
                 }
                 _ => { /* ignore unknown for forward compat */ }
@@ -371,6 +384,18 @@ enum Mode {
     Masked,
 }
 
+/// Helper node mode for mesh network operation (Phase 2.5.3)
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum HelperMode {
+    /// Relay only (default, safe) - forward encrypted packets, no exit liability
+    RelayOnly,
+    /// Exit node (opt-in) - make actual web requests, legal liability
+    ExitNode,
+    /// Bootstrap node (optional) - act as seed + exit
+    Bootstrap,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Config {
     socks_port: u16,
@@ -379,6 +404,8 @@ struct Config {
     status_port: u16,
     // Global kill switch to ensure no online seeds are used unless explicitly allowed
     disable_bootstrap: bool,
+    // Helper mode: relay-only (default, safe) vs exit-node (opt-in, liability) (Phase 2.5.3)
+    helper_mode: HelperMode,
 }
 
 impl Default for Config {
@@ -386,14 +413,22 @@ impl Default for Config {
     // Defaults aligned with docs:
     //  - SOCKS proxy: 127.0.0.1:1088
     //  - Status API: 127.0.0.1:8088
-    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT).
-    Self { socks_port: 1088, mode: Mode::Direct, bootstrap: false, status_port: 8088, disable_bootstrap: true }
+    //  - Helper mode: relay-only (safe by default, no exit liability)
+    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE).
+    Self { 
+        socks_port: 1088, 
+        mode: Mode::Direct, 
+        bootstrap: false, 
+        status_port: 8088, 
+        disable_bootstrap: true, 
+        helper_mode: HelperMode::RelayOnly  // Phase 2.5.3: safe by default
+    }
     }
 }
 
 impl Config {
     fn load_default() -> Result<Self> {
-    // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP
+    // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP, QNET_MODE
         let mut cfg = Self::default();
         if let Ok(p) = std::env::var("STEALTH_SOCKS_PORT") {
             if let Ok(n) = p.parse::<u16>() { cfg.socks_port = n; }
@@ -414,6 +449,25 @@ impl Config {
         }
         if let Ok(p) = std::env::var("STEALTH_STATUS_PORT") {
             if let Ok(n) = p.parse::<u16>() { cfg.status_port = n; }
+        }
+        // Phase 2.5.3: Helper mode (relay-only, exit-node, bootstrap)
+        if let Ok(mode_str) = std::env::var("QNET_MODE") {
+            cfg.helper_mode = match mode_str.to_ascii_lowercase().as_str() {
+                "relay" | "relay-only" => HelperMode::RelayOnly,
+                "exit" | "exit-node" => {
+                    eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
+                    eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
+                    HelperMode::ExitNode
+                }
+                "bootstrap" => {
+                    eprintln!("BOOTSTRAP MODE: Acting as seed node + exit");
+                    HelperMode::Bootstrap
+                }
+                other => {
+                    warn!(%other, "unknown QNET_MODE; defaulting to relay-only");
+                    HelperMode::RelayOnly
+                }
+            };
         }
         Ok(cfg)
     }
