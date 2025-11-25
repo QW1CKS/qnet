@@ -7,6 +7,9 @@
 
 ---
 
+> [!CAUTION]
+> Most of the code has been implemented using agentic AI. This is just a side-project that I wanted to experiment with Copilot. This project was done purely for fun and learning, though you are welcome to use it at your own risk. I will be removing the AI-generated code  and implement it manually in the future if I ever plan to make it production-ready. I know how frustrating it is to see AI slop in production code these days, and I very much understand the sentiment from a security perspective.
+
 ## 🧐 What is QNet?
 
 QNet is a **decentralized overlay network** that allows you to access the free internet from anywhere.
