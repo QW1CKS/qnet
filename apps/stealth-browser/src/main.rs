@@ -104,10 +104,12 @@ async fn main() -> Result<()> {
     let _ = std::fs::create_dir_all("logs");
     let file_appender = rolling::daily("logs", "stealth-browser.log");
     let (nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    
+    // Output to BOTH stdout and file for visibility
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
-        .with_writer(nb_writer)
+        .with_writer(std::io::stdout)  // Changed: write to console / Changed from nb_writer to stdout
         .compact()
         .init();
 
