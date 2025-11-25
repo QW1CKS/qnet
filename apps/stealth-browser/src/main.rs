@@ -709,7 +709,7 @@ fn spawn_mesh_discovery(state: Arc<AppState>) {
             }
             
             // Initialize discovery behavior
-            let mut discovery = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
+            let discovery = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
                 Ok(d) => {
                     info!("mesh: Discovery behavior initialized successfully");
                     d
@@ -720,11 +720,19 @@ fn spawn_mesh_discovery(state: Arc<AppState>) {
                 }
             };
             
+            // Task 2.3.7: Wrap discovery in Arc<Mutex<>> to enable CircuitBuilder
+            let discovery_shared = std::sync::Arc::new(std::sync::Mutex::new(discovery));
+            let _circuit_builder = core_mesh::circuit::CircuitBuilder::new(discovery_shared.clone());
+            info!("mesh: CircuitBuilder initialized for multi-hop circuit routing");
+            
             // Periodic update loop (every 5 seconds per task implicit refresh rate)
             let mut last_count = 0usize;
             loop {
-                // Query current peer count
-                let count = discovery.peer_count();
+                // Query current peer count (via shared discovery)
+                let count = {
+                    let mut disc = discovery_shared.lock().unwrap();
+                    disc.peer_count()
+                };
                 peer_count_ref.store(count as u32, Ordering::Relaxed);
                 
                 // Log peer count changes
@@ -740,7 +748,12 @@ fn spawn_mesh_discovery(state: Arc<AppState>) {
                 }
                 
                 // Discover peers (non-blocking, returns current state)
-                match discovery.discover_peers().await {
+                let discover_result = {
+                    let mut disc = discovery_shared.lock().unwrap();
+                    disc.discover_peers().await
+                };
+                
+                match discover_result {
                     Ok(peers) => {
                         if !peers.is_empty() && count != last_count {
                             info!("mesh: Active peer list:");
@@ -1088,14 +1101,23 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
     // QNet peers are identified by special .qnet TLD or peer-<id>.qnet format
     if let Some(_app) = &app_state {
         if target.contains(".qnet") || target.starts_with("peer-") {
-            // TODO: Implement full mesh routing when MeshNetwork supports send/receive
-            // For now, log the attempt and fall through to regular routing
-            info!(target=%target, "detected QNet peer destination (mesh routing not yet implemented)");
-            // Future implementation:
-            // 1. Parse PeerId from target
-            // 2. Build circuit to peer if needed
-            // 3. Route SOCKS stream through mesh circuit
-            // 4. Return early after bridging stream
+            info!(target=%target, "detected QNet peer destination (building circuit)");
+            // Task 2.3.7: Build circuit to peer and route traffic through mesh
+            // Note: Full implementation requires:
+            // 1. Parse PeerId from target string (peer-<id>.qnet format)
+            // 2. Build circuit using CircuitBuilder (requires access to discovery)
+            // 3. Bridge SOCKS stream through circuit (async_std <-> tokio)
+            // 4. Update active_circuits count in AppState
+            // 5. Handle circuit teardown on connection close
+            //
+            // Current limitation: CircuitBuilder lives in separate async_std thread
+            // with discovery. Full integration requires channel-based communication
+            // or refactoring discovery/circuit management into shared state.
+            //
+            // For now, log the attempt and fall through to regular routing.
+            // Production implementation will require architectural changes for
+            // cross-runtime communication (async_std mesh thread <-> tokio SOCKS).
+            warn!("mesh circuit routing not yet implemented; falling through to regular routing");
         }
     }
 

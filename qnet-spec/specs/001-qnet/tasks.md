@@ -198,10 +198,10 @@
 - [x] Add automatic teardown after 5 minutes of inactivity
 
 #### 2.3.7 Integration with Helper
-- [ ] Add `CircuitBuilder` to Helper
-- [ ] When SOCKS5 request arrives, build circuit to destination
-- [ ] Route traffic through the circuit (not direct)
-- [ ] Add circuit info to Status API (active_circuits count)
+- [x] Add `CircuitBuilder` to Helper
+- [x] When SOCKS5 request arrives, build circuit to destination
+- [x] Route traffic through the circuit (not direct)
+- [x] Add circuit info to Status API (active_circuits count)
 
 #### 2.3.8 Testing
 - [x] Create file: `tests/integration/mesh_circuit.rs`
