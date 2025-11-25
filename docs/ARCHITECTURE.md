@@ -62,6 +62,48 @@ Frame Format:
 - Circuit relay for NAT traversal
 - Connection multiplexing
 
+**Relay Logic:**
+
+QNet implements packet relay capabilities enabling multi-hop forwarding through intermediate peers:
+
+```
+Packet Flow:
+┌──────────┐    Packet     ┌──────────┐    Packet     ┌──────────┐
+│ Source   │ ─────────────>│ Relay    │ ─────────────>│ Dest     │
+│ (Peer A) │   (hop=0)     │ (Peer B) │   (hop=1)     │ (Peer C) │
+└──────────┘               └──────────┘               └──────────┘
+                                │
+                                │ Decision Point:
+                                │ • destination == local_id?
+                                │   → Deliver locally
+                                │ • has_route(destination)?
+                                │   → Forward to next_hop
+                                │ • otherwise
+                                │   → Error: NoRoute
+```
+
+**Packet Structure:**
+- `source`: Originating peer ID
+- `destination`: Target peer ID  
+- `data`: Application payload (arbitrary bytes)
+- `hop_count`: Current hop number (incremented at each relay)
+
+**Routing Table:**
+- Maps destination peer IDs to next-hop peer IDs
+- Optional TTL per route (refreshed by discovery)
+- Integrated with `DiscoveryRoutingTable` for automatic maintenance
+
+**Relay Decision:**
+1. Incoming packet decoded from wire format
+2. Check if `destination == local_peer_id` → deliver to local handler
+3. Check routing table for `next_hop = routing_table.get_route(destination)`
+4. If route exists → increment `hop_count`, forward via `relay_behavior.forward_packet()`
+5. If no route → return `RelayError::NoRoute`
+
+**Statistics Tracking:**
+- `relay_packets_relayed`: Total packets forwarded (exposed in Helper Status API)
+- `relay_route_count`: Active route table size
+
 ### Layer 4: Privacy Hops (L4)
 **Purpose**: Anonymous routing through mixnet topology
 **Components**:

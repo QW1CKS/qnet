@@ -13,3 +13,8 @@ libp2p = { version = "0.53", default-features = false, features = ["identify"] }
 name = "mesh_discovery"
 path = "tests/mesh_discovery.rs"
 harness = true
+
+[[test]]
+name = "mesh_relay"
+path = "mesh_relay.rs"
+harness = true

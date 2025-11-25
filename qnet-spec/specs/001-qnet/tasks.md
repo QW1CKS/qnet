@@ -102,58 +102,58 @@
 **Goal**: Make Helpers forward packets for other peers.
 
 #### 2.2.1 Setup Relay Module
-- [ ] Create file: `crates/core-mesh/src/relay.rs`
-- [ ] Add module declaration in `crates/core-mesh/src/lib.rs`
-- [ ] Import libp2p relay dependencies in `Cargo.toml`
+- [x] Create file: `crates/core-mesh/src/relay.rs`
+- [x] Add module declaration in `crates/core-mesh/src/lib.rs`
+- [x] Import libp2p relay dependencies in `Cargo.toml`
 
 #### 2.2.2 Define Packet Structure
-- [ ] Create struct: `Packet { src: PeerId, dst: PeerId, data: Vec<u8> }`
-- [ ] Implement `encode()` method to serialize packet to bytes
-- [ ] Implement `decode()` method to deserialize from bytes
-- [ ] Add unit test for encode/decode round-trip
+- [x] Create struct: `Packet { src: PeerId, dst: PeerId, data: Vec<u8> }`
+- [x] Implement `encode()` method to serialize packet to bytes
+- [x] Implement `decode()` method to deserialize from bytes
+- [x] Add unit test for encode/decode round-trip
 
 #### 2.2.3 Implement Relay Behavior
-- [ ] Create struct: `RelayBehavior { peer_id: PeerId, routes: HashMap<PeerId, PeerId> }`
-- [ ] Implement method: `fn should_relay(&self, packet: &Packet) -> bool`
-- [ ] Implement method: `fn forward_packet(&mut self, packet: Packet) -> Result<()>`
-- [ ] Add logging for relayed packets
+- [x] Create struct: `RelayBehavior { peer_id: PeerId, routes: HashMap<PeerId, PeerId> }`
+- [x] Implement method: `fn should_relay(&self, packet: &Packet) -> bool`
+- [x] Implement method: `fn forward_packet(&mut self, packet: Packet) -> Result<()>`
+- [x] Add logging for relayed packets
 
 #### 2.2.4 Implement Routing Table
-- [ ] Create struct: `RoutingTable { routes: HashMap<PeerId, Vec<PeerId>> }`
-- [ ] Implement method: `fn add_route(&mut self, dst: PeerId, via: PeerId)`
-- [ ] Implement method: `fn find_route(&self, dst: PeerId) -> Option<PeerId>`
-- [ ] Implement method: `fn remove_route(&mut self, dst: PeerId)`
+- [x] Create struct: `RoutingTable { routes: HashMap<PeerId, Vec<PeerId>> }`
+- [x] Implement method: `fn add_route(&mut self, dst: PeerId, via: PeerId)`
+- [x] Implement method: `fn find_route(&self, dst: PeerId) -> Option<PeerId>`
+- [x] Implement method: `fn remove_route(&mut self, dst: PeerId)`
 
 #### 2.2.5 Integrate Relay with Discovery
-- [ ] Update `DiscoveryBehavior` to populate `RoutingTable`
-- [ ] When peer discovered, add route to routing table
-- [ ] When peer lost, remove route from routing table
-- [ ] Add method: `pub fn get_routing_table(&self) -> &RoutingTable`
+- [x] Update `DiscoveryBehavior` to populate `RoutingTable`
+- [x] When peer discovered, add route to routing table
+- [x] When peer lost, remove route from routing table
+- [x] Add method: `pub fn get_routing_table(&self) -> &RoutingTable`
 
 #### 2.2.6 Implement Packet Handler
-- [ ] Create function: `async fn handle_incoming_packet(packet: Packet, relay: &mut RelayBehavior)`
-- [ ] If `packet.dst == self.peer_id`, deliver to local handler
-- [ ] Else, call `relay.forward_packet(packet)`
-- [ ] Add error handling for failed relays
+- [x] Create function: `async fn handle_incoming_packet(packet: Packet, relay: &mut RelayBehavior)`
+- [x] If `packet.dst == self.peer_id`, deliver to local handler
+- [x] Else, call `relay.forward_packet(packet)`
+- [x] Add error handling for failed relays
 
 #### 2.2.7 Integration with Helper
-- [ ] Add `RelayBehavior` to Helper's network stack
-- [ ] Connect relayed packets to SOCKS5 handler (if dst is this peer)
-- [ ] Connect outgoing SOCKS5 traffic to relay (if dst is remote peer)
-- [ ] Add relay statistics to Status API (packets_relayed count)
+- [x] Add `RelayBehavior` to Helper's network stack
+- [x] Connect relayed packets to SOCKS5 handler (if dst is this peer)
+- [x] Connect outgoing SOCKS5 traffic to relay (if dst is remote peer)
+- [x] Add relay statistics to Status API (packets_relayed count)
 
 #### 2.2.8 Testing
-- [ ] Create file: `tests/integration/mesh_relay.rs`
-- [ ] Test: Node A sends to Node C via Node B (3-node relay)
-- [ ] Test: Verify packet arrives with correct data
-- [ ] Test: Verify relay statistics are updated
-- [ ] Run test: `cargo test --test mesh_relay`
+- [x] Create file: `tests/integration/mesh_relay.rs`
+- [x] Test: Node A sends to Node C via Node B (3-node relay)
+- [x] Test: Verify packet arrives with correct data
+- [x] Test: Verify relay statistics are updated
+- [x] Run test: `cargo test --test mesh_relay`
 
 #### 2.2.9 Documentation
-- [ ] Add doc comment to `relay.rs` module
-- [ ] Document relay packet format
-- [ ] Update `qnet-spec/docs/ARCHITECTURE.md` with relay flow diagram
-- [ ] Add example to `examples/mesh_relay.rs`
+- [x] Add doc comment to `relay.rs` module
+- [x] Document relay packet format
+- [x] Update `qnet-spec/docs/ARCHITECTURE.md` with relay flow diagram
+- [x] Add example to `examples/mesh_relay.rs`
 
 ---
 
@@ -251,6 +251,66 @@
 - [ ] Add check: Verify mesh_peer_count > 0 after startup
 - [ ] Add check: Verify circuit works for peer destination
 - [ ] Run test: `pwsh scripts/test-masked-connect.ps1`
+
+---
+
+### 2.5 Production-Readiness Checkpoint (Phase 2)
+**Goal**: Validate mesh network reliability before extension development.
+
+#### 2.5.1 Security Audit
+- [ ] Run `cargo clippy --workspace --all-targets -- -D warnings`
+- [ ] Run `cargo audit` to check for vulnerable dependencies
+- [ ] Review all crypto usage matches `core-crypto` wrappers only
+- [ ] Verify no secrets logged or exposed in status APIs
+- [ ] Check all CBOR serialization uses DET-CBOR for signed objects
+- [ ] Verify nonce handling uses monotonic counters (no reuse)
+- [ ] Review HTX handshake maintains forward secrecy properties
+
+#### 2.5.2 Performance Validation
+- [ ] Run benchmark suite: `cargo bench --workspace`
+- [ ] Verify AEAD throughput meets baseline (see `artifacts/perf-summary.md`)
+- [ ] Check HTX handshake latency < 500ms (median)
+- [ ] Verify peer discovery completes within 30s on LAN
+- [ ] Measure relay overhead (should be < 10% vs direct connection)
+- [ ] Check frame encoding/decoding throughput acceptable
+- [ ] Document any performance regressions with justification
+
+#### 2.5.3 Reliability Testing
+- [ ] Run full integration test suite: `cargo test --workspace`
+- [ ] Run fuzz targets for 1 hour each: `cargo +nightly fuzz run <target>`
+- [ ] Verify all fuzz targets pass without crashes
+- [ ] Test Helper restart under load (with active SOCKS5 connections)
+- [ ] Test catalog update while Helper is running
+- [ ] Verify graceful degradation when mesh peers go offline
+- [ ] Test catalog signature rejection (tampered/expired)
+- [ ] Verify frame decode rejects malformed packets
+
+#### 2.5.4 Operational Checks
+- [ ] Verify status API returns valid JSON under all states (offline/connecting/connected)
+- [ ] Test Helper runs stable for 24 hours continuous
+- [ ] Check memory usage remains bounded (no leaks, use profiler)
+- [ ] Verify logs don't contain PII, keys, or nonces
+- [ ] Test Windows compatibility (if cross-platform targeted)
+- [ ] Test Linux compatibility (if cross-platform targeted)
+- [ ] Verify Helper handles partial/interrupted reads (Windows async)
+- [ ] Check catalog-first loading precedence (seeds only as fallback)
+
+#### 2.5.5 Documentation Review
+- [ ] Verify `ARCHITECTURE.md` reflects current Phase 2 implementation
+- [ ] Check all public APIs have doc comments with examples
+- [ ] Update root `README.md` with Phase 2 feature status
+- [ ] Review compliance with `memory/ai-guardrail.md`
+- [ ] Review compliance with `memory/testing-rules.md`
+- [ ] Verify all implemented tasks traced to `tasks.md`
+- [ ] Check spec alignment (`qnet-spec/specs/001-qnet/spec.md`)
+
+#### 2.5.6 Decision Gate
+- [ ] All security audit items pass
+- [ ] All performance benchmarks meet baseline
+- [ ] All integration + fuzz tests pass
+- [ ] 24-hour stability test passes
+- [ ] Documentation is current
+- [ ] **GO/NO-GO Decision**: Proceed to Phase 3 (Extension)
 
 ---
 
@@ -386,6 +446,70 @@
 
 ---
 
+### 3.5 Production-Readiness Checkpoint (Phase 3)
+**Goal**: Validate complete user delivery model before advanced features.
+
+#### 3.5.1 End-to-End Security Validation
+- [ ] Verify extension permissions are minimal (no unnecessary access)
+- [ ] Test native messaging channel security (localhost only)
+- [ ] Verify catalog updates propagate to extension UI correctly
+- [ ] Check no sensitive data persists in extension storage
+- [ ] Test proxy settings revert on extension disable/uninstall
+- [ ] Verify SOCKS5 → HTX → Mesh path maintains confidentiality
+- [ ] Test DPI resistance with demo script (see `scripts/demo-secure-connection.ps1`)
+
+#### 3.5.2 User Experience Testing
+- [ ] Test installation flow on clean system (Windows/Linux/macOS)
+- [ ] Verify extension UI updates reflect Helper state changes
+- [ ] Test connection toggle (connect/disconnect) works reliably
+- [ ] Check status display shows peer count, circuit info correctly
+- [ ] Test browser restart maintains connection state (if enabled)
+- [ ] Verify error messages are user-friendly (not technical)
+- [ ] Test Helper auto-start (if implemented in installer)
+
+#### 3.5.3 Interoperability Testing
+- [ ] Test with Chrome (primary target)
+- [ ] Test with Edge (Chromium-based)
+- [ ] Test with Brave (if compatible)
+- [ ] Verify websites load correctly through SOCKS5 proxy
+- [ ] Test HTTPS sites (TLS passthrough works)
+- [ ] Test WebSocket connections through proxy
+- [ ] Check DNS resolution (local vs remote)
+
+#### 3.5.4 Reliability & Recovery
+- [ ] Test Helper crash recovery (extension detects and shows error)
+- [ ] Test network interruption handling (WiFi disconnect/reconnect)
+- [ ] Verify catalog update doesn't disrupt active connections
+- [ ] Test concurrent tabs loading through proxy (no conflicts)
+- [ ] Check memory usage with extension active for 24 hours
+- [ ] Test upgrade path (old version → new version)
+
+#### 3.5.5 Installer & Distribution Validation
+- [ ] Verify MSI/DEB/PKG installs all components correctly
+- [ ] Check native messaging manifest registered properly
+- [ ] Test uninstall removes all components (no orphans)
+- [ ] Verify signed catalog loaded correctly on first run
+- [ ] Check default config values are production-appropriate
+- [ ] Test installer on systems without admin rights (if supported)
+
+#### 3.5.6 Documentation & Support Readiness
+- [ ] Create user guide: Installation steps with screenshots
+- [ ] Create user guide: Troubleshooting common issues
+- [ ] Document system requirements (OS versions, RAM, etc.)
+- [ ] Add FAQ covering privacy, security, performance
+- [ ] Update `README.md` with download links and quick start
+- [ ] Verify all user-facing docs are non-technical
+
+#### 3.5.7 Decision Gate
+- [ ] All security validations pass
+- [ ] Installation works on all target platforms
+- [ ] Extension UI/UX is intuitive and reliable
+- [ ] 24-hour stability test with extension active passes
+- [ ] User documentation is complete
+- [ ] **GO/NO-GO Decision**: Ready for limited beta release OR proceed to Phase 4
+
+---
+
 ## 🔮 Phase 4: Advanced Privacy (Future)
 
 ### 4.1 Mixnet Integration (Nym)
@@ -417,8 +541,13 @@
 ## 📊 Progress Summary
 
 - Phase 1: Core Infrastructure → **100% Complete** ✅
-- Phase 2: P2P Mesh Network → **0% Complete** 🚧
+- Phase 2: P2P Mesh Network → **12.5% Complete** (Phase 2.1 ✅, 2.2-2.5 pending) 🚧
 - Phase 3: Browser Extension → **0% Complete** 🚧
 - Phase 4: Advanced Privacy → **0% Complete** 🔮
 
-**Next Task**: Start Phase 2.1.1 (Create discovery.rs file)
+**Production Readiness Checkpoints**:
+- 🔍 Checkpoint 1 (Phase 2.5): After mesh implementation, before extension
+- 🔍 Checkpoint 2 (Phase 3.5): After complete user delivery, before advanced features
+
+**Next Task**: Start Phase 2.2.1 (Create relay.rs file)
+

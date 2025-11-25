@@ -163,6 +163,86 @@ impl Connection {
 - **Broadcast**: Flooding to all connected peers
 - **Multicast**: Selective forwarding to peer groups
 
+### Relay Logic
+
+The relay module enables multi-hop packet forwarding through intermediate peers.
+
+**Packet Structure:**
+
+```rust
+use core_mesh::relay::Packet;
+
+// Create a packet
+let packet = Packet {
+    source: source_peer_id,
+    destination: dest_peer_id,
+    data: b"Hello, destination!".to_vec(),
+    hop_count: 0,
+};
+
+// Encode for transmission
+let encoded = packet.encode();
+
+// Decode received packet
+let decoded = Packet::decode(&encoded)?;
+```
+
+**Relay Behavior:**
+
+```rust
+use core_mesh::relay::{RelayBehavior, RoutingTable};
+
+// Create routing table
+let routing_table = RoutingTable::new();
+
+// Add route
+routing_table.add_route(
+    dest_peer_id,
+    next_hop_peer_id,
+    Some(Duration::from_secs(300)), // 5 minute TTL
+);
+
+// Create relay behavior
+let relay = RelayBehavior::new(local_peer_id, routing_table);
+
+// Handle incoming packet
+use core_mesh::relay::handle_incoming_packet;
+
+handle_incoming_packet(
+    &packet,
+    &mut relay,
+    |packet| async move {
+        // Handle locally delivered packet
+        println!("Received for local delivery: {:?}", packet.data);
+        Ok(())
+    }
+).await?;
+```
+
+**Discovery Integration:**
+
+```rust
+use core_mesh::relay::DiscoveryRoutingTable;
+
+// Integrate with peer discovery
+let discovery_routing = DiscoveryRoutingTable::new(routing_table);
+
+// Automatically maintain routes from discovery
+discovery_routing.on_peer_discovered(peer_id, next_hop);
+discovery_routing.on_peer_disconnected(peer_id);
+```
+
+**Relay Statistics:**
+
+The Helper Status API exposes relay metrics:
+
+```json
+{
+  "relay_packets_relayed": 1234,
+  "relay_route_count": 42
+}
+```
+
 ## Security Considerations
 
 ### Authentication

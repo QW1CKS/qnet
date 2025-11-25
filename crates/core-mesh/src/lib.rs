@@ -3,7 +3,10 @@
 pub mod discovery;
 
 #[cfg(feature = "with-libp2p")]
-pub mod impls {
+pub mod relay;
+
+#[cfg(feature = "with-libp2p")]
+mod libp2p_impl {
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     use futures::prelude::*;
     use libp2p::request_response::{
@@ -444,7 +447,10 @@ pub mod impls {
             }
         }
     }
-}
+} // end libp2p_impl module
+
+#[cfg(feature = "with-libp2p")]
+pub use libp2p_impl::*;
 
 #[cfg(not(feature = "with-libp2p"))]
 pub mod stub {

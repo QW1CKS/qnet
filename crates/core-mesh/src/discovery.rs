@@ -40,10 +40,11 @@
 use libp2p::{
     kad::{store::MemoryStore, Behaviour as Kademlia, Config as KademliaConfig},
     mdns,
-    swarm::NetworkBehaviour,
     Multiaddr, PeerId,
 };
 use thiserror::Error;
+
+use crate::relay::RoutingTable;
 
 /// Errors that can occur during peer discovery.
 #[derive(Debug, Error)]
@@ -109,12 +110,82 @@ pub fn load_bootstrap_nodes() -> Vec<BootstrapNode> {
 ///
 /// The Kademlia DHT is automatically refreshed every 5 minutes to maintain
 /// up-to-date routing information and discover new peers.
-#[derive(NetworkBehaviour)]
+///
+/// Combined peer discovery behavior using Kademlia DHT and mDNS.
+///
+/// This struct implements the `NetworkBehaviour` trait and can be integrated
+/// into a libp2p `Swarm`. It manages both wide-area (DHT) and local (mDNS)
+/// peer discovery.
+///
+/// # Periodic Refresh
+///
+/// The Kademlia DHT is automatically refreshed every 5 minutes to maintain
+/// up-to-date routing information and discover new peers.
+#[derive(libp2p::swarm::NetworkBehaviour)]
 pub struct DiscoveryBehavior {
     /// Kademlia DHT for wide-area peer discovery
     pub kademlia: Kademlia<MemoryStore>,
     /// mDNS for local network peer discovery
     pub mdns: mdns::async_io::Behaviour,
+}
+
+/// Manages routing table populated from peer discovery events.
+///
+/// This struct is kept separate from `DiscoveryBehavior` to avoid
+/// NetworkBehaviour derive macro constraints. It should be stored
+/// alongside the discovery behavior and updated via the provided methods.
+#[derive(Debug, Clone)]
+pub struct DiscoveryRoutingTable {
+    routing_table: RoutingTable,
+}
+
+impl DiscoveryRoutingTable {
+    /// Create a new discovery routing table.
+    pub fn new() -> Self {
+        Self {
+            routing_table: RoutingTable::new(),
+        }
+    }
+
+    /// Called when a peer is discovered to add it to the routing table.
+    ///
+    /// This creates a direct route to the discovered peer. In a full mesh,
+    /// each peer can forward packets directly to any discovered peer.
+    ///
+    /// # Arguments
+    ///
+    /// * `peer_id` - The peer that was discovered
+    pub fn on_peer_discovered(&mut self, peer_id: PeerId) {
+        // Add direct route to discovered peer (via itself)
+        self.routing_table.add_route(peer_id, peer_id);
+        log::debug!("relay: peer discovered, added route to {}", peer_id);
+    }
+
+    /// Called when a peer connection is lost to remove it from the routing table.
+    ///
+    /// This removes all routes through the lost peer.
+    ///
+    /// # Arguments
+    ///
+    /// * `peer_id` - The peer that was lost
+    pub fn on_peer_lost(&mut self, peer_id: PeerId) {
+        self.routing_table.remove_route(&peer_id);
+        log::debug!("relay: peer lost, removed routes to {}", peer_id);
+    }
+
+    /// Get a reference to the routing table populated by discovery.
+    ///
+    /// The routing table is automatically updated as peers are discovered
+    /// and lost. Relay logic can use this table to forward packets.
+    pub fn get_routing_table(&self) -> &RoutingTable {
+        &self.routing_table
+    }
+}
+
+impl Default for DiscoveryRoutingTable {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DiscoveryBehavior {
@@ -270,5 +341,66 @@ mod tests {
 
         let peers = discovery.discover_peers().await.expect("discover_peers failed");
         assert_eq!(peers.len(), 0);
+    }
+
+    #[async_std::test]
+    async fn test_on_peer_discovered_adds_route() {
+        let discovered_peer = PeerId::random();
+
+        let mut routing = DiscoveryRoutingTable::new();
+
+        // Initially no route
+        assert_eq!(routing.get_routing_table().route_count(), 0);
+
+        // Discover peer
+        routing.on_peer_discovered(discovered_peer);
+
+        // Should have route now
+        assert_eq!(routing.get_routing_table().route_count(), 1);
+        assert_eq!(
+            routing.get_routing_table().find_route(&discovered_peer),
+            Some(&discovered_peer)
+        );
+    }
+
+    #[async_std::test]
+    async fn test_on_peer_lost_removes_route() {
+        let discovered_peer = PeerId::random();
+
+        let mut routing = DiscoveryRoutingTable::new();
+
+        // Add peer
+        routing.on_peer_discovered(discovered_peer);
+        assert_eq!(routing.get_routing_table().route_count(), 1);
+
+        // Remove peer
+        routing.on_peer_lost(discovered_peer);
+        assert_eq!(routing.get_routing_table().route_count(), 0);
+        assert_eq!(routing.get_routing_table().find_route(&discovered_peer), None);
+    }
+
+    #[async_std::test]
+    async fn test_routing_table_integration() {
+        let mut routing = DiscoveryRoutingTable::new();
+
+        // Discover multiple peers
+        let peer1 = PeerId::random();
+        let peer2 = PeerId::random();
+        let peer3 = PeerId::random();
+
+        routing.on_peer_discovered(peer1);
+        routing.on_peer_discovered(peer2);
+        routing.on_peer_discovered(peer3);
+
+        assert_eq!(routing.get_routing_table().route_count(), 3);
+
+        // Lose one peer
+        routing.on_peer_lost(peer2);
+        assert_eq!(routing.get_routing_table().route_count(), 2);
+
+        // Remaining routes still present
+        assert!(routing.get_routing_table().find_route(&peer1).is_some());
+        assert!(routing.get_routing_table().find_route(&peer2).is_none());
+        assert!(routing.get_routing_table().find_route(&peer3).is_some());
     }
 }

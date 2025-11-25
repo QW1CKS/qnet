@@ -9,7 +9,7 @@ use tokio::{
 use tracing_appender::rolling;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration as StdDuration, Instant as StdInstant};
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::io::Write as _;
 
 // Instrumentation for status server diagnostics
@@ -494,6 +494,9 @@ struct AppState {
     last_decoy_ip: Mutex<Option<String>>,
     // Mesh peer count updated by discovery thread (task 2.1.6)
     mesh_peer_count: Arc<AtomicU32>,
+    // Relay statistics (task 2.2.7)
+    relay_packets_relayed: Arc<AtomicU64>,
+    relay_route_count: Arc<AtomicU32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -523,7 +526,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None), mesh_peer_count: Arc::new(AtomicU32::new(0)) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None), mesh_peer_count: Arc::new(AtomicU32::new(0)), relay_packets_relayed: Arc::new(AtomicU64::new(0)), relay_route_count: Arc::new(AtomicU32::new(0)) }
     }
 }
 
@@ -722,6 +725,11 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     // Prefer live mesh peer count over snapshot value (task 2.1.6)
     json["peers_online"] = serde_json::json!(mesh_peers);
+    // Relay statistics (task 2.2.7)
+    let relay_packets = app.relay_packets_relayed.load(Ordering::Relaxed);
+    let relay_routes = app.relay_route_count.load(Ordering::Relaxed);
+    json["relay_packets_relayed"] = serde_json::json!(relay_packets);
+    json["relay_route_count"] = serde_json::json!(relay_routes);
     if let Some(p) = snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
     if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) { json["last_checked_ms_ago"] = serde_json::json!(ms); }
     json["config_mode"] = json["mode"].clone(); // backward compat
