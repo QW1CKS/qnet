@@ -1,262 +1,54 @@
-# QNet Implementation Plan
+# QNet Strategic Roadmap
 
-## Tech Stack Choices
+## Strategy: "Build the Helper, Grow the Mesh"
 
-### Core Languages
-- **Rust**: Primary language for HTX crate, mixnode, and core networking components. Chosen for memory safety, performance, and async capabilities.
-- **C**: For the C library implementation. Provides wide compatibility and low-level control.
-- **Go**: For the spec-compliance linter. Excellent for CLI tools and concurrent processing.
+Our strategy is to deploy a **fully decentralized network** disguised as a simple **browser extension**.
 
-### Key Libraries & Frameworks
-- **tokio**: Async runtime for Rust components, enabling high-performance concurrent operations.
-- **ring**: Cryptography library for Rust, providing ChaCha20-Poly1305, Ed25519, X25519, HKDF-SHA256 implementations.
-- **libp2p**: For L3 overlay mesh, handling peer discovery, multiplexing, and transport protocols.
-- **rustls**: For TLS handling in HTX, with support for origin mirroring and QUIC.
-- **quinn**: QUIC implementation for UDP-443 variant.
-- **scion-rust**: SCION protocol implementation for L1 routing (assuming available or to be developed).
-- **nym-sdk**: For L4 privacy hops integration.
-- **sled**: Embedded database for local state management.
-- **serde**: Serialization for CBOR and other formats.
-
-### Alignment with Betanet 1.2
-
-We will adopt several concrete, normative ideas inspired by Betanet v1.2 to improve interoperability and censorship-resistance:
-
-- Deterministic CBOR encoding for all registry, key-schedule, and TemplateID contexts (Section 6.2 style).
-- TemplateID-based origin calibration: implement origin template discovery and TemplateID computation (deterministic CBOR -> SHA-256) and cache policy.
-- Precise L2 framing and AEAD semantics: follow the L2 frame layout (Len(u24)|Type(u8)|StreamID|AAD|Ciphertext|Tag) and KEY_UPDATE overlap semantics.
-- Inner Noise XK handshake and key schedule: match the Noise XK state machine and exporter context binding to prevent downgrades.
-- Translation Layer for v1.1 compatibility: provide an L2/L3 translation path to interoperate with older peers without exposing plaintext.
-- Compliance Profiles (MINIMAL/STANDARD/EXTENDED) and an automated compliance test harness mirroring the v1.2 test procedures.
-
-These choices tighten the spec for early interoperability and provide clear testable targets for the PoC.
-
-### Infrastructure
-- **Docker**: Containerization for reproducible builds and deployment.
-- **Linux**: Primary target OS for servers and development.
-- **GitHub Actions**: CI/CD for automated testing, fuzzing, and SLSA provenance generation.
-
-## Architecture Overview
-
-### Component Structure
-```
-qnet/
-├── htx-crate/          # Rust HTX client/server
-├── mixnode/            # Rust Nym mixnode
-├── c-lib/              # C library implementation
-├── linter/             # Go spec-compliance linter
-├── utls-gen/           # uTLS template generator
-├── core/               # Shared Rust libraries
-│   ├── crypto/         # ChaCha20, Ed25519, etc.
-│   ├── framing/        # L2 frame handling
-│   ├── routing/        # L1 SCION + HTX
-│   ├── mesh/           # L3 libp2p integration
-│   └── naming/         # L5 self-certifying IDs
-├── cli/                # Command-line tools
-├── tests/              # Unit and integration tests
-└── docs/               # Specifications and guides
-```
-
-### Layer Mapping to Components
-- **L0**: Handled by OS/system libraries
-- **L1**: `routing/` module with SCION and HTX tunneling
-- **L2**: `htx-crate/` with inner Noise XK and framing
-- **L3**: `mesh/` with libp2p transports
-- **L4**: `mixnode/` with Nym integration
-- **L5**: `naming/` with alias ledger
-- **L6**: Voucher handling in core
-- **L7**: Application examples in separate repo
+1.  **The Trojan Horse**: Users install a "VPN Extension" for free access.
+2.  **The Hidden Node**: The extension installs a local "Helper" service.
+3.  **The Mesh**: Every Helper joins the P2P network, strengthening it for everyone.
 
 ## Implementation Phases
 
-### Phase 1: Core Infrastructure (2-3 months)
-1. Set up Rust workspace with tokio and ring
-2. Implement basic crypto primitives
-3. Create L2 framing and AEAD handling
-4. Develop Noise XK handshake
-5. Build SCION packet structures
+### Phase 1: Core Infrastructure (Completed) ✅
+*Building the engine.*
+We have built the foundational Rust crates:
+- **`htx`**: The masking transport layer that mimics TLS fingerprints.
+- **`core-crypto`**: The cryptographic primitives.
+- **`core-framing`**: The secure wire protocol.
+- **Catalog System**: The secure update mechanism.
 
-### Phase 2: HTX Crate (2 months)
-1. TLS origin mirroring with rustls
-2. QUIC support with quinn
-3. Inner channel establishment
-4. Frame multiplexing and flow control
-5. Fuzz testing for 80% coverage
+### Phase 2: The Helper Node (Current) 🚧
+*Turning the engine into a car.*
+We are currently integrating the core crates into the `stealth-browser` binary (the Helper).
+- **Goal**: A standalone binary that runs a SOCKS5 proxy and connects to the QNet mesh.
+- **Key Tech**: `libp2p` for mesh networking, `htx` for masking.
 
-### Phase 3: Routing & Mesh (2 months)
-1. SCION path construction and validation
-2. HTX tunneling for non-SCION links
-3. libp2p integration for peer discovery
-4. Bootstrap with rotating DHT and PoW
+### Phase 3: User Experience (Current) 🚧
+*Giving the car a steering wheel.*
+We are building the user-facing components.
+- **Browser Extension**: The remote control for the Helper.
+- **Installers**: One-click setup for Windows/Linux/macOS.
+- **Goal**: Zero-configuration privacy. "It just works."
 
-### Phase 4: Privacy & Naming (2 months)
-1. Mixnode selection with BeaconSet
-2. Nym mixnet integration
-3. Self-certifying ID implementation
-4. Alias ledger with 2-of-3 finality
+### Phase 4: Advanced Privacy (Future) 🔮
+*Adding armor.*
+Once the mesh is live and stable, we enable advanced features:
+- **Mixnet**: High-latency routing for extreme anonymity (integrating Nym).
+- **Incentives**: Paying relay nodes with Vouchers/Cashu.
+- **Governance**: Decentralized protocol upgrades.
 
-### Phase 5: Payments & Governance (1 month)
-1. Voucher format and validation
-2. Lightning integration
-3. Node uptime scoring
-4. Voting power calculations
+## Technology Stack
 
-### Phase 6: Tools & Compliance (1 month)
-1. C library wrapper
-2. Go linter for spec compliance
-3. uTLS template generator
-4. SLSA provenance in CI/CD
-
-### Phase 7: Catalog pipeline (M3)
-Documentation complete for a catalog-first distribution model:
-- Format and signing: see `qnet-spec/docs/catalog-schema.md` (DET-CBOR + Ed25519, TTL, mirrors)
-- Signer CLI: `crates/catalog-signer` with docs in `qnet-spec/docs/catalog-signer.md`
-- Publisher workflow: `qnet-spec/docs/catalog-publisher.md` (manual signing now; automate in CI later)
-- App behavior: loader/verify/TTL/cache/updater documented in `qnet-spec/docs/apps/stealth-browser.md`
-
-## Testing Strategy
-
-### Unit Tests
-- Comprehensive coverage for all crypto operations
-- Frame parsing and serialization
-- Handshake state machines
-- Path validation logic
-
-### Integration Tests
-- End-to-end HTX connections
-- Multi-hop routing scenarios
-- Mixnode traffic processing
-- Bootstrap discovery
-
-### Fuzzing
-- Protocol parsers with cargo-fuzz
-- Crypto input validation
-- Network message handling
-
-### Compliance Testing
-- Automated checks for 13 compliance points
-- Origin mirroring validation
-- Traffic indistinguishability tests
-
-## Deployment & Distribution
-
-### Containerization
-- Multi-stage Docker builds for minimal images
-- Separate containers for each component
-- Docker Compose for local development
-
-### CI/CD Pipeline
-- GitHub Actions for automated builds
-- Cross-compilation for multiple architectures
-- Security scanning and dependency checks
-- SLSA provenance generation
-
-### Distribution
-- Pre-built binaries for Linux x86_64, ARM64
-- Docker images on GitHub Container Registry
-- Source code with reproducible builds
-
-### Deployment recommendation (users)
-
-For end-user deployments we recommend the Browser Extension + Helper model:
-
-- Browser Extension: provides the user-facing UI, catalog chooser, and proxy lifecycle control.
-- Helper (the `stealth-browser` binary): runs locally as a background service exposing a SOCKS5 proxy and a local status API for UI/extension integration.
-
-See `qnet-spec/docs/helper.md` and `qnet-spec/docs/extension.md` for installation and integration details. Default helper endpoints used in examples throughout the repo:
-
-- SOCKS5: `127.0.0.1:1088`
-- Status API: `http://127.0.0.1:8088`
-
-This model reduces packaging complexity for users and lets the extension manage proxy configuration and the Helper lifecycle.
-
-## Security Considerations
-
-### Threat Mitigation
-- Memory-safe languages (Rust, Go) for critical components
-- Formal verification for crypto protocols
-- Regular security audits and fuzzing
-- Post-quantum crypto integration
-
-### Privacy Protection
-- Traffic analysis resistance through cover behavior
-- Metadata minimization
-- Anti-correlation measures
-- Jurisdictionally diverse mixnode selection
-
-## Performance Targets
-
-### Benchmarks
-- HTX throughput: 10 Gbps+ on 10G NIC
-- Mixnode processing: 25k packets/sec on 4-core VPS
-- Bootstrap time: < 30 seconds
-- Path switch time: < 300ms
-
-See Phase 6 Task T6.6 for detailed micro-benchmarks, zero-copy refactors, QUIC integration toggles, and CI guardrails (nightly perf job, regression thresholds). **Status: Complete**.
-
-### Resource Requirements
-- Minimum: 1 CPU core, 512MB RAM for client
-- Recommended: 4+ cores, 4GB RAM for nodes
-- Storage: 10GB for ledger and state
-
-## Risk Assessment
-
-### Technical Risks
-- SCION implementation complexity
-- PQ crypto integration timeline
-- Interoperability with existing networks
-
-### Mitigation
-- Incremental development with working prototypes
-- Extensive testing and fuzzing
-- Community collaboration on bounties
+| Component | Technology | Reason |
+|-----------|------------|--------|
+| **Core Logic** | **Rust** | Memory safety, performance, async (Tokio). |
+| **Mesh Networking** | **libp2p** | Industry standard, modular, robust. |
+| **Transport** | **Rustls + Quinn** | Modern TLS 1.3 and QUIC support. |
+| **UI** | **WebExtensions** | Cross-browser compatibility (Chrome/Edge/Firefox). |
+| **Scripting** | **PowerShell / Bash** | Native automation. |
 
 ## Success Metrics
-
-- All 13 compliance points implemented
-- Implementation deliverables completed
-- End-to-end connectivity demonstrated
-- Performance targets met
-- Security audit passed
-
-## Repository and Ecosystem Management
-
-### Dual Audience Strategy
-QNet serves both developers (toolkit/framework users) and end users (ready-to-use applications). To balance this:
-- **Developer Focus**: Core crates in `crates/` and examples in `examples/` for integration (e.g., HTX crate for tunneling).
-- **User Focus**: A Browser Extension + Helper (the `stealth-browser` binary) for easy anonymous browsing; the extension manages browser proxy settings and controls the Helper via native messaging.
-- **Documentation**: Separate guides—technical docs for devs, quick starts for users.
-
-### Repository Organization
-- Maintain modular structure: `crates/` for toolkit, `apps/` for user apps.
-- Enforce `.gitignore` for build artifacts to manage 5GB+ size.
-- Use Git LFS for large assets if needed.
-
-### CI/CD Pipelines
-- **Toolkit Pipeline**: Fast Rust builds/tests for `crates/` (unit tests, fuzzing).
-- **Apps Pipeline**: Helper installers (MSI/PKG/DEB/DMG) and WebExtension builds for Chrome/Edge/Firefox, integration tests, and pre-built binaries.
-- Separate workflows: Toolkit on PRs, apps on releases for efficiency.
-
-### Long-Term Ecosystem Growth
-- Encourage third-party apps via modular crates.
-- Provide pre-built binaries via GitHub Releases.
-- Plan for separate repos if user apps grow large.
-
-## Research & Dependencies
-
-### External Dependencies
-- tokio: Async runtime
-- ring: Crypto primitives
-- libp2p: P2P networking
-- rustls: TLS implementation
-- quinn: QUIC protocol
-- sled: Database
-- serde: Serialization
-
-### Research Areas
-- SCION Rust implementation status
-- Nym SDK integration
-- PQ crypto library maturity
-- Cover traffic generation techniques
-
-This plan provides a modular architecture that can be developed incrementally while maintaining compliance with the QNet specification.
+1.  **Indistinguishability**: Traffic MUST look like Microsoft/Google to DPI.
+2.  **Usability**: Installation MUST take < 2 minutes.
+3.  **Performance**: Latency MUST be acceptable for browsing (Fast Mode) or streaming (Direct Mode).

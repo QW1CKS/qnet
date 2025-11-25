@@ -1,521 +1,79 @@
-# QNet: Decentralized, Censorship-Resistant Networking
+# QNet: The Invisible Overlay Network
 
 <div align="center">
-  <img src="logo.png" alt="QNet Logo" width="400">
+  <img src="logo.png" alt="QNet Logo" width="200">
+  <p><strong>Decentralized. Censorship-Resistant. Unblockable.</strong></p>
 </div>
 
-<p align="center">
-  <strong>A decentralized network protocol stack designed to replace the vulnerable public Internet with a privacy-preserving, self-sovereign alternative.</strong>
-</p>
-
-<p align="center">
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#documentation">Documentation</a> •
-  <a href="#contributing">Contributing</a> •
-  <a href="#license">License</a>
-</p>
-
 ---
 
-## 🌟 Overview
+## 🧐 What is QNet?
 
-**QNet (QuantaNet)** is a decentralized network protocol designed to replace the vulnerable public Internet. It provides **strong user privacy**, **decentralized operation**, and **resistance to censorship** through a sophisticated layered architecture and advanced cryptography.
+QNet is a **decentralized overlay network** that allows you to access the free internet from anywhere.
 
-### ✨ Key Features
+It works by **disguising your traffic** as normal connections to popular sites (like Microsoft, Google, or Cloudflare). To an ISP or censor, you are just browsing a harmless website. In reality, you are routing encrypted traffic through a global mesh of peers to reach your true destination.
 
-- **🔒 Censorship Resistance**:
-   - *Available Now*: Connection masking via decoys makes your traffic appear to visit different sites
-   - *Coming Soon*: Route around blocks with stealthy, mixnet-powered tunnels
-  
-- **🛡️ Privacy-First**:
-   - *Available Now*: Traffic mimics normal HTTPS, undetectable by ISPs or governments
-   - *Coming Soon*: Optional mixnet routing for enhanced anonymity
-  
-- **🌐 Decentralization**:
-   - *Available Now*: Catalog-based decoy configuration with signed updates
-   - *Coming Soon*: No central authorities, no DNS vulnerabilities, no single points of failure
-  
-- **⚡ Scalable & Secure**: Built with quantum-resistant cryptography
-  
-- **🔧 Developer-Friendly**: Modular crates for building custom privacy tools
-  
-- **📦 Catalog-First**: Signed configuration catalogs with automatic updates (M3 complete)
+## 🚀 How It Works
 
-### 🎯 Real-World Impact
+Unlike a VPN (centralized) or Tor (slow), QNet uses a **Browser Extension + Helper** model:
 
-- **Journalists & Activists**: Access blocked sites without detection
-- **Developers**: Build censorship-resistant apps effortlessly
-- **Everyday Users**: Browse freely, no matter where you are
-- **Governments & ISPs**: Can't block what they can't see!
+1.  **The Extension**: You install a simple button in your browser.
+2.  **The Helper**: A small background service runs on your computer.
+3.  **The Mesh**: Your Helper joins the QNet P2P mesh.
 
----
+When you browse:
+- **You** want `amazon.com`.
+- **QNet** connects to `microsoft.com` (a decoy node).
+- **ISP** sees `HTTPS -> microsoft.com`.
+- **You** get `amazon.com` content.
 
-## Architecture
+## ✨ Key Features
 
-QNet's innovative **7-layer architecture** ensures seamless, secure connectivity:
+- **🎭 Perfect Disguise**: Uses **HTX (Hypertext Transport Extension)** to clone TLS fingerprints of popular sites. Indistinguishable from real traffic.
+- **🕸️ Fully Decentralized**: No central servers to block. Every user helps the network (P2P).
+- **⚡ Performance Choice**: Choose **Fast Mode** (1-hop) for speed or **Privacy Mode** (3-hop) for anonymity.
+- **🔒 Secure**: Built with Rust, ChaCha20-Poly1305, and Noise XK encryption.
 
-| Layer | Name | Purpose | Implementation |
-|-------|------|---------|----------------|
-| **L7** | Applications | Web-layer replacement services | Ready-to-use apps |
-| **L6** | Payments | Micro-payments via Lightning | Voucher system |
-| **L5** | Naming & Trust | Self-certifying IDs + alias ledger | Decentralized naming |
-| **L4** | Privacy Hops | Nym mixnet for anonymity | Mixnode integration |
-| **L3** | Overlay Mesh | P2P connections via libp2p | Peer discovery |
-| **L2** | Cover Transport | HTX over TCP-443/QUIC-443 | TLS mirroring |
-| **L1** | Path Selection | SCION + HTX routing | Secure routing |
-| **L0** | Access Media | Any IP bearer | OS integration |
+## 🛠️ Quick Start (Developers)
 
-### Current Implementation Status
-
-QNet is being developed in phases, with a pragmatic approach to delivering value:
-
-1. **Phase 1 (Available Now) - Browser Extension + Helper**:
-   - A browser extension paired with a local Helper application
-   - Connection masking via decoys (makes traffic appear to visit different sites)
-   - Client-server model with privacy enhancements
-   - Simple to install and use immediately
-
-2. **Future Phases - Full P2P Network**:
-   - Peer-to-peer routing capabilities
-   - Mixnet integration for enhanced anonymity
-   - Fully decentralized operation
-   - Resilient mesh networking
-
-This phased approach allows users to benefit from QNet's privacy features immediately while the more advanced P2P capabilities are being developed.
-
-## Architecture (status view)
-
-QNet's innovative **7-layer architecture** combines immediate privacy benefits with a vision for a fully decentralized future:
-
-| Layer | Name | Purpose | Status |
-|-------|------|---------|--------|
-| **L7** | Applications | Web-layer replacement services | ✅ Browser Extension available |
-| **L6** | Payments | Micro-payments via Lightning | ⏳ Future release |
-| **L5** | Naming & Trust | Self-certifying IDs + alias ledger | ⏳ Future release |
-| **L4** | Privacy Hops | Nym mixnet for anonymity | 🚧 In development |
-| **L3** | Overlay Mesh | P2P connections via libp2p | 🚧 In development |
-| **L2** | Cover Transport | HTX over TCP-443/QUIC-443 | ✅ Complete |
-| **L1** | Path Selection | SCION + HTX routing | 🚧 In development |
-| **L0** | Access Media | Any IP bearer | ✅ Complete |
-
-**Current Focus**: The Browser Extension + Helper (L7 application) leverages the completed L2 Cover Transport layer to provide immediate privacy benefits through connection masking.
-
-
-### 🛠️ Technology Stack
-
-**Core Technologies:**
-- **Rust**: Memory-safe, high-performance networking
-- **WebExtensions + Helper**: Browser Extension (Chrome/Edge/Firefox) + local Helper service for user delivery
-- **Tokio**: Async runtime for concurrency
-- **Ring**: Cryptographic primitives
-- **Libp2p**: P2P networking
-- **Nym**: Privacy mixnet integration
-
-**Cryptography:**
-- ChaCha20-Poly1305 AEAD encryption
-- Ed25519 signatures, X25519 DH, HKDF-SHA256
-- Post-quantum hybrid X25519-Kyber768 (2027+)
-- Noise XK mutual authentication
-
----
-
-## Quick Start
+QNet is currently in **Active Development**. You can build and run the components today.
 
 ### Prerequisites
+- **Rust 1.70+**
+- **Windows** (Primary dev environment) or Linux/macOS
 
-- **Rust 1.70+** with Cargo
-- **Windows**: Visual Studio Build Tools 2022 (C++ workload + Windows SDK)
-- **Linux/macOS**: Standard development tools
-
-### Demo: Browser Extension + Helper (recommended for users)
-
-For end users we recommend a lightweight browser extension paired with a small local Helper application (the "Helper"). This model provides the best user experience and security while leveraging the existing Rust networking components.
-
-What you get:
-- A browser extension (Chrome/Edge/Firefox) that provides a one-click UI and proxy control
-- A small Helper application (Rust binaries) installed once on the host that runs the `stealth-browser` SOCKS proxy and optional `edge-gateway` service
-
-Quick start (developer/demo): run the Helper locally and use the browser configured to use the local proxy.
-
-**Windows (PowerShell) — run stealth-browser directly for development:**
+### Build & Run
 ```powershell
-# From repo root (development only)
+# 1. Clone the repo
+git clone https://github.com/QW1CKS/qnet.git
+cd qnet
+
+# 2. Build everything
+cargo build --workspace
+
+# 3. Run the Helper (Stealth Browser)
 cargo run -p stealth-browser
 ```
 
-**Smoke Test** (from another terminal — verifies local proxy):
-```bash
-curl -I https://example.com --socks5-hostname 127.0.0.1:1088
-```
-
-Notes:
-- The extension automates launching the Helper and configuring the browser to use `127.0.0.1:1088` (default) for SOCKS5.
-- For production distribution, the Helper should be packaged as an installer (Windows MSI, macOS PKG) and shipped alongside the browser extension.
-
-### Demo: Secure Connection
-
-Demonstrate a full secure connection with catalog-first configuration (signed + bundled), TLS handshake, decoy routing, and DPI evasion verification:
-
-**Windows (PowerShell):**
+### Smoke Test (Masked Connection)
+Verify that QNet can disguise a connection:
 ```powershell
-# Run one-click demo with DPI capture (catalog-first by default)
-.\scripts\demo-secure-connection.ps1 `
-  -WithDecoy `
-  -Origin https://www.wikipedia.org `
-  -CaptureSeconds 60 `
-   -Interface 3
-```
-
-**Features:**
-- ✅ Catalog-first configuration (signed, bundled; updates from mirrors)
-- ✅ Real TLS handshake + inner HTX secure stream
-- ✅ Decoy routing for censorship evasion
-- ✅ DPI capture and comparison (PASS if traffic looks like normal TLS)
-- ✅ Edge gateway for production masked browsing (M3 complete)
-
-See [Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md) for full details and troubleshooting, and [Catalog Schema](qnet-spec/docs/catalog-schema.md) for the signed catalog format. For user components, see the [Helper Guide](qnet-spec/docs/helper.md) and [Browser Extension Guide](qnet-spec/docs/extension.md).
-
-### Quick Masked Connection Smoke Test (Windows / PowerShell 7+)
-
-Use the dedicated helper script for a clean, reproducible masked CONNECT check. It builds the binaries (debug), launches an in‑process decoy `edge-gateway`, starts `stealth-browser` in masked mode, waits for readiness, performs a SOCKS request, and prints a concise summary with status fields and log paths.
-
-Script: `scripts/test-masked-connect.ps1`
-
-Basic run (detached windows for processes):
-```powershell
+# Connect to wikipedia.org disguised as a decoy
 pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
 ```
 
-You can also pass a full URL (the script normalizes and extracts the host):
-```powershell
-pwsh ./scripts/test-masked-connect.ps1 -Target https://www.wikipedia.org/
-```
+## 📚 Documentation
 
-Passing an `http://` URL is also accepted; it is automatically upgraded to HTTPS (scheme stripped and request performed with `https://`). Example:
-```powershell
-pwsh ./scripts/test-masked-connect.ps1 -Target http://www.wikipedia.org
-```
+- **[Unified Task List](qnet-spec/specs/001-qnet/tasks.md)**: The master plan.
+- **[Protocol Spec](qnet-spec/specs/001-qnet/spec.md)**: How it works under the hood.
+- **[Roadmap](qnet-spec/specs/001-qnet/plan.md)**: Where we are going.
 
-Inline mode (everything stays in the current window; easier for CI / copying logs):
-```powershell
-pwsh ./scripts/test-masked-connect.ps1 -Target www.x.com -Inline -Verbose
-```
+## 🤝 Contributing
 
-Specify custom ports (if defaults in use):
-```powershell
-pwsh ./scripts/test-masked-connect.ps1 -SocksPort 2080 -StatusPort 8188 -EdgePort 54443 -Target en.wikipedia.org
-```
-
-After launch, open the live status page in a browser:
-```
-http://127.0.0.1:8088/
-```
-You will see the sticky header with Current Target / IP and Current Decoy / IP lines updating.
-
-Note: The smoke test script uses curl with `--socks5-hostname` so that the SOCKS CONNECT request carries the original domain name (ATYP=DOMAIN). This lets the status page show the human‑readable host under "Current Target" while also resolving and showing a separate "Current Target IP".
-
-What the script verifies:
-1. Status endpoint becomes reachable (`/ready` then `/status`).
-2. Decoy catalog (dev unsigned) loads (non‑zero `decoy_count`).
-3. Masked CONNECT succeeds (state transitions to `connected`).
-4. `last_target` / `last_decoy` (and their IP forms) are populated.
-5. A real HTTPS fetch over SOCKS (curl) returns headers (200/301/302).
-
-Outputs include log file paths; review them for lines containing `state-transition:connected` and `masked:`. The status UI also shows a rolling heartbeat and the terminate button.
-
-Flags of interest:
-- `-Inline`   Run both processes in the same console (no extra windows).
-- `-KeepAlive` Leave processes running after summary (default for detached mode).
-- `-Verbose`  Prints extra progress hints (polling, curl command, etc.).
-
-Security / Dev Note: The script enables `STEALTH_DECOY_ALLOW_UNSIGNED=1` and injects a synthetic in‑memory catalog pointing all traffic at a local edge-gateway for rapid local development. Do not use this catalog or those env vars in production.
-
-If something fails:
-- Visit `http://127.0.0.1:8088/status` (or `/status.txt`) for a raw snapshot.
-- Check the referenced log paths for warnings (look for `last_masked_error`).
-- Ensure no stale `stealth-browser` / `edge-gateway` processes are still running (`Get-Process stealth-browser,edge-gateway`).
-
-Exit & cleanup:
-```powershell
-Get-Process stealth-browser,edge-gateway -ErrorAction SilentlyContinue | Stop-Process -Force
-```
-
-### Development Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/QW1CKS/qnet.git
-   cd qnet
-   ```
-
-2. **Build the workspace:**
-   ```bash
-   cargo build --workspace
-   ```
-
-3. **Run tests:**
-   ```bash
-   cargo test --workspace
-   ```
-
-4. **Run examples:**
-   ```bash
-   cargo run -p echo
-   ```
+We are building the future of internet freedom.
+1.  Check **[tasks.md](qnet-spec/specs/001-qnet/tasks.md)** for open items.
+2.  Pick a task from **Phase 2** or **Phase 3**.
+3.  Submit a PR!
 
 ---
-
-## Documentation
-
-### 📖 Specifications
-- **[QNet Specification](qnet-spec/specs/001-qnet/spec.md)**: Complete technical specification
-- **[Implementation Plan](qnet-spec/specs/001-qnet/plan.md)**: Development roadmap and phases
-- **[Task Tracker](qnet-spec/specs/001-qnet/tasks.md)**: Detailed implementation tasks
-
-### 🏛️ Project Governance
-- **[Constitution](qnet-spec/memory/constitution.md)**: Core principles and governance
-- **[AI Guardrail](qnet-spec/memory/ai-guardrail.md)**: Code quality standards
-- **[Testing Rules](qnet-spec/memory/testing-rules.md)**: Testing requirements
-
-### 🏗️ Technical Documentation
-- **[Architecture](qnet-spec/docs/ARCHITECTURE.md)**: System architecture details
-- **[Contributing](qnet-spec/docs/CONTRIBUTING.md)**: Development guidelines
-- **[Demo: Secure Connection](docs/DEMO_SECURE_CONNECTION.md)**: Step-by-step secure connection demo
-- **[Helper Guide](qnet-spec/docs/helper.md)**: Local Helper (stealth-browser) install, endpoints, and API
-- **[Browser Extension Guide](qnet-spec/docs/extension.md)**: Extension developer flow and integration
-- **[Physical Testing Playbook](qnet-spec/docs/physical-testing.md)**: Hands-on validation with captures and metrics
-- **[API Documentation](docs/ARCHITECTURE.md)**: Architecture and component overview
-
-### 🧪 Development Tools
-- **Go Spec Linter**: Compliance validation tool
-- **uTLS Generator**: TLS template generator
-- **Performance Benchmarks**: Criterion-based testing
-
----
-
-## 👥 For Developers
-
-QNet is primarily a **toolkit and framework** for developers to build private, censorship-resistant networks and applications.
-
-### Core Crates
-
-| Crate | Purpose | Status |
-|-------|---------|--------|
-| `core-crypto` | Cryptographic primitives | ✅ Complete |
-| `core-cbor` | Deterministic CBOR encoding | ✅ Complete |
-| `core-framing` | L2 frame handling | ✅ Complete |
-| `htx` | HTTP Tunneling Extension | ✅ Complete (M3 catalog pipeline) |
-| `core-routing` | SCION routing | 🚧 In Progress |
-| `core-mesh` | Libp2p integration | 🚧 In Progress |
-
-### Integration Example
-
-```rust
-use htx::api::{dial};
-
-// Dial with TLS origin mirroring
-let conn = dial("https://example.com")?;
-
-// Open secure stream
-let stream = conn.open_stream();
-stream.write(b"hello world");
-```
-
-### Development Workflow
-
-1. **Map changes to requirements** in `qnet-spec/specs/001-qnet/tasks.md`
-2. **Follow TDD**: Write tests first, then implement
-3. **Ensure compliance** with AI Guardrail and Testing Rules
-4. **Submit PRs** with `AI-Guardrail: PASS` and `Testing-Rules: PASS`
-
----
-
-## 👤 For Users
-
-QNet provides a user-friendly deployment model composed of a browser extension and a small local Helper application. This approach minimizes installation friction while providing robust masking and catalog updates.
-
-### Current Implementation: Browser Extension + Helper
-
-The current user experience is intentionally pragmatic: a browser extension (UI + proxy control) works with a small local Helper (the `stealth-browser` binary) to provide immediate censorship resistance via connection masking. In this deployment the flow is effectively a client-server model (your browser → local Helper → remote site), but the Helper applies decoys and HTX transport to make the observed connections look like ordinary HTTPS.
-
-This model is easier to install and understand for end users and provides strong practical benefits today. The broader P2P and mixnet components described elsewhere in this repository are a planned evolution that will be integrated into the Helper over time, making peer routing optional and transparent to users.
-
-### How users install and use QNet (recommended)
-
-1. Install the QNet browser extension from the browser's extension store (Chrome Web Store, Firefox Add-ons, or Edge Add-ons).
-2. Download and install the QNet Helper for your platform (small installer that contains the Rust binaries).
-3. Open the browser and click the QNet extension icon. The extension will:
-   - Detect and start the local Helper if needed (or prompt for the Helper installer)
-   - Configure the browser's proxy settings to use the local SOCKS5 proxy (default 127.0.0.1:1088)
-   - Show status (connected, catalog version, toggle protection)
-4. Browse normally — QNet masks your connection using decoys from the catalog so observers see the decoy domain instead of your real destination.
-
-More details: [Helper Guide](qnet-spec/docs/helper.md) • [Browser Extension Guide](qnet-spec/docs/extension.md)
-
-## Some Questions
-
-### Is QNet currently using P2P/mixnet technology?
-The current Browser Extension + Helper implementation uses a client-server model enhanced with connection masking (decoys + HTX). The P2P mesh networking and mixnet integration are under active development and will be incorporated into the Helper in future releases as optional routing modes.
-
-### Why an Extension + Helper instead of full P2P today?
-Delivering robust censorship-resistance now requires a pragmatic, low-friction client that users can install easily. The Extension+Helper approach delivers measurable privacy improvements today while allowing the toolkit (crates and mesh) to mature for future P2P deployments.
-
-### Will the Helper become a peer in the mesh?
-Yes — the long-term plan is for the Helper to optionally participate in peer routing (or use peers as relays) when configured or when direct connections are blocked. That capability will be added once the overlay mesh and discovery features are production-ready.
-
-### Notes for power users / developers
-
-- Developers can still run `stealth-browser` directly from source for debugging:
-
-```powershell
-# Development only: run local proxy
-cargo run -p stealth-browser
-```
-
-- For production the Helper should be packaged and installed once; the extension handles starting/stopping it and configuring the browser.
-
----
-
-## 🔧 Advanced Usage
-
-### TLS Origin Mirroring Demo
-
-Test TLS fingerprint mirroring:
-
-```bash
-# With rustls ClientConfig
-cargo run -p htx --features rustls-config --example tls_mirror_demo -- https://example.com
-
-# Without ClientConfig (fingerprint only)
-cargo run -p htx --example tls_mirror_demo -- https://example.com
-```
-
-### Performance Testing
-
-Run comprehensive benchmarks:
-
-```bash
-# Full performance suite
-cargo bench
-
-# Specific benchmarks
-cargo bench --bench core-crypto
-cargo bench --bench htx
-```
-
-### Compliance Testing
-
-Validate implementation against specification:
-
-```bash
-# Build Go linter
-cd linter && go build -o qnet-lint ./cmd/qnet-lint
-
-# Validate codebase
-./qnet-lint validate /path/to/qnet
-
-# Generate SBOM
-./qnet-lint sbom /path/to/qnet
-```
-
----
-
-## Contributing
-
-We welcome contributions from developers, security researchers, and protocol designers!
-
-### Getting Started
-
-1. **Review Requirements:**
-   - Read `qnet-spec/memory/constitution.md`
-   - Study `qnet-spec/memory/ai-guardrail.md`
-   - Follow `qnet-spec/memory/testing-rules.md`
-
-2. **Development Setup:**
-   ```bash
-   git clone https://github.com/QW1CKS/qnet.git
-   cd qnet
-   cargo build --workspace
-   cargo test --workspace
-   ```
-
-3. **Find Tasks:**
-   - Check `qnet-spec/specs/001-qnet/tasks.md`
-   - Look for `TODO` comments in code
-   - Review open issues
-
-### Contribution Guidelines
-
-- **Map changes** to `qnet-spec/specs/001-qnet` requirements
-- **Write tests first** (TDD approach)
-- **Follow AI Guardrail** and Testing Rules
-- **Include checklists** in PR descriptions
-- **Keep code idiomatic** and well-documented
-
----
-
-## 📊 Project Status
-
-This project serves two audiences. We now track progress along two parallel tracks: Toolkit (protocol crates, performance, compliance) and User Delivery (Browser Extension + Helper packaging and UX).
-
-### Toolkit track — Implementation Progress
-
-- ✅ **Phase 1**: Core Infrastructure (Complete)
-- ✅ **Phase 2**: HTX Proof-of-Concept (90% Complete - M3 catalog pipeline done)
-- 🚧 **Phase 3**: Routing & Mesh (In Progress)
-- ⏳ **Phase 4**: Privacy & Naming (Planned)
-- ⏳ **Phase 5**: Payments & Governance (Planned)
-
-### User delivery track — Extension + Helper
-
-- **U1**: Helper service (stealth-browser SOCKS5 127.0.0.1:1088; status API 127.0.0.1:8088) ✅
-- **U2**: Browser Extension MVP (UI + proxy toggle + native messaging handshake) 🚧
-- **U3**: Catalog-first integration surfaced in UI (signed updates, status) ✅
-- **U4**: Store submissions and Helper installers (Win/macOS/Linux) ⏳
-- **U5**: P2P routing integration in Helper (leveraging Phase 3 toolkit components) ⏳
-
-### Performance Benchmarks
-
-| Component | Metric | Target | Current |
-|-----------|--------|--------|---------|
-| AEAD Throughput | 16KiB blocks | ≥1.2 GiB/s | ✅ 1.2-1.35 GiB/s |
-| HTX Handshake | Latency | <50ms | ✅ ~750µs |
-| Frame Processing | 16KiB | <12µs | ✅ ~11-12µs |
-
----
-
-## 🔒 Security
-
-QNet implements multiple layers of security:
-
-- **AEAD Encryption**: ChaCha20-Poly1305 for all data
-- **Mutual Authentication**: Noise XK handshake
-- **Path Validation**: SCION signature verification
-- **Post-Quantum Ready**: Hybrid cryptography (2027+)
-- **Anti-Correlation**: Cover traffic and fallback mechanisms
-- **Deterministic Serialization**: Prevents parsing attacks
-
-### Security Audits
-
-- 🔍 **Code Review**: Required for all cryptographic components
-- 🧪 **Fuzz Testing**: 80%+ coverage target for parsers
-- 📋 **Compliance**: Automated spec validation
-- 🔐 **SLSA Provenance**: Reproducible builds
-
----
-
-## License
-
-QNet is licensed under the **MIT License**. See [LICENSE](LICENSE) file for details.
-
----
-
-## 🌍 Community
-
-- **📖 [Documentation](qnet-spec/docs/)**: Comprehensive guides and API references
-- **🐛 [Issues](https://github.com/QW1CKS/qnet)**: Bug reports and feature requests
-- **💬 [Discussions](https://github.com/QW1CKS/qnet)**: General discussion and Q&A
-- **📧 [Security](SECURITY.md)**: Security vulnerability reporting
-
----
+*Licensed under MIT.*
