@@ -1143,15 +1143,10 @@ fn ensure_decoy_env_from_signed() -> Result<()> {
         info!("dev-local decoy enabled: routing all origins to https://localhost:4443 (unsigned)");
         return Ok(());
     }
-    // If already set externally, do nothing
+    // If already set externally, do nothing (now requires explicit pubkey via env)
     if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
-        // Ensure pubkey is set too
         if std::env::var("STEALTH_DECOY_PUBKEY_HEX").is_err() {
-            let pk_hex = include_str!("../assets/publisher.pub")
-                .lines()
-                .filter(|l| !l.trim_start().starts_with('#'))
-                .collect::<String>();
-            std::env::set_var("STEALTH_DECOY_PUBKEY_HEX", pk_hex.trim());
+            bail!("STEALTH_DECOY_CATALOG_JSON provided but STEALTH_DECOY_PUBKEY_HEX missing (publisher pubkey hex)");
         }
         return Ok(());
     }
@@ -1161,13 +1156,11 @@ fn ensure_decoy_env_from_signed() -> Result<()> {
         let text = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
         // Basic sanity: must contain signature_hex to be considered signed
         if text.contains("\"signature_hex\"") {
+            if std::env::var("STEALTH_DECOY_PUBKEY_HEX").is_err() {
+                bail!("found signed decoy catalog at {} but STEALTH_DECOY_PUBKEY_HEX not set", p.display());
+            }
             std::env::set_var("STEALTH_DECOY_CATALOG_JSON", &text);
-            let pk_hex = include_str!("../assets/publisher.pub")
-                .lines()
-                .filter(|l| !l.trim_start().starts_with('#'))
-                .collect::<String>();
-            std::env::set_var("STEALTH_DECOY_PUBKEY_HEX", pk_hex.trim());
-            info!(path=%p.display(), "decoy catalog env set from signed file");
+            info!(path=%p.display(), "decoy catalog env set from signed file (env pubkey)");
             return Ok(());
         }
     }
@@ -1227,6 +1220,16 @@ async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> 
     // Prefer a signed decoy catalog from repo templates (dev) with optional unsigned fallback gated by env.
     use serde::Deserialize;
 
+    // NEW: Environment precedence. If caller explicitly injected a catalog via env, honor it first
+    // (supports test harness derived catalogs / local edge overrides). This avoids template
+    // shadowing of ephemeral verified catalogs provided at runtime.
+    if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
+        if let Some(cat) = htx::decoy::load_from_env() {
+            eprintln!("decoy-catalog:loaded entries={} (env-precedence)", cat.entries.len());
+            return Some(cat);
+        }
+    }
+
     let candidates = [
         std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json"),
         std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.example.json"),
@@ -1238,13 +1241,11 @@ async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> 
 
         // Signed catalog attempt
         if let Ok(signed) = serde_json::from_str::<htx::decoy::SignedCatalog>(&text) {
-            let pk_hex = include_str!("../assets/publisher.pub")
-                .lines()
-                .filter(|l| !l.trim_start().starts_with('#'))
-                .collect::<String>();
-            if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) {
-                return Some(cat);
-            }
+            if let Ok(pk_hex) = std::env::var("STEALTH_DECOY_PUBKEY_HEX") {
+                if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) {
+                    return Some(cat);
+                }
+            } else { continue; }
         }
 
         // Unsigned development fallback (only when explicitly allowed)
@@ -1421,13 +1422,13 @@ impl CatalogState {
             };
             // Inline verify: re-serialize inner to DET-CBOR and verify using pinned pubkey
             let det = core_cbor::to_det_cbor(&cj.catalog)?;
-            let mut pk_hex = include_str!("../assets/publisher.pub").to_string();
-            // Support comment lines beginning with '#'
-            pk_hex = pk_hex
+            let pk_hex = std::env::var("STEALTH_DECOY_PUBKEY_HEX")
+                .map_err(|_| anyhow::anyhow!("STEALTH_DECOY_PUBKEY_HEX not set (publisher pubkey required)"))?;
+            let cleaned = pk_hex
                 .lines()
                 .filter(|l| !l.trim_start().starts_with('#'))
                 .collect::<String>();
-            let pk = Vec::from_hex(pk_hex.trim()).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
+            let pk = Vec::from_hex(cleaned.trim()).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
             core_crypto::ed25519::verify(&pk, &det, &sig)
                 .map_err(|_| anyhow::anyhow!("signature verify failed"))?;
             Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: Some(hex::encode(sig)), source: None }))

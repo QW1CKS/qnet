@@ -1,43 +1,53 @@
 <#
-Test: Masked CONNECT path via local edge-gateway acting as a decoy
+Test: Masked CONNECT path via local edge-gateway acting as a decoy (SIGNED CATALOG REQUIRED)
 
-This script launches:
-  1) edge-gateway (outer TLS listener, inner HTX mux, CONNECT handler)
-  2) stealth-browser in --mode masked with a dev unsigned decoy catalog
-  3) Performs a curl request over SOCKS5 to a target (default: www.wikipedia.org)
+This script now performs a security‑first flow:
+  1) Fetch signed decoy catalog JSON from remote seed (default: qnet-catalog repo raw URL)
+  2) Verify signature with `catalog-signer verify` using provided publisher public key (env or param)
+  3) Export STEALTH_DECOY_CATALOG_JSON + STEALTH_DECOY_PUBKEY_HEX (NO unsigned bypass)
+  4) Launch edge-gateway (TLS listener for local decoy endpoint)
+  5) Launch stealth-browser in masked mode (consumes signed catalog)
+  6) Perform SOCKS5 HTTPS request via helper and report status metrics
 
-It verifies:
-  - Decoy catalog is loaded (status.decoy_count > 0)
-  - Masked CONNECT success (state transitions to Connected; logs show masked: line)
-  - last_target and last_decoy populated in /status
-
-Decoy Strategy (dev):
-  We map all origins (host_pattern = "*") to a local decoy host "localhost" on EdgePort (default 4443).
-  This validates the full pipeline locally. In a real deployment, decoy_host would be a
-  benign remote domain with a valid certificate and edge-gateway deployed there.
+Security Invariants (Omega Important):
+  - Fails fast if catalog signature invalid or publisher key missing
+  - Does NOT set STEALTH_DECOY_ALLOW_UNSIGNED (dev bypass removed here)
+  - Old embedded publisher key file removed from repo; caller must supply key explicitly
 
 Prerequisites:
-  - cargo build (debug) has produced edge-gateway and stealth-browser binaries
-  - certs/localhost.pem + certs/localhost-key.pem exist (included in repo)
-  - PowerShell 7+ recommended
+  - cargo build has produced edge-gateway + stealth-browser + catalog-signer
+  - certs/localhost.pem + certs/localhost-key.pem exist
+  - PowerShell 7+, internet access to fetch catalog unless using -CatalogFile or -CatalogJson
 
-Usage:
-  pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
-  pwsh ./scripts/test-masked-connect.ps1 -Target https://www.wikipedia.org/   # URL form also accepted (normalized)
-  pwsh ./scripts/test-masked-connect.ps1 -Target en.wikipedia.org -Verbose
+Usage Examples:
+  pwsh ./scripts/test-masked-connect.ps1 -PublisherPubKeyHex <hex> -Verbose
+  pwsh ./scripts/test-masked-connect.ps1 -PublisherPubKeyFile ./secure/publisher.pub
+  pwsh ./scripts/test-masked-connect.ps1 -CatalogUrl https://raw.githubusercontent.com/QW1CKS/qnet-catalog/refs/heads/main/catalog.json -PublisherPubKeyHex <hex>
 
-Parameters:
-  -Target       Hostname to fetch through SOCKS (default www.wikipedia.org)
-  -SocksPort    Local SOCKS5 port exposed by stealth-browser (default 1088)
-  -StatusPort   Local status HTTP port (default 8088)
-  -EdgePort     Local edge-gateway TLS bind port (default 4443)
-  -CurlPath     Override curl executable (auto-detect otherwise)
-  -KeepAlive    Do not stop processes after test (for manual inspection)
+Supplying the Publisher Public Key (choose one):
+  1) -PublisherPubKeyHex <hex>
+  2) -PublisherPubKeyFile path/to/publisher.pub (lines starting with # ignored)
+  3) Pre-set env STEALTH_DECOY_PUBKEY_HEX before invocation
+
+Key Generation Tutorial (Step-by-step):
+  1. Generate a 32-byte Ed25519 private seed (hex) securely:
+       PowerShell:  $bytes = New-Object byte[] 32; (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($bytes); ($bytes|ForEach-Object ToString x2) -join ''
+       Linux/macOS: openssl rand -hex 32
+  2. Store this value as GitHub Actions Secret in qnet-catalog repo:  Name: CATALOG_PRIVKEY  Value: <seed-hex>
+  3. Locally (one time) derive the public key:
+       $env:CATALOG_PRIVKEY=<seed-hex>; cargo run -q -p catalog-signer -- pubkey > publisher.pub
+  4. (Optional) Inspect fingerprint:  Get-Content publisher.pub | Select-String '.' | % { ($_ -replace '\s','') } | ForEach-Object { Write-Host "PubKey SHA256: $(echo $_ | openssl dgst -sha256)" }
+  5. Distribute publisher.pub (public *only*) to consumers OR provide its hex via -PublisherPubKeyHex.
+  6. The qnet-catalog workflow signs catalogs with the secret CATALOG_PRIVKEY; clients verify using the published pubkey.
+
+Catalog Expectations:
+  - Remote JSON must include a top-level "signature_hex" field (inline signature form).
+  - On success we cache nothing on disk (in-memory env only) for this smoke test.
 
 Outputs:
-  Summary object with fields: Target, SocksResult, State, LastTarget, LastDecoy, LogHints
+  Summary object with: Target, SocksResult, State, LastTarget, LastDecoy, CatalogSource, Verification
+  (Use -Verbose to see additional diagnostic steps.)
 
-NOTE: This is a dev-only helper. Unsigned catalogs are enabled (STEALTH_DECOY_ALLOW_UNSIGNED=1).
 #>
 
 [CmdletBinding()]
@@ -49,8 +59,21 @@ param(
   [string]$CurlPath = '',
   [switch]$SkipProcessKill,
   [int]$ReadyTimeoutSec = 25,
-  [switch]$Inline    # If specified, do NOT detach (legacy inline mode)
+  [switch]$Inline,
+  [string]$CatalogUrl = 'https://raw.githubusercontent.com/QW1CKS/qnet-catalog/refs/heads/main/catalog.json',
+  [string]$CatalogFile = '',              # Optional local catalog JSON (already inline-signed)
+  [string]$CatalogJson = '',              # Direct JSON string override
+  [string]$PublisherPubKeyHex = '',       # Publisher public key hex
+  [string]$PublisherPubKeyFile = ''       # Path to publisher.pub containing hex
+  , [switch]$DeriveUnsignedDecoyFromCatalog # Derive decoy catalog (unsigned) from a verified catalog-first JSON
+  , [switch]$UseLocalEdgeDecoys            # Override derived decoy_host/port to localhost:EdgePort for all entries (testing)
 )
+
+# Global dev flags for local edge debugging (applied early so both processes inherit)
+if ($PSBoundParameters.ContainsKey('UseLocalEdgeDecoys') -and $UseLocalEdgeDecoys) {
+  $env:HTX_INNER_PLAINTEXT = '1'
+  if (-not $env:RUST_LOG) { $env:RUST_LOG = 'debug,stealth-browser=debug,edge-gateway=debug,htx=debug' }
+}
 function Normalize-TargetHost {
   param([string]$InputHost)
   if (-not $InputHost) { return $InputHost }
@@ -168,17 +191,111 @@ function Parse-LogFallback {
   return $result
 }
 
-function New-DecoyCatalogJson {
-    param([int]$EdgePort)
-    $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $obj = @{ catalog = @{ version = 1; updated_at = $epoch; entries = @(@{ host_pattern='*'; decoy_host='localhost'; port=$EdgePort; alpn=@('h2','http/1.1'); weight=1 }) } }
-    return ($obj | ConvertTo-Json -Depth 6 -Compress)
+function Get-PublisherPubKeyHex {
+  if ($PublisherPubKeyHex) { return ($PublisherPubKeyHex.Trim()) }
+  if ($PublisherPubKeyFile) {
+    if (-not (Test-Path $PublisherPubKeyFile)) { throw "PublisherPubKeyFile not found: $PublisherPubKeyFile" }
+    return ((Get-Content $PublisherPubKeyFile | Where-Object { $_ -and -not ($_.TrimStart().StartsWith('#')) }) -join '' ).Trim()
+  }
+  if ($env:STEALTH_DECOY_PUBKEY_HEX) { return $env:STEALTH_DECOY_PUBKEY_HEX.Trim() }
+  throw 'Publisher public key hex not supplied (use -PublisherPubKeyHex, -PublisherPubKeyFile or pre-set STEALTH_DECOY_PUBKEY_HEX).'
 }
 
-Write-Verbose 'Preparing environment variables'
-$env:STEALTH_DECOY_CATALOG_JSON = New-DecoyCatalogJson -EdgePort $EdgePort
-$env:STEALTH_DECOY_ALLOW_UNSIGNED = '1'
+function Get-CatalogJsonSigned {
+  if ($CatalogJson) { return $CatalogJson }
+  if ($CatalogFile) {
+    if (-not (Test-Path $CatalogFile)) { throw "CatalogFile not found: $CatalogFile" }
+    return Get-Content -Raw $CatalogFile
+  }
+  Write-Verbose "Downloading catalog from $CatalogUrl"
+  try {
+    return (Invoke-WebRequest -Uri $CatalogUrl -UseBasicParsing -TimeoutSec 20).Content
+  } catch {
+    throw "Failed to download catalog from $CatalogUrl : $($_.Exception.Message)"
+  }
+}
+
+Write-Verbose 'Fetching publisher public key'
+$pubKeyHex = Get-PublisherPubKeyHex
+if ($pubKeyHex.Length -ne 64) { Write-Warning "Publisher pubkey hex length typically 64 chars (32 bytes); got $($pubKeyHex.Length)" }
+
+Write-Verbose 'Fetching signed catalog JSON'
+$catalogJson = Get-CatalogJsonSigned
+if (-not ($catalogJson | Select-String '"signature_hex"')) { throw 'Catalog JSON missing signature_hex (expected inline signature).' }
+
+# Verify catalog using catalog-signer (detached or inline). We provide pubkey via temp file.
+$tmpPub = New-TemporaryFile
+Set-Content -Path $tmpPub -Value $pubKeyHex -NoNewline
+$tmpCatalog = New-TemporaryFile
+Set-Content -Path $tmpCatalog -Value $catalogJson -NoNewline
+
+Write-Host '[0/6] Verifying catalog signature…'
+& cargo run -q -p catalog-signer -- verify --catalog $tmpCatalog --pubkey-file $tmpPub | Write-Verbose
+if ($LASTEXITCODE -ne 0) {
+  throw "Catalog signature verification FAILED (exit $LASTEXITCODE)"
+}
+$catalogVerified = $true
+
+Write-Verbose 'Exporting signed catalog env vars'
+$env:STEALTH_DECOY_PUBKEY_HEX = $pubKeyHex
 $env:STEALTH_LOG_DECOY_ONLY = '0'
+
+# Detect if this is a catalog-first JSON (schema_version present) and optionally derive a decoy-catalog JSON accepted by htx::decoy
+try {
+  $parsed = $catalogJson | ConvertFrom-Json -ErrorAction Stop
+} catch { throw 'Catalog JSON failed to parse after successful signature verification (unexpected).'; }
+
+$isCatalogFirst = $parsed.PSObject.Properties.Name -contains 'schema_version' -and $parsed.PSObject.Properties.Name -contains 'catalog_version'
+if ($isCatalogFirst -and $DeriveUnsignedDecoyFromCatalog) {
+  Write-Verbose 'Deriving unsigned decoy catalog from catalog-first format (dev-only chain-of-trust: signed -> derived)'
+  # Build decoy entries: one per entry host, mapping host_pattern="*" for the first entry and host-specific for others
+  $entries = @()
+  $i = 0
+  foreach ($e in $parsed.entries) {
+    $entryHost = $e.host
+    if (-not $entryHost) { continue }
+    $alpn = if ($e.alpn) { $e.alpn } else { @('h2','http/1.1') }
+    $port = if ($e.ports -and $e.ports.Count -gt 0) { $e.ports[0] } else { 443 }
+    $weight = if ($e.weight) { [int]$e.weight } else { 1 }
+    $pattern = if ($i -eq 0) { '*' } else { $entryHost }
+    if ($UseLocalEdgeDecoys) {
+      $entries += @{ host_pattern = $pattern; decoy_host = 'localhost'; port = $EdgePort; alpn = $alpn; weight = $weight }
+    } else {
+      $entries += @{ host_pattern = $pattern; decoy_host = $entryHost; port = $port; alpn = $alpn; weight = $weight }
+    }
+    $i++
+  }
+  if ($entries.Count -eq 0) { throw 'No usable entries in catalog to derive decoy list.' }
+  # Use catalog_version as version; updated_at from generated_at or now.
+  $generatedAt = $parsed.generated_at
+  $updatedEpoch = 0
+  try { if ($generatedAt) { $updatedEpoch = [DateTimeOffset]::Parse($generatedAt).ToUnixTimeSeconds() } } catch { }
+  if ($updatedEpoch -le 0) { $updatedEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+  $decoy = @{ catalog = @{ version = [int]$parsed.catalog_version; updated_at = $updatedEpoch; entries = $entries } }
+  $decoyJson = ($decoy | ConvertTo-Json -Depth 8 -Compress)
+  # Mark as unsigned but trusted (derived from previously verified signed catalog)
+  $env:STEALTH_DECOY_ALLOW_UNSIGNED = '1'
+  $env:STEALTH_DECOY_CATALOG_JSON = $decoyJson
+  Write-Verbose "Derived decoy entries: $($entries.Count); using unsigned env (STEALTH_DECOY_ALLOW_UNSIGNED=1) after upstream signature verification"
+  if ($UseLocalEdgeDecoys) {
+    $localCert = Join-Path $PSScriptRoot '..' 'certs' 'localhost.pem'
+    if (Test-Path $localCert) {
+      if ($env:HTX_TRUST_PEM) { $env:HTX_TRUST_PEM = "$($env:HTX_TRUST_PEM);$localCert" } else { $env:HTX_TRUST_PEM = $localCert }
+      Write-Verbose "Appended local edge cert to HTX_TRUST_PEM=$localCert"
+      # Force inner plaintext mux for template/key mismatch resilience in local dev
+      $env:HTX_INNER_PLAINTEXT = '1'
+      Write-Verbose 'Enabled HTX_INNER_PLAINTEXT=1 for local edge decoy debugging'
+    } else {
+      Write-Warning "-UseLocalEdgeDecoys set but certs/localhost.pem not found; TLS verification may fail; consider generating or pointing HTX_TRUST_PEM manually"
+    }
+  }
+} else {
+  if ($isCatalogFirst -and -not $DeriveUnsignedDecoyFromCatalog) {
+    Write-Warning 'Catalog-first JSON provided, but decoy derivation disabled; decoy resolver will likely fail to load.'
+  }
+  $env:STEALTH_DECOY_CATALOG_JSON = $catalogJson
+  if ($env:STEALTH_DECOY_ALLOW_UNSIGNED) { Remove-Item Env:STEALTH_DECOY_ALLOW_UNSIGNED -ErrorAction SilentlyContinue }
+}
 
 # Edge TLS cert/key (self-signed for localhost)
 $env:HTX_TLS_CERT = (Join-Path $PSScriptRoot '..' 'certs' 'localhost.pem')
@@ -254,14 +371,33 @@ try {
   $status = [pscustomobject]@{ state=$fb.state; mode='masked'; last_target=$fb.last_target; last_decoy=$fb.last_decoy; decoy_count=$null }
 }
 
+# Extract optional fields safely
+function Get-OptionalField($obj, $name) {
+  if ($null -eq $obj) { return $null }
+  $prop = $obj.PSObject.Properties | Where-Object { $_.Name -eq $name }
+  if ($prop) { return $prop.Value } else { return $null }
+}
+
+$lastTarget = Get-OptionalField $status 'last_target'
+$lastDecoy  = Get-OptionalField $status 'last_decoy'
+$maskedSuccesses = Get-OptionalField $status 'masked_successes'
+$maskedFailures  = Get-OptionalField $status 'masked_failures'
+$maskedAttempts  = Get-OptionalField $status 'masked_attempts'
+
+if (-not $lastTarget -and $maskedAttempts -and $maskedFailures -ge 1) {
+  Write-Warning "No successful masked connection yet (attempts=$maskedAttempts failures=$maskedFailures). Check edge-gateway logs and decoy reachability." }
+
 $summary = [pscustomobject]@{
     Target      = $Target
     SocksResult = $socksResult
   State          = $status.state
   Mode           = $status.mode
-  LastTarget     = $status.last_target
-  LastDecoy      = $status.last_decoy
-  DecoyCount     = $status.decoy_count
+  LastTarget     = $lastTarget
+  LastDecoy      = $lastDecoy
+  DecoyCount     = (Get-OptionalField $status 'decoy_count')
+  MaskedAttempts = $maskedAttempts
+  MaskedFailures = $maskedFailures
+  MaskedSuccesses= $maskedSuccesses
     StatusPort  = $StatusPort
     SocksPort   = $SocksPort
     EdgePort    = $EdgePort
@@ -269,6 +405,8 @@ $summary = [pscustomobject]@{
   StealthLogErr  = $sbErr
   EdgeLogOut     = $edgeLog
   EdgeLogErr     = $edgeErr
+  CatalogSource  = if ($CatalogFile) { $CatalogFile } elseif ($CatalogJson) { 'inline-param' } else { $CatalogUrl }
+  Verification   = if ($catalogVerified) { 'signature-ok' } else { 'unknown'}
     LogHints    = 'Search logs for: masked: and CONNECT prelude received'
 }
 

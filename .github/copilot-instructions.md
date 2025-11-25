@@ -201,3 +201,26 @@ Operational readiness notes:
 
 ---
 If any section above seems incomplete for your current change, open an issue or append clarifying notes in the PR so maintainers can extend these instructions.
+
+---
+
+## 14. Absolute Non-Expansion Rule (Added by Governance Rotation)
+Effective immediately, the AI coding agent MUST NOT introduce any "optional" or unsolicited additions of any kind beyond the explicitly requested change. This prohibition includes (but is not limited to):
+1. Extra refactors, stylistic cleanups, or “drive‑by” improvements not directly required to satisfy the user’s stated request.
+2. Added tests, docs, benchmarks, comments, README sections, tasks, feature flags, or configuration tweaks unless the user (or an existing task ID in `qnet-spec/specs/001-qnet/tasks.md`) explicitly mandates them.
+3. Security hardening, performance tuning, or lint fixes that were *not* part of the explicit ask (even if seemingly harmless).
+4. “Helpful” future suggestions embedded into code, comments, or PR descriptions.
+
+Enforcement Clarifications:
+- If earlier guidance in this file or other repo docs encouraged “proactive extras” or “small adjacent improvements,” that guidance is now superseded by this Rule 14.
+- When ambiguity exists, the agent must STOP and ask for explicit confirmation before proceeding with anything beyond the minimal diff.
+- Any attempt to add non-requested artifacts should be rejected by the agent with a short explanation referencing Rule 14.
+- Task creation: Only create or modify a task entry if the user explicitly asks for a change that lacks a mapping; do **not** add tasks for governance, formatting, or perceived hygiene without direction.
+
+Minimalism Principle:
+Deliver exactly and only what was asked—no expansion of scope, no “nice to have” layering. The sole exception is correcting a build-breaking issue introduced by the minimal change itself; such fixes are allowed but must be strictly limited to restoring a passing build.
+
+Conflict Resolution:
+If any other document conflicts with this rule, this rule takes precedence unless a maintainer explicitly revokes or narrows it in a follow-up change.
+
+---

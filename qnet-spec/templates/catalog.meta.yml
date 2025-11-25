@@ -3,15 +3,14 @@
 
 schema_version: 1
 catalog_version: 1
-publisher_id: qnet.main.ed25519.2025
+publisher_id: QW1CKS
 
 # ISO 8601/RFC3339 times; signer will set generated_at automatically if omitted
 # generated_at: "2025-09-12T12:00:00Z"
 # expires_at: "2025-09-19T12:00:00Z"  # 7d default if omitted
 
 update_urls:
-  - https://raw.githubusercontent.com/<org>/qnet-catalogs/main/dist/catalog.json
-  - https://<org>.github.io/qnet-catalogs/catalog.json
+  - https://raw.githubusercontent.com/QW1CKS/qnet-catalog/refs/heads/main/catalog.json
 
 seed_fallback_urls:
-  - https://seed1.example.org/bootstrap.json
+  - https://raw.githubusercontent.com/QW1CKS/qnet-catalog/refs/heads/main/catalog.json

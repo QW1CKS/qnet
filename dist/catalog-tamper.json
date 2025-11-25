@@ -28,7 +28,7 @@
       "region": [
         "global"
       ],
-      "weight": 10,
+      "weight": 11,
       "health_path": "/",
       "tls_profile": "chrome-like-2025q3",
       "quic_hints": null

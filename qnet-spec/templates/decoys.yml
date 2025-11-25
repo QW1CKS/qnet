@@ -2,24 +2,42 @@
 # Matches schema in docs/catalog-schema.md
 
 schema_version: 1
-publisher_id: qnet.main.ed25519.2025
+publisher_id: QW1CKS
 
 entries:
-  - id: cdn-01
-    host: www.example-cdn.com
+  - id: ggle-01
+    host: www.google.com
     ports: [443]
     protocols: [tcp, quic]
     alpn: [h2, h3]
-    region: [global, cdn]
+    region: [global]
     weight: 10
     health_path: /
     tls_profile: chrome-like-2025q3
-  - id: edge-01
-    host: edge.example.net
+  - id: amz-01
+    host: www.amazon.com
     ports: [443]
     protocols: [tcp]
-    alpn: [h2]
+    alpn: [h2, http/1.1]
     region: [global]
-    weight: 5
+    weight: 6
+    health_path: /
+    tls_profile: chrome-like-2025q3
+  - id: wiki-01
+    host: www.wikipedia.org
+    ports: [443]
+    protocols: [tcp, quic]
+    alpn: [h2, h3]
+    region: [global]
+    weight: 4
+    health_path: /
+    tls_profile: chrome-like-2025q3
+  - id: g2a-01
+    host: www.g2a.com
+    ports: [443]
+    protocols: [tcp]
+    alpn: [h2, http/1.1]
+    region: [global]
+    weight: 3
     health_path: /
     tls_profile: chrome-like-2025q3
