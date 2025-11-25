@@ -49,6 +49,63 @@ The routing layer that bypasses IP blocks.
     - **Private Mode (3-Hop)**: User -> Peer -> Peer -> Peer -> Destination.
 - **Resilience**: If direct access to a site is blocked, the mesh routes around the block via peers in free jurisdictions.
 
+### 3.3 Bootstrap Strategy
+**Decentralized Peer Discovery**
+
+QNet uses a hybrid bootstrap approach that eliminates central points of failure:
+
+#### Primary: Public libp2p DHT
+- Leverages the global IPFS/libp2p distributed hash table (free infrastructure)
+- No QNet-specific servers required for peer discovery
+- Used by thousands of IPFS nodes worldwide (battle-tested reliability)
+- Provides initial peer list to join the mesh
+
+#### Secondary: Operator Seed Nodes
+- Small DigitalOcean droplets ($4-6/month per region) run by network operator
+- Serve dual purpose:
+  1. **Backup bootstrap** if public DHT unavailable
+  2. **Primary exit nodes** (see 3.4)
+- Recommended: 2-3 droplets globally (Americas, Europe, Asia)
+
+#### Catalog-Based Updates
+- Bootstrap node list can be updated via signed catalogs
+- Allows community to add volunteer seed nodes
+- Enables smooth migration without hardcoded changes
+
+**Result**: Zero single point of failure - network remains accessible even if operator's droplets go offline.
+
+### 3.4 Exit Node Architecture
+**Professional Exit Nodes for User Safety**
+
+QNet employs a three-tier model to protect users from legal liability:
+
+#### Tier 1: User Helpers (Relay-Only Mode)
+- **Default configuration**: Users run as relay nodes only
+- **Function**: Forward encrypted packets through the mesh
+- **Legal Protection**: Cannot see packet contents (end-to-end encrypted)
+- **No Risk**: Never make actual web requests, only relay encrypted traffic
+- **99% of network**: Most users operate in this safe mode
+
+#### Tier 2: Operator Exit Nodes (Primary Exits)
+- **DigitalOcean droplets** ($8-18/month total for global coverage)
+- **Function**: Decrypt packets and make actual web requests
+- **Professional Operation**: Proper logging, abuse policies, legal notices
+- **Reliability**: 99.9% uptime, fast bandwidth, multiple regions
+- **User Protection**: Home users never exposed to exit node legal risks
+
+#### Tier 3: Volunteer Exits (Optional)
+- **Opt-in only**: Experienced users can choose to act as exits
+- **Clear Warnings**: Legal liability disclosures before enabling
+- **Exit Policies**: Granular control over what traffic to exit
+- **Recommended**: Run on VPS, not home connections
+
+**Cost Efficiency**: 
+- 2 droplets @ $4/month = $8/month (minimal deployment)
+- 3 droplets @ $6/month = $18/month (recommended global coverage)
+- Serves 200-400 users per region with basic droplets
+
+**Design Philosophy**: Users relay safely, operators handle exit risks professionally.
+
 ## 4. Cryptography Standards
 All implementations MUST adhere to these primitives:
 - **Cipher**: ChaCha20-Poly1305 (AEAD).

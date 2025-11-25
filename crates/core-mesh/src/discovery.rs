@@ -42,6 +42,7 @@ use libp2p::{
     mdns,
     Multiaddr, PeerId,
 };
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::relay::RoutingTable;
@@ -94,11 +95,147 @@ impl BootstrapNode {
 /// Per QNet architecture, the catalog has priority over hardcoded seeds.
 /// Seeds are only used if no valid, fresh catalog is available.
 pub fn load_bootstrap_nodes() -> Vec<BootstrapNode> {
-    // TODO: Integrate with catalog loader (task linkage: catalog system from Phase 1.5)
-    // For now, return empty vec to avoid hardcoded seeds without catalog validation
-    log::warn!("catalog-first: No catalog available, bootstrap nodes empty (seeds not used)");
+    // Try to load from environment variable first
+    if let Ok(catalog_json) = std::env::var("QNET_BOOTSTRAP_CATALOG_JSON") {
+        match load_catalog_from_json(&catalog_json) {
+            Ok(nodes) => {
+                log::info!("catalog-first: Loaded {} bootstrap nodes from catalog", nodes.len());
+                return nodes;
+            }
+            Err(e) => {
+                log::warn!("catalog-first: Failed to load catalog: {}, falling back to hardcoded seeds", e);
+            }
+        }
+    }
+
+    // Fallback to hardcoded seed nodes if catalog unavailable
+    log::info!("catalog-first: Using hardcoded seed nodes");
+    hardcoded_seed_nodes()
+}
+
+/// Load bootstrap catalog from JSON string.
+///
+/// Supports two formats:
+/// 1. Signed catalog: `{"catalog": {...}, "signature_hex": "..."}`
+/// 2. Unsigned catalog (dev only): `{"catalog": {...}}`
+///
+/// Signature is verified using QNET_BOOTSTRAP_PUBKEY_HEX environment variable.
+fn load_catalog_from_json(json: &str) -> Result<Vec<BootstrapNode>, String> {
+    use serde::{Deserialize, Serialize};
+    
+    #[derive(Debug, Deserialize, Serialize)]
+    struct BootstrapEntry {
+        peer_id: String,
+        multiaddr: String,
+    }
+    
+    #[derive(Debug, Deserialize, Serialize)]
+    struct BootstrapCatalog {
+        version: u32,
+        updated_at: u64,
+        entries: Vec<BootstrapEntry>,
+    }
+    
+    #[derive(Debug, Deserialize)]
+    struct SignedCatalog {
+        catalog: BootstrapCatalog,
+        signature_hex: String,
+    }
+    
+    #[derive(Debug, Deserialize)]
+    struct UnsignedWrapper {
+        catalog: BootstrapCatalog,
+    }
+    
+    // Try signed catalog first
+    if let Ok(signed) = serde_json::from_str::<SignedCatalog>(json) {
+        if let Ok(pubkey_hex) = std::env::var("QNET_BOOTSTRAP_PUBKEY_HEX") {
+            verify_and_parse_catalog(&signed.catalog, &pubkey_hex, &signed.signature_hex)?;
+            return parse_catalog_entries(&signed.catalog);
+        } else {
+            return Err("Signed catalog provided but QNET_BOOTSTRAP_PUBKEY_HEX not set".into());
+        }
+    }
+    
+    // Try unsigned catalog (dev/testing only)
+    if std::env::var("QNET_BOOTSTRAP_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
+        if let Ok(unsigned) = serde_json::from_str::<UnsignedWrapper>(json) {
+            log::warn!("catalog-first: Using UNSIGNED catalog (dev mode)");
+            return parse_catalog_entries(&unsigned.catalog);
+        }
+    }
+    
+    Err("Failed to parse catalog JSON".into())
+}
+
+/// Verify catalog signature using Ed25519.
+fn verify_and_parse_catalog(
+    catalog: &impl Serialize,
+    pubkey_hex: &str,
+    signature_hex: &str,
+) -> Result<(), String> {
+    // Decode public key
+    let pubkey = hex::decode(pubkey_hex.trim())
+        .map_err(|e| format!("Invalid public key hex: {}", e))?;
+    
+    // Serialize catalog to deterministic CBOR
+    let cbor_bytes = core_cbor::to_det_cbor(catalog)
+        .map_err(|e| format!("CBOR encoding failed: {}", e))?;
+    
+    // Decode signature
+    let signature = hex::decode(signature_hex.trim())
+        .map_err(|e| format!("Invalid signature hex: {}", e))?;
+    
+    // Verify signature
+    core_crypto::ed25519::verify(&pubkey, &cbor_bytes, &signature)
+        .map_err(|_| "Signature verification failed".to_string())?;
+    
+    Ok(())
+}
+
+/// Parse catalog entries into BootstrapNode list.
+fn parse_catalog_entries(catalog: &impl serde::Serialize) -> Result<Vec<BootstrapNode>, String> {
+    use serde::Deserialize;
+    
+    #[derive(Deserialize)]
+    struct Entry {
+        peer_id: String,
+        multiaddr: String,
+    }
+    
+    #[derive(Deserialize)]
+    struct Cat {
+        entries: Vec<Entry>,
+    }
+    
+    // Re-serialize and deserialize to extract entries
+    let json = serde_json::to_string(catalog)
+        .map_err(|e| format!("Catalog serialization failed: {}", e))?;
+    let cat: Cat = serde_json::from_str(&json)
+        .map_err(|e| format!("Catalog parse failed: {}", e))?;
+    
+    let mut nodes = Vec::new();
+    for entry in cat.entries {
+        let peer_id = entry.peer_id.parse()
+            .map_err(|e| format!("Invalid peer_id {}: {}", entry.peer_id, e))?;
+        let multiaddr = entry.multiaddr.parse()
+            .map_err(|e| format!("Invalid multiaddr {}: {}", entry.multiaddr, e))?;
+        nodes.push(BootstrapNode::new(peer_id, multiaddr));
+    }
+    
+    Ok(nodes)
+}
+
+/// Hardcoded seed nodes for resilience when catalog is unavailable.
+///
+/// These are fallback nodes maintained by the QNet project.
+/// Update this list when adding new trusted seed nodes.
+fn hardcoded_seed_nodes() -> Vec<BootstrapNode> {
+    // TODO: Replace with actual QNet seed nodes when deployed
+    // For now, return empty to avoid invalid seeds
     Vec::new()
 }
+
 
 /// Combined peer discovery behavior using Kademlia DHT and mDNS.
 ///

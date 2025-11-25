@@ -254,10 +254,86 @@
 
 ---
 
-### 2.5 Production-Readiness Checkpoint (Phase 2)
+### 2.5 Bootstrap & Exit Node Infrastructure
+**Goal**: Deploy minimal infrastructure for decentralized bootstrap and professional exits.
+
+#### 2.5.1 Update Bootstrap Configuration
+- [ ] Open file: `crates/core-mesh/src/discovery.rs`
+- [ ] Update `public_libp2p_seeds()` function
+- [ ] Add public IPFS bootstrap nodes:
+  - [ ] `/dnsaddr/bootstrap.libp2p.io`
+  - [ ] `/dnsaddr/ipfs.io`
+  - [ ] Public libp2p multiaddrs from IPFS docs
+- [ ] Test: Verify Helper can bootstrap via public DHT
+- [ ] Test: `cargo test -p core-mesh --lib bootstrap`
+
+#### 2.5.2 Prepare Droplet Deployment Script
+- [ ] Create file: `scripts/deploy-exit-node.sh`
+- [ ] Add droplet provisioning steps:
+  - [ ] Install Rust via rustup
+  - [ ] Clone QNet repository
+  - [ ] Build stealth-browser binary
+  - [ ] Configure as exit + bootstrap node
+  - [ ] Set up systemd service
+- [ ] Add environment variable configuration
+- [ ] Test: Deploy to test droplet manually
+
+#### 2.5.3 Configure Exit Node Mode
+- [ ] Open file: `apps/stealth-browser/src/main.rs`
+- [ ] Add CLI flag: `--exit-node` (enables exit mode)
+- [ ] Add CLI flag: `--relay-only` (default, disables exit)
+- [ ] Read env var: `QNET_MODE` ("relay", "exit", "bootstrap")
+- [ ] Implement exit node logic (decrypt and forward to internet)
+- [ ] Log warning when exit mode enabled
+
+#### 2.5.4 Add Exit Node Policy
+- [ ] Create struct: `ExitPolicy { max_bandwidth_mbps, allowed_protocols }`
+- [ ] Read from config or env var: `QNET_EXIT_POLICY`
+- [ ] Implement bandwidth limiting per user
+- [ ] Implement protocol filtering (http/https only)
+- [ ] Add abuse detection (rate limiting)
+
+#### 2.5.5 Deploy Initial Droplets (Optional)
+**Note**: This is operator-specific, not required for development
+- [ ] Sign up for DigitalOcean / Linode / Vultr
+- [ ] Create droplet in NYC (Americas):
+  - [ ] 512 MB RAM, 1 vCPU, $4/month
+  - [ ] Run deployment script
+  - [ ] Verify Helper starts as exit + bootstrap
+- [ ] Create droplet in Amsterdam (Europe):
+  - [ ] Same specs as NYC
+  - [ ] Run deployment script
+- [ ] Update `.env` with droplet IPs:
+  - [ ] `QNET_OPERATOR_SEEDS="ip1:4001,ip2:4001"`
+- [ ] Test: Connect local Helper to deployed droplets
+
+#### 2.5.6 Update Hardcoded Seeds
+- [ ] Open file: `crates/core-mesh/src/discovery.rs`
+- [ ] Update `qnet_official_seeds()` function
+- [ ] Add droplet IPs as secondary bootstrap (if deployed)
+- [ ] Keep public libp2p DHT as primary
+- [ ] Commit seed configuration
+
+#### 2.5.7 Documentation
+- [ ] Update `README.md` with infrastructure notes
+- [ ] Document droplet deployment process
+- [ ] Add cost breakdown table ($8-18/month)
+- [ ] Explain relay vs exit mode for users
+- [ ] Add legal disclaimer for exit node operators
+
+#### 2.5.8 Testing
+- [ ] Test bootstrap via public libp2p DHT only
+- [ ] Test bootstrap with droplets as fallback
+- [ ] Verify relay-only users cannot exit
+- [ ] Verify exit nodes make actual requests
+- [ ] Test exit node bandwidth limiting
+
+---
+
+### 2.6 Production-Readiness Checkpoint (Phase 2)
 **Goal**: Validate mesh network reliability before extension development.
 
-#### 2.5.1 Security Audit
+#### 2.6.1 Security Audit
 - [ ] Run `cargo clippy --workspace --all-targets -- -D warnings`
 - [ ] Run `cargo audit` to check for vulnerable dependencies
 - [ ] Review all crypto usage matches `core-crypto` wrappers only

@@ -1049,8 +1049,11 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "base32",
+ "core-cbor",
+ "core-crypto",
  "criterion",
  "futures",
+ "hex",
  "libp2p",
  "libp2p-mdns",
  "log",

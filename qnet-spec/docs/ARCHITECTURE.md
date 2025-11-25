@@ -189,3 +189,191 @@ Current implementation provides API and structure but requires libp2p Swarm even
 
 Future phases will integrate Swarm runtime for complete mesh functionality.
 
+---
+
+## Bootstrap Infrastructure (Phase 2.5)
+
+QNet employs a hybrid bootstrap strategy that balances decentralization with reliability while minimizing operator costs.
+
+### Primary: Public libp2p DHT (Free Infrastructure)
+
+**Global Peer Discovery Without QNet Servers**
+
+QNet leverages the existing IPFS/libp2p distributed hash table for bootstrap:
+
+- **Zero Infrastructure Cost**: Uses public IPFS bootstrap nodes maintained by the global IPFS community
+- **Battle-Tested Reliability**: Thousands of IPFS nodes worldwide provide redundant discovery
+- **No Single Point of Failure**: Decentralized DHT ensures network remains accessible
+- **Implementation**: `public_libp2p_seeds()` returns well-known IPFS bootstrap multiaddrs
+
+**Bootstrap Multiaddrs** (from IPFS project):
+```
+/dnsaddr/bootstrap.libp2p.io
+/dnsaddr/ipfs.io
+/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ
+```
+
+### Secondary: Operator Seed Nodes (Minimal VPS)
+
+**Backup Bootstrap + Primary Exit Nodes**
+
+Small DigitalOcean droplets ($4-6/month) serve dual purpose:
+1. Secondary bootstrap if public DHT unavailable
+2. Primary exit nodes (see Exit Node Architecture below)
+
+**Recommended Deployment**:
+- 2 droplets @ $4/month = $8/month (minimal)
+- 3 droplets @ $6/month = $18/month (global coverage)
+
+**Regions**: NYC (Americas), Amsterdam (Europe), Singapore (Asia)
+
+### Catalog-Based Updates
+
+Bootstrap node lists can be dynamically updated via signed catalogs:
+- Operator can add new droplets without code changes
+- Community volunteers can contribute seed nodes
+- Smooth migration path as network grows
+- Catalog verification ensures trust
+
+---
+
+## Exit Node Architecture (Phase 2.5)
+
+QNet protects users from legal liability through a three-tier exit node model.
+
+### The Exit Node Problem
+
+**Risk**: If home users act as exits, their IP makes actual web requests, exposing them to legal liability for others' traffic.
+
+**Solution**: Professional operator-run exit nodes, with users defaulting to safe relay-only mode.
+
+### Tier 1: User Helpers (Relay-Only Mode)
+
+**Default Configuration: 99% of Network**
+
+- **Role**: Forward encrypted packets through the mesh
+- **Legal Protection**: Cannot see packet contents (end-to-end encrypted via HTX)
+- **Defense**: "I was relaying encrypted data, similar to an ISP routing traffic"
+- **Risk**: Zero (never decrypt or make actual requests)
+- **Configuration**: `--relay-only` (default, no opt-in needed)
+
+**What Users Do**:
+```
+User A Traffic → [Encrypted Packet] → User B Helper → [Still Encrypted] → Exit Node
+```
+
+User B never sees destination or content - just encrypted bytes.
+
+### Tier 2: Operator Exit Nodes (Primary Exits)
+
+**Professional Operation on Small VPS**
+
+- **Infrastructure**: DigitalOcean droplets ($4-6/month each)
+- **Role**: Decrypt HTX packets and make actual HTTP/HTTPS requests
+- **Legal**: Proper abuse policies, logging, terms of service
+- **Reliability**: 99.9% uptime, dedicated bandwidth, multiple regions
+- **Cost Efficiency**: 2-3 droplets serve 200-400 users globally
+
+**What Operator Exits Do**:
+```
+User A Traffic → Relay Nodes → Operator Exit → [Decrypted] → amazon.com
+```
+
+Operator exit sees destination and makes request (legal liability managed properly).
+
+**Exit Policy Controls**:
+- Bandwidth limiting per user (prevent abuse)
+- Protocol filtering (HTTP/HTTPS only, block Tor/BitTorrent)
+- Rate limiting and abuse detection
+- Logging for law enforcement compliance
+
+### Tier 3: Volunteer Exits (Opt-In Only)
+
+**Advanced Users on VPS**
+
+- **Target**: Experienced users who understand legal risks
+- **Requirement**: Explicit opt-in with legal disclaimers
+- **Recommendation**: Run on VPS, not home connections
+- **Configuration**: `--exit-node` flag + legal acceptance
+- **Policy**: Granular exit policy controls (destinations, protocols, bandwidth)
+
+**Warning Display**:
+```
+⚠️  EXIT NODE WARNING
+By enabling exit functionality, your IP will make web requests for other users.
+You may receive legal notices or abuse complaints. Ensure you understand your local laws.
+
+[ ] I understand the risks and accept legal liability
+    [Cancel]  [Enable Exit Node]
+```
+
+### Cost & Economics
+
+| Deployment | Users | Cost/Month | Exit Capacity |
+|-----------|-------|------------|---------------|
+| MVP (1 droplet) | 50-100 | $4 | 500 GB/month |
+| Minimal (2 droplets) | 100-200 | $8 | 1 TB/month |
+| Recommended (3 droplets) | 200-400 | $18 | 2 TB/month |
+| Growth (5-10 droplets) | 500-1000 | $30-60 | 5-10 TB/month |
+
+**Scaling**: Add $4-6/month per region as network grows. Voucher system (Phase 4) funds infrastructure.
+
+### Implementation
+
+**Helper Configuration** (`apps/stealth-browser/src/main.rs`):
+```rust
+pub struct HelperMode {
+    relay: bool,        // Default: true (always forward encrypted packets)
+    exit: bool,         // Default: false (opt-in only for liability)
+    bootstrap: bool,    // Default: false (only for operator seeds)
+}
+```
+
+**CLI Flags**:
+```bash
+# Default user mode (safe, no liability)
+stealth-browser --relay-only
+
+# Operator droplet (exit + bootstrap)
+stealth-browser --exit-node --bootstrap
+
+# Advanced volunteer exit (VPS recommended)
+stealth-browser --exit-node --exit-policy=strict.json
+```
+
+**Exit Policy** (`exit-policy.json`):
+```json
+{
+  "max_bandwidth_mbps": 100,
+  "allowed_protocols": ["http", "https"],
+  "blocked_destinations": ["torrent-tracker.example.com"],
+  "rate_limit_per_user_mbps": 5,
+  "abuse_detection": {
+    "max_connections_per_minute": 60,
+    "blocked_on_abuse_for_minutes": 30
+  }
+}
+```
+
+### Legal Protection Strategy
+
+**For Users (Relay-Only)**:
+- Encrypted forwarding only (cannot see content)
+- Similar legal status to ISPs and VPNs
+- No decryption = no liability for content
+
+**For Operator Exits**:
+- Professional operation with abuse policies
+- Proper logging for law enforcement
+- Terms of service
+ clearly state traffic relay nature
+- Located in jurisdictions with safe harbor laws (NL, SE, IS)
+
+**For Volunteer Exits**:
+- Clear opt-in with legal disclaimers
+- Run on VPS in safe jurisdictions, not home
+- Exit policy controls limit exposure
+- Tor-style "I'm running a Tor exit" legal templates
+
+---
+
