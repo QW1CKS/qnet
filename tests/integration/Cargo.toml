@@ -1,0 +1,15 @@
+[package]
+name = "mesh-discovery-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+async-std = { version = "1", features = ["attributes"] }
+core-mesh = { path = "../../crates/core-mesh", features = ["with-libp2p"] }
+libp2p = { version = "0.53", default-features = false, features = ["identify"] }
+
+[[test]]
+name = "mesh_discovery"
+path = "tests/mesh_discovery.rs"
+harness = true

@@ -49,52 +49,52 @@
 **Goal**: Allow Helpers to find each other automatically.
 
 #### 2.1.1 Setup Discovery Module
-- [ ] Create file: `crates/core-mesh/src/discovery.rs`
-- [ ] Add module declaration in `crates/core-mesh/src/lib.rs`
-- [ ] Import libp2p Kademlia DHT dependencies in `Cargo.toml`
+- [x] Create file: `crates/core-mesh/src/discovery.rs`
+- [x] Add module declaration in `crates/core-mesh/src/lib.rs`
+- [x] Import libp2p Kademlia DHT dependencies in `Cargo.toml`
 
 #### 2.1.2 Implement Bootstrap Logic
-- [ ] Define bootstrap node struct `BootstrapNode { peer_id, multiaddr }`
-- [ ] Create function: `load_bootstrap_nodes() -> Vec<BootstrapNode>`
-- [ ] Load bootstrap nodes from catalog
-- [ ] Add fallback to hardcoded seeds if catalog fails
+- [x] Define bootstrap node struct `BootstrapNode { peer_id, multiaddr }`
+- [x] Create function: `load_bootstrap_nodes() -> Vec<BootstrapNode>`
+- [x] Load bootstrap nodes from catalog
+- [x] Add fallback to hardcoded seeds if catalog fails
 
 #### 2.1.3 Implement Kademlia DHT
-- [ ] Create Kademlia behavior: `let kademlia = Kademlia::new(peer_id, store)`
-- [ ] Add bootstrap peers to Kademlia routing table
-- [ ] Implement periodic DHT refresh (every 5 minutes)
-- [ ] Add logging for DHT events (peer discovered, peer lost)
+- [x] Create Kademlia behavior: `let kademlia = Kademlia::new(peer_id, store)`
+- [x] Add bootstrap peers to Kademlia routing table
+- [x] Implement periodic DHT refresh (every 5 minutes)
+- [x] Add logging for DHT events (peer discovered, peer lost)
 
 #### 2.1.4 Implement mDNS Local Discovery
-- [ ] Create mDNS behavior: `let mdns = Mdns::new(MdnsConfig::default())`
-- [ ] Listen for mDNS events (peer discovered on LAN)
-- [ ] Add discovered peers to Kademlia
-- [ ] Add logging for local peer discovery
+- [x] Create mDNS behavior: `let mdns = Mdns::new(MdnsConfig::default())`
+- [x] Listen for mDNS events (peer discovered on LAN)
+- [x] Add discovered peers to Kademlia
+- [x] Add logging for local peer discovery
 
 #### 2.1.5 Combine Discovery Mechanisms
-- [ ] Create `DiscoveryBehavior` struct combining Kademlia + mDNS
-- [ ] Implement `NetworkBehaviour` trait for `DiscoveryBehavior`
-- [ ] Add method: `pub async fn discover_peers(&mut self) -> Result<Vec<PeerId>>`
-- [ ] Add method: `pub fn peer_count(&self) -> usize`
+- [x] Create `DiscoveryBehavior` struct combining Kademlia + mDNS
+- [x] Implement `NetworkBehaviour` trait for `DiscoveryBehavior`
+- [x] Add method: `pub async fn discover_peers(&mut self) -> Result<Vec<PeerId>>`
+- [x] Add method: `pub fn peer_count(&self) -> usize`
 
 #### 2.1.6 Integration with Helper
-- [ ] Add `DiscoveryBehavior` to Helper's network stack
-- [ ] Start discovery on Helper startup
-- [ ] Log discovered peers to console
-- [ ] Expose peer count via Status API (`/status` endpoint)
+- [x] Add `DiscoveryBehavior` to Helper's network stack
+- [x] Start discovery on Helper startup
+- [x] Log discovered peers to console
+- [x] Expose peer count via Status API (`/status` endpoint)
 
 #### 2.1.7 Testing
-- [ ] Create file: `tests/integration/mesh_discovery.rs`
-- [ ] Test: Start 3 Helpers, verify they discover each other (mDNS)
-- [ ] Test: Start Helper with bootstrap nodes, verify DHT discovery
-- [ ] Test: Verify peer count increases as nodes join
-- [ ] Run test: `cargo test --test mesh_discovery`
+- [x] Create file: `tests/integration/mesh_discovery.rs`
+- [x] Test: Start 3 Helpers, verify they discover each other (mDNS)
+- [x] Test: Start Helper with bootstrap nodes, verify DHT discovery
+- [x] Test: Verify peer count increases as nodes join
+- [x] Run test: `cargo test --test mesh_discovery`
 
 #### 2.1.8 Documentation
-- [ ] Add doc comment to `discovery.rs` module
-- [ ] Document `discover_peers()` function
-- [ ] Update `qnet-spec/docs/ARCHITECTURE.md` with discovery flow
-- [ ] Add example to `examples/mesh_discovery.rs`
+- [x] Add doc comment to `discovery.rs` module
+- [x] Document `discover_peers()` function
+- [x] Update `qnet-spec/docs/ARCHITECTURE.md` with discovery flow
+- [x] Add example to `examples/mesh_discovery.rs`
 
 ---
 

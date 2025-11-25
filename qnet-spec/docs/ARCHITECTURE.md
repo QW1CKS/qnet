@@ -64,3 +64,128 @@ The response follows the reverse path, encrypted at each step, until it reaches 
 - **Trust**: We do NOT trust the ISP. We do NOT trust individual peers with metadata (onion routing).
 - **Updates**: All updates (catalogs, binaries) must be signed by the developer keys.
 - **Fingerprinting**: We assume the ISP performs Deep Packet Inspection (DPI) and matches TLS fingerprints against known browsers.
+
+---
+
+## Mesh Peer Discovery (Phase 2.1)
+
+The QNet mesh network uses a two-tiered discovery system to enable Helpers to find each other automatically:
+
+### Discovery Mechanisms
+
+1. **Kademlia DHT (Wide-Area Discovery)**
+   - Structured peer-to-peer distributed hash table
+   - Bootstrap nodes loaded from signed catalog (catalog-first priority)
+   - Enables discovery across the internet
+   - Periodic refresh every 5 minutes maintains routing table freshness
+   - Fallback to hardcoded seeds only if catalog unavailable
+
+2. **mDNS (Local Network Discovery)**
+   - Multicast DNS for LAN peer discovery
+   - Zero-configuration discovery on local networks
+   - No bootstrap infrastructure required
+   - Automatic peer announcement and listening
+
+### Discovery Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Helper Startup                                                   │
+│                                                                   │
+│ 1. Generate Ed25519 peer identity                                │
+│ 2. Load bootstrap nodes (catalog → seeds fallback)               │
+│ 3. Initialize DiscoveryBehavior (Kademlia + mDNS)                │
+│ 4. Spawn dedicated async-std discovery thread                    │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Discovery Thread (async-std runtime, isolated from tokio)        │
+│                                                                   │
+│ Every 5 seconds:                                                 │
+│   • Query peer_count() from Kademlia routing table               │
+│   • Update AppState.mesh_peer_count (AtomicU32)                  │
+│   • Log discovered peers (state-transition markers)              │
+│                                                                   │
+│ Concurrent Events:                                               │
+│   • mDNS announces local peer presence                           │
+│   • mDNS listens for other peers on LAN                          │
+│   • Kademlia DHT processes bootstrap connections                 │
+│   • Kademlia DHT maintains routing table                         │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Status API Integration                                           │
+│                                                                   │
+│ GET /status returns:                                             │
+│   {                                                              │
+│     "peers_online": <atomic_read>,  // Updated every 5s          │
+│     "state": "connected",                                        │
+│     "socks_addr": "127.0.0.1:1088",                              │
+│     ...                                                          │
+│   }                                                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Details
+
+**Module**: `crates/core-mesh/src/discovery.rs`
+
+**Key Types**:
+- `BootstrapNode`: Peer ID + Multiaddr for DHT seeding
+- `DiscoveryBehavior`: libp2p NetworkBehaviour combining Kademlia + mDNS
+- `load_bootstrap_nodes()`: Catalog-first loader (returns empty without catalog)
+
+**Helper Integration** (`apps/stealth-browser/src/main.rs`):
+- `spawn_mesh_discovery()`: Dedicated std::thread running async-std runtime
+- `AppState.mesh_peer_count`: Arc<AtomicU32> for thread-safe peer count
+- Runtime bridging: async-std (libp2p) isolated from tokio (Helper main)
+
+**Status Exposure**:
+- `build_status_json()` reads `mesh_peer_count.load(Ordering::Relaxed)`
+- Populates `peers_online` field in status response
+- Browser extension can display live peer count
+
+### Catalog-First Priority
+
+Per QNet architecture, peer discovery prioritizes the signed catalog:
+1. Attempt to load bootstrap nodes from verified catalog
+2. Only fall back to hardcoded seeds if catalog unavailable/invalid
+3. Log `catalog-first:` warnings when falling back to seeds
+
+### Testing
+
+**Unit Tests** (`crates/core-mesh/src/discovery.rs`):
+- Bootstrap node creation and validation
+- DiscoveryBehavior initialization
+- peer_count() and discover_peers() API contracts
+
+**Integration Tests** (`tests/integration/tests/mesh_discovery.rs`):
+- Multi-node discovery scenarios (structure validation)
+- Bootstrap DHT configuration
+- Peer count consistency checks
+- API performance contracts (non-blocking guarantees)
+
+**Physical Tests** (per `qnet-spec/docs/physical-testing.md`):
+- Actual multi-machine network discovery
+- Real mDNS broadcast verification
+- Cross-internet DHT peer finding
+- Production-like mesh behavior
+
+**Example** (`crates/core-mesh/examples/mesh_discovery.rs`):
+- Demonstrates DiscoveryBehavior usage
+- Periodic peer count queries
+- Bootstrap node configuration
+- Environment-based setup
+
+### Limitations
+
+Current implementation provides API and structure but requires libp2p Swarm event loop integration for full live network discovery:
+- DiscoveryBehavior defines NetworkBehaviour trait
+- Actual peer connections require Swarm runner with transports
+- mDNS broadcasts need active network I/O
+- DHT routing requires connection establishment
+
+Future phases will integrate Swarm runtime for complete mesh functionality.
+

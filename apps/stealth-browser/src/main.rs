@@ -9,7 +9,7 @@ use tokio::{
 use tracing_appender::rolling;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration as StdDuration, Instant as StdInstant};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::io::Write as _;
 
 // Instrumentation for status server diagnostics
@@ -191,6 +191,9 @@ async fn main() -> Result<()> {
     if cfg.bootstrap && !cfg.disable_bootstrap {
         spawn_connectivity_monitor(app_state.clone());
     }
+
+    // Start mesh peer discovery (task 2.1.6)
+    spawn_mesh_discovery(app_state.clone());
 
     // Start a tiny local status server (headless-friendly)
     if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone())? {
@@ -489,6 +492,8 @@ struct AppState {
     // Resolved IP forms (best-effort) of current target / decoy
     last_target_ip: Mutex<Option<String>>,
     last_decoy_ip: Mutex<Option<String>>,
+    // Mesh peer count updated by discovery thread (task 2.1.6)
+    mesh_peer_count: Arc<AtomicU32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -518,7 +523,7 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None) }
+        Self { cfg, status: Mutex::new((snap, None)), catalog: Mutex::new(catalog), decoy_catalog: Mutex::new(None), last_update: Mutex::new(None), last_masked_connect: Mutex::new(None), masked_stats: Mutex::new(MaskedStats::default()), last_target_ip: Mutex::new(None), last_decoy_ip: Mutex::new(None), mesh_peer_count: Arc::new(AtomicU32::new(0)) }
     }
 }
 
@@ -561,6 +566,75 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
             }
             drop(guard2);
         }
+    });
+}
+
+/// Spawn mesh peer discovery thread (task 2.1.6)
+/// 
+/// Runs DiscoveryBehavior in a dedicated async-std thread (since libp2p uses async-io).
+/// Updates mesh_peer_count atomic periodically for status API consumption.
+/// Bootstrap nodes are loaded catalog-first per architecture.
+fn spawn_mesh_discovery(state: Arc<AppState>) {
+    let peer_count_ref = state.mesh_peer_count.clone();
+    
+    std::thread::spawn(move || {
+        info!("state-transition: Starting mesh discovery thread");
+        
+        // Run async-std runtime in this thread
+        async_std::task::block_on(async {
+            // Generate local peer identity
+            let keypair = libp2p::identity::Keypair::generate_ed25519();
+            let peer_id = libp2p::PeerId::from(keypair.public());
+            info!(peer_id=%peer_id, "state-transition: Generated local peer ID");
+            
+            // Load bootstrap nodes (catalog-first per architecture)
+            let bootstrap_nodes = core_mesh::discovery::load_bootstrap_nodes();
+            if bootstrap_nodes.is_empty() {
+                info!("catalog-first: No bootstrap nodes available; discovery will rely on mDNS only");
+            } else {
+                info!("catalog: Loaded {} bootstrap nodes", bootstrap_nodes.len());
+            }
+            
+            // Initialize discovery behavior
+            let mut discovery = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
+                Ok(d) => {
+                    info!("state-transition: Discovery initialized successfully");
+                    d
+                }
+                Err(e) => {
+                    warn!(error=?e, "mesh: Discovery initialization failed; peer count will remain 0");
+                    return;
+                }
+            };
+            
+            // Periodic update loop (every 5 seconds per task implicit refresh rate)
+            loop {
+                // Query current peer count
+                let count = discovery.peer_count();
+                peer_count_ref.store(count as u32, Ordering::Relaxed);
+                
+                if count > 0 {
+                    debug!("catalog: Discovered {} mesh peers", count);
+                }
+                
+                // Discover peers (non-blocking, returns current state)
+                match discovery.discover_peers().await {
+                    Ok(peers) => {
+                        if !peers.is_empty() {
+                            info!("catalog: Active mesh peers: {}", peers.len());
+                            for peer in peers.iter().take(5) {
+                                debug!("  peer: {}", peer);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!(error=?e, "mesh: Peer discovery query failed");
+                    }
+                }
+                
+                async_std::task::sleep(StdDuration::from_secs(5)).await;
+            }
+        });
     });
 }
 
@@ -611,6 +685,8 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     let last_update = app.last_update.lock().ok().and_then(|g| g.clone());
     let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
     let decoy_ip = app.last_decoy_ip.lock().ok().and_then(|g| g.clone());
+    // Read current mesh peer count from atomic (updated by discovery thread)
+    let mesh_peers = app.mesh_peer_count.load(Ordering::Relaxed);
     let mut json = serde_json::json!({
         "socks_addr": socks_addr,
         "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
@@ -644,7 +720,8 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     if let Some(exp) = snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
     if let Some(src) = snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
-    if let Some(n) = snap.peers_online { json["peers_online"] = serde_json::json!(n); }
+    // Prefer live mesh peer count over snapshot value (task 2.1.6)
+    json["peers_online"] = serde_json::json!(mesh_peers);
     if let Some(p) = snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
     if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) { json["last_checked_ms_ago"] = serde_json::json!(ms); }
     json["config_mode"] = json["mode"].clone(); // backward compat

@@ -28,6 +28,12 @@ htx = { path = "../../crates/htx", features = ["rustls-config", "stealth-mode"] 
 core-framing = { path = "../../crates/core-framing" }
 core-cbor = { path = "../../crates/core-cbor" }
 core-crypto = { path = "../../crates/core-crypto" }
+core-mesh = { path = "../../crates/core-mesh", features = ["with-libp2p"] }
+async-std = { version = "1", features = ["attributes"] }
+
+# libp2p for mesh discovery identity generation (task 2.1.6)
+libp2p = { version = "0.53", default-features = false, features = ["identify"] }
+
 hex = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 directories = "5"

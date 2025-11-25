@@ -1,3 +1,7 @@
+// Peer discovery module
+#[cfg(feature = "with-libp2p")]
+pub mod discovery;
+
 #[cfg(feature = "with-libp2p")]
 pub mod impls {
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};

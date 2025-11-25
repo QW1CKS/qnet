@@ -15,6 +15,7 @@ thiserror = "1"
 async-std = { version = "1", features = ["attributes"] }
 sha2 = "0.10"
 base32 = "0.4"
+log = "0.4"
 
 [dependencies.libp2p-mdns]
 version = "0.45"
@@ -26,7 +27,7 @@ version = "0.53"
 optional = true
 default-features = false
 features = [
-    "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros", "request-response", "async-std"
+    "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros", "request-response", "async-std", "kad"
 ]
 
 [dev-dependencies]

@@ -18,6 +18,7 @@ members = [
     "apps/stealth-browser",
     "apps/edge-gateway",
     "tests/compliance",
+    "tests/integration",
 ]
 resolver = "2"
 
