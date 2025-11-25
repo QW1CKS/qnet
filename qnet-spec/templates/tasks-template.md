@@ -1,129 +1,170 @@
-# Tasks: [FEATURE NAME]
+# Task List Template for AI Agents
 
-**Input**: Design documents from `/specs/[###-feature-name]/`
-**Prerequisites**: plan.md (required), research.md, data-model.md, contracts/
+## 📌 Purpose of This Template
+This template guides you (the AI agent) in creating a **unified, actionable task list** for a new feature or phase. 
 
-## Execution Flow (main)
+The task list is the **single source of truth** for tracking implementation progress.
+
+---
+
+## 🎯 When to Create a New Task List
+- Starting a new major feature (e.g., "Mixnet Integration")
+- Beginning a new implementation phase (e.g., "Phase 2: Mesh Routing")
+- Breaking down a complex milestone into concrete steps
+
+## 📂 Where to Save It
+`qnet-spec/specs/<feature-id>/tasks.md`
+
+**Example**: For a new "Mixnet Integration" feature:
+- Feature ID: `002-mixnet`
+- Location: `qnet-spec/specs/002-mixnet/tasks.md`
+
+---
+
+# [Feature Name] Tasks
+
+## Overview
+**Goal**: [One sentence describing what this feature achieves]
+
+**Context**: [Why are we building this? How does it fit into QNet's architecture?]
+
+**Dependencies**: [What must be complete before starting this?]
+- [ ] Dependency 1 (link to spec or task)
+- [ ] Dependency 2
+
+---
+
+## 🏁 Phase 1: Foundation
+*Goal: Build the core primitives.*
+
+### Data Structures
+- [ ] **Define Wire Format**: Specify the on-wire representation (use spec.md for details).
+- [ ] **Create Rust Structs**: Implement in `crates/<crate-name>/src/types.rs`.
+- [ ] **Add Serialization**: Implement `serde` derives or manual encoding.
+
+### Core Logic
+- [ ] **Implement Core Algorithm**: The main functional logic.
+- [ ] **Add Error Handling**: Use `Result<T, E>`, define custom error types.
+- [ ] **Zeroize Secrets**: Ensure sensitive data (keys) are cleared from memory.
+
+### Testing
+- [ ] **Unit Tests**: Happy path + at least one edge case.
+- [ ] **Property Tests**: Add a fuzz target if parsing is involved.
+
+**Acceptance Criteria**:
+- [ ] Code compiles with no warnings.
+- [ ] All unit tests pass.
+- [ ] `ai-guardrail.md` and `testing-rules.md` satisfied.
+
+---
+
+## 🚧 Phase 2: Integration
+*Goal: Connect this feature to the rest of the system.*
+
+### API Design
+- [ ] **Define Public API**: What functions/types are exposed?
+- [ ] **Write API Docs**: Use `///` doc comments in Rust.
+- [ ] **Create Examples**: Add an example in `examples/`.
+
+### Component Integration
+- [ ] **Integrate with HTX** (if L2): Hook into the transport layer.
+- [ ] **Integrate with Mesh** (if L3): Connect to the P2P network.
+- [ ] **Integrate with Helper** (if L7): Expose via SOCKS5 or Status API.
+
+### Testing
+- [ ] **Integration Tests**: End-to-end test in `tests/integration/`.
+- [ ] **Performance Benchmark**: Add Criterion bench if performance-critical.
+
+**Acceptance Criteria**:
+- [ ] Integration tests pass.
+- [ ] No performance regressions.
+- [ ] Documentation updated (README, ARCHITECTURE.md).
+
+---
+
+## 🔬 Phase 3: Validation
+*Goal: Prove it works in production scenarios.*
+
+### Security Review
+- [ ] **Threat Model**: Document potential attacks in spec.md.
+- [ ] **Audit Crypto**: Ensure using established primitives (no DIY).
+- [ ] **Fuzz Testing**: Run fuzzer for 1M+ iterations.
+
+### Performance Testing
+- [ ] **Meet Targets**: Verify performance meets spec requirements.
+- [ ] **Stress Testing**: Test under high load.
+- [ ] **Memory Profiling**: Check for leaks.
+
+### User Testing
+- [ ] **Manual QA**: Test with the browser extension.
+- [ ] **Documentation**: Update user guides if user-facing.
+
+**Acceptance Criteria**:
+- [ ] No security issues found.
+- [ ] Performance targets met.
+- [ ] User documentation complete.
+
+---
+
+## 📋 Checklist Summary
+Use this to track overall progress:
+
+- [ ] Phase 1: Foundation (Data Structures, Core Logic, Testing)
+- [ ] Phase 2: Integration (API, Component Integration, Testing)
+- [ ] Phase 3: Validation (Security, Performance, User Testing)
+
+---
+
+## 💡 Tips for AI Agents
+
+### 1. Be Specific
+Instead of:
 ```
-1. Load plan.md from feature directory
-   → If not found: ERROR "No implementation plan found"
-   → Extract: tech stack, libraries, structure
-2. Load optional design documents:
-   → data-model.md: Extract entities → model tasks
-   → contracts/: Each file → contract test task
-   → research.md: Extract decisions → setup tasks
-3. Generate tasks by category:
-   → Setup: project init, dependencies, linting
-   → Tests: contract tests, integration tests
-   → Core: models, services, CLI commands
-   → Integration: DB, middleware, logging
-   → Polish: unit tests, performance, docs
-4. Apply task rules:
-   → Different files = mark [P] for parallel
-   → Same file = sequential (no [P])
-   → Tests before implementation (TDD)
-5. Number tasks sequentially (T001, T002...)
-6. Generate dependency graph
-7. Create parallel execution examples
-8. Validate task completeness:
-   → All contracts have tests?
-   → All entities have models?
-   → All endpoints implemented?
-9. Return: SUCCESS (tasks ready for execution)
+- [ ] Implement protocol
 ```
 
-## Format: `[ID] [P?] Description`
-- **[P]**: Can run in parallel (different files, no dependencies)
-- Include exact file paths in descriptions
-
-## Path Conventions
-- **Single project**: `src/`, `tests/` at repository root
-- **Web app**: `backend/src/`, `frontend/src/`
-- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
-- Paths shown below assume single project - adjust based on plan.md structure
-
-## Phase 3.1: Setup
-- [ ] T001 Create project structure per implementation plan
-- [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
-
-## Phase 3.2: Tests First (TDD) ⚠️ MUST COMPLETE BEFORE 3.3
-**CRITICAL: These tests MUST be written and MUST FAIL before ANY implementation**
-- [ ] T004 [P] Contract test POST /api/users in tests/contract/test_users_post.py
-- [ ] T005 [P] Contract test GET /api/users/{id} in tests/contract/test_users_get.py
-- [ ] T006 [P] Integration test user registration in tests/integration/test_registration.py
-- [ ] T007 [P] Integration test auth flow in tests/integration/test_auth.py
-
-## Phase 3.3: Core Implementation (ONLY after tests are failing)
-- [ ] T008 [P] User model in src/models/user.py
-- [ ] T009 [P] UserService CRUD in src/services/user_service.py
-- [ ] T010 [P] CLI --create-user in src/cli/user_commands.py
-- [ ] T011 POST /api/users endpoint
-- [ ] T012 GET /api/users/{id} endpoint
-- [ ] T013 Input validation
-- [ ] T014 Error handling and logging
-
-## Phase 3.4: Integration
-- [ ] T015 Connect UserService to DB
-- [ ] T016 Auth middleware
-- [ ] T017 Request/response logging
-- [ ] T018 CORS and security headers
-
-## Phase 3.5: Polish
-- [ ] T019 [P] Unit tests for validation in tests/unit/test_validation.py
-- [ ] T020 Performance tests (<200ms)
-- [ ] T021 [P] Update docs/api.md
-- [ ] T022 Remove duplication
-- [ ] T023 Run manual-testing.md
-
-## Dependencies
-- Tests (T004-T007) before implementation (T008-T014)
-- T008 blocks T009, T015
-- T016 blocks T018
-- Implementation before polish (T019-T023)
-
-## Parallel Example
+Write:
 ```
-# Launch T004-T007 together:
-Task: "Contract test POST /api/users in tests/contract/test_users_post.py"
-Task: "Contract test GET /api/users/{id} in tests/contract/test_users_get.py"
-Task: "Integration test registration in tests/integration/test_registration.py"
-Task: "Integration test auth in tests/integration/test_auth.py"
+- [ ] Implement protocol
+    - [ ] Define `HandshakeRequest` struct
+    - [ ] Implement `perform_handshake()` function
+    - [ ] Add error handling for timeouts
 ```
 
-## Notes
-- [P] tasks = different files, no dependencies
-- Verify tests fail before implementing
-- Commit after each task
-- Avoid: vague tasks, same file conflicts
+### 2. Link to Context
+Reference the spec:
+```
+- [ ] Implement TLS fingerprint cloning (see `spec.md#L2-HTX`)
+```
 
-## Task Generation Rules
-*Applied during main() execution*
+### 3. Track Dependencies
+Mark what's blocked:
+```
+- [ ] Integrate mesh routing (BLOCKED: waiting for Phase 2 completion)
+```
 
-1. **From Contracts**:
-   - Each contract file → contract test task [P]
-   - Each endpoint → implementation task
-   
-2. **From Data Model**:
-   - Each entity → model creation task [P]
-   - Relationships → service layer tasks
-   
-3. **From User Stories**:
-   - Each story → integration test [P]
-   - Quickstart scenarios → validation tasks
+### 4. Update as You Go
+As you complete tasks, mark them:
+```
+- [x] Define structs
+- [/] Implement core logic (in progress)
+- [ ] Add tests
+```
 
-4. **Ordering**:
-   - Setup → Tests → Models → Services → Endpoints → Polish
-   - Dependencies block parallel execution
+### 5. Reflect Real Work
+Don't create tasks that are already done:
+```
+// ❌ BAD (if crypto is done):
+- [ ] Implement ChaCha20-Poly1305
 
-## Validation Checklist
-*GATE: Checked by main() before returning*
+// ✅ GOOD:
+- [x] Implement ChaCha20-Poly1305 (Phase 1 complete)
+```
 
-- [ ] All contracts have corresponding tests
-- [ ] All entities have model tasks
-- [ ] All tests come before implementation
-- [ ] Parallel tasks truly independent
-- [ ] Each task specifies exact file path
-- [ ] No task modifies same file as another [P] task
-- [ ] AI Guardrail reviewed (`memory/ai-guardrail.md`) and commit includes `AI-Guardrail: PASS`
-- [ ] Testing Rules reviewed (`memory/testing-rules.md`) and commit includes `Testing-Rules: PASS`
+---
+
+## 🔗 Related Documents
+- **[Spec Template](spec-template.md)**: For defining the protocol.
+- **[Plan Template](plan-template.md)**: For the strategic roadmap.
+- **[AI Guardrail](../memory/ai-guardrail.md)**: Coding standards.
+- **[Testing Rules](../memory/testing-rules.md)**: Test requirements.

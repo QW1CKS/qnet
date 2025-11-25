@@ -1,7 +1,7 @@
 # QNet: The Invisible Overlay Network
 
 <div align="center">
-  <img src="logo.png" alt="QNet Logo" width="200">
+  <img src="logo.png" alt="QNet Logo" width="400">
   <p><strong>Decentralized. Censorship-Resistant. Unblockable.</strong></p>
 </div>
 

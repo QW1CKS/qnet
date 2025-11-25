@@ -1,54 +1,35 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# QNet Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. User-First Simplicity
+**"It just works."**
+- The complexity of the network MUST be hidden from the end user.
+- Installation MUST be one-click (Extension + Helper).
+- No configuration required for basic usage.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Decentralized-by-Default
+**"No central point of failure."**
+- Every component MUST be designed to operate without central servers.
+- The Helper Service MUST act as a P2P node, not just a client.
+- Trust is anchored in cryptography, not authority.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Indistinguishability
+**"Look like the noise."**
+- All traffic MUST be indistinguishable from normal HTTPS to popular domains.
+- We assume the adversary performs Deep Packet Inspection (DPI).
+- Protocol fingerprints MUST be minimized or masked.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Security-Critical
+**"Don't roll your own crypto."**
+- Use established primitives (ChaCha20, X25519, Ed25519).
+- All cryptographic code MUST be audited and fuzz-tested.
+- Memory safety (Rust) is non-negotiable for the core stack.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Dual Audience Balance -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Support both developers (toolkit integration) and end users (ready-to-use apps); Repository organized to separate concerns; Documentation tailored to each audience -->
+## Development Rules
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+1.  **Test-Driven Development**: Write the test case before the implementation.
+2.  **Documentation**: Every crate and module MUST have a README.
+3.  **CI/CD**: No code merges without passing CI (Build + Test + Lint).
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
-
-## Development Workflow & Quality Gates
-
-All changes MUST comply with the AI-Generated Code Guardrail and the Testing Rules.
-
-- Mandatory rule: Before editing/adding/improving any code or creating any new file, authors MUST read and satisfy `memory/ai-guardrail.md` and `memory/testing-rules.md`.
-- PRs MUST include checklist confirmations (`AI-Guardrail: PASS`, `Testing-Rules: PASS`) and reference the relevant requirement in `specs/001-qnet`.
-- Reviewers MUST reject changes that do not meet the guardrail.
-
-Quality Gates (minimum): build, lint/format, unit tests, and relevant integration tests MUST pass. New/changed core paths SHOULD meet coverage targets outlined in `memory/testing-rules.md`.
-
-## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
-
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
-
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0 | **Ratified**: 2025-11-25
