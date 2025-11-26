@@ -342,8 +342,6 @@ pub struct DiscoveryBehavior {
     pub identify: libp2p::identify::Behaviour,
     /// AutoNAT for NAT detection and public address discovery
     pub autonat: libp2p::autonat::Behaviour,
-    /// Relay client for NAT traversal via relay nodes
-    pub relay_client: libp2p::relay::client::Behaviour,
 }
 
 /// Manages routing table populated from peer discovery events.
@@ -472,17 +470,13 @@ impl DiscoveryBehavior {
             },
         );
 
-        // Initialize relay client for NAT traversal
-        let (_relay_transport, relay_client) = libp2p::relay::client::new(peer_id);
-
-        log::info!("state-transition: Discovery initialized for peer {} with NAT traversal support", peer_id);
+        log::info!("state-transition: Discovery initialized for peer {} with NAT detection support", peer_id);
 
         Ok(Self { 
             kademlia, 
             mdns,
             identify,
             autonat,
-            relay_client,
         })
     }
 

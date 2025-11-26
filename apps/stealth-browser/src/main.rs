@@ -230,11 +230,22 @@ async fn main() -> Result<()> {
 
     // Start a tiny local status server (headless-friendly)
     // Bind address controlled by QNET_STATUS_BIND env var (default: 127.0.0.1)
-    // Set to "0.0.0.0" on droplets for remote monitoring
-    let status_bind = std::env::var("QNET_STATUS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
-    if let Some(status_addr) = start_status_server(&status_bind, cfg.status_port, app_state.clone())? {
-        info!(%status_addr, bind=%status_bind, "status server listening (GET /status)");
-        eprintln!("status-server:bound addr={} (bind={})", status_addr, status_bind);
+    // Set to "0.0.0.0" or "0.0.0.0:8088" on droplets for remote monitoring
+    let status_bind_full = std::env::var("QNET_STATUS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let (status_bind_ip, status_port_override) = if status_bind_full.contains(':') {
+        // Full address like "0.0.0.0:8088"
+        let parts: Vec<&str> = status_bind_full.splitn(2, ':').collect();
+        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(cfg.status_port);
+        (parts[0].to_string(), Some(port))
+    } else {
+        // Just IP like "0.0.0.0" or "127.0.0.1"
+        (status_bind_full.clone(), None)
+    };
+    let status_port_to_use = status_port_override.unwrap_or(cfg.status_port);
+    
+    if let Some(status_addr) = start_status_server(&status_bind_ip, status_port_to_use, app_state.clone())? {
+        info!(%status_addr, bind=%status_bind_ip, "status server listening (GET /status)");
+        eprintln!("status-server:bound addr={} (bind={})", status_addr, status_bind_full);
         cfg.status_port = status_addr.port();
     }
 
@@ -1021,7 +1032,7 @@ fn spawn_mesh_discovery(
                                                         info!("mesh: Public address detected: {}", addr);
                                                     }
                                                     autonat::NatStatus::Private => {
-                                                        info!("mesh: Behind NAT - relay will be used for connectivity");
+                                                        info!("mesh: Behind NAT detected");
                                                     }
                                                     autonat::NatStatus::Unknown => {
                                                         debug!("mesh: NAT status unknown");
@@ -1035,9 +1046,6 @@ fn spawn_mesh_discovery(
                                                 debug!("mesh: AutoNAT outbound probe: {:?}", probe_event);
                                             }
                                         }
-                                    }
-                                    DiscoveryBehaviorEvent::RelayClient(relay_event) => {
-                                        debug!("mesh: Relay client event: {:?}", relay_event);
                                     }
                                 }
                             }
