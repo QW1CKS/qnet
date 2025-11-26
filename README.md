@@ -809,49 +809,66 @@ graph LR
 ```mermaid
 gantt
     title QNet Development Timeline
-    dateFormat YYYY-MM
+    dateFormat YYYY-MM-DD
     section Phase 1 ✅
-    Core Infrastructure    :done, p1, 2024-01, 2024-06
-    HTX Protocol          :done, p1a, 2024-03, 2024-05
-    Crypto & Framing      :done, p1b, 2024-02, 2024-04
-    Catalog System        :done, p1c, 2024-04, 2024-05
+    Core Infrastructure    :done, p1, 2025-09-15, 2025-10-31
+    HTX Protocol          :done, p1a, 2025-09-15, 2025-10-15
+    Crypto & Framing      :done, p1b, 2025-09-20, 2025-10-20
+    Catalog System        :done, p1c, 2025-10-01, 2025-10-25
     
-    section Phase 2 🚧
-    Helper Integration    :active, p2, 2024-06, 2025-03
-    Mesh Networking       :active, p2a, 2024-09, 2025-02
-    Exit Node Setup       :p2b, 2024-11, 2025-01
+    section Phase 2 ✅
+    Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-01
+    Relay Logic (2.2)     :done, p2b, 2025-11-01, 2025-11-10
+    Circuit Building (2.3):done, p2c, 2025-11-10, 2025-11-20
+    Helper Integration (2.4):done, p2d, 2025-11-20, 2025-11-26
+    Exit Infrastructure (2.5):p2e, 2025-11-27, 2025-12-15
     
     section Phase 3 🚧
-    Browser Extension     :p3, 2025-01, 2025-04
-    Installers            :p3a, 2025-02, 2025-03
-    User Documentation    :p3b, 2025-03, 2025-04
+    Browser Extension     :p3, 2025-12-01, 2026-02-28
+    Native Messaging      :p3a, 2025-12-15, 2026-01-15
+    UI/UX Development     :p3b, 2026-01-01, 2026-02-15
+    Installers & Packaging:p3c, 2026-02-01, 2026-03-01
     
     section Phase 4 🔮
-    Mixnet Integration    :p4, 2025-05, 2025-08
-    Payment System        :p4a, 2025-06, 2025-09
-    Governance            :p4b, 2025-07, 2025-10
+    L1 Path Routing       :p4a, 2026-03-01, 2026-05-31
+    Mixnet Integration    :p4b, 2026-04-01, 2026-07-31
+    Payment System        :p4c, 2026-06-01, 2026-09-30
+    Governance            :p4d, 2026-07-01, 2026-10-31
 ```
 
-### Current Status: Phase 2-3 (Active Development)
+### Current Status: Phase 2 Core Complete (80%) → Phase 2.5 & 3 Next
 
-**Phase 2: Helper Node** (🚧 In Progress)
-- ✅ Core HTX implementation
-- ✅ AEAD framing layer
-- 🚧 libp2p mesh integration
-- 🚧 Catalog-based peer discovery
-- 🚧 Status API endpoints
+**Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
+- ✅ HTX protocol implementation (`htx/`)
+- ✅ AEAD framing layer (`core-framing/`)
+- ✅ Cryptographic primitives (`core-crypto/`)
+- ✅ Catalog signing system (`catalog-signer/`)
+- ✅ Deterministic CBOR encoding (`core-cbor/`)
 
-**Phase 3: User Experience** (🚧 Starting)
-- 🚧 Browser extension UI
-- 📋 Windows installer
-- 📋 Linux/macOS packages
-- 📋 User documentation
+**Phase 2: P2P Mesh Network** (✅ 80% Complete - Oct 15 - Nov 26, 2025)
 
-**Phase 4: Advanced Features** (🔮 Future)
-- Mixnet privacy hops
-- Micropayment vouchers
-- Decentralized governance
-- Mobile support
+*Completed Sections (2.1-2.4):*
+- ✅ **2.1 Peer Discovery** - mDNS local + Kademlia DHT + public IPFS bootstrap
+- ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking  
+- ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
+- ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes
+
+*Pending (2.5-2.6):*
+- 🚧 **2.5 Infrastructure** - Exit node deployment scripts, bandwidth policies, operator droplets
+- 📋 **2.6 Production Checkpoint** - Security audit, 24hr stability test, performance validation
+
+**Phase 3: User Experience** (📋 0% - Starting Dec 2025)
+- 📋 Browser extension UI (React/Preact)
+- 📋 Native messaging bridge (Helper ↔ Extension)
+- 📋 Cross-platform installers (Windows/Linux/macOS)
+- 📋 User documentation & onboarding guides
+
+**Phase 4: Advanced Features** (🔮 Future - Q2 2026+)
+- 📋 L1 SCION-inspired path routing (cryptographic path validation)
+- 📋 Mixnet privacy hops (Nym/Sphinx integration)
+- 📋 Micropayment system (vouchers, relay incentives)
+- 📋 Decentralized governance (voting, upgrades)
+- 📋 Mobile support (Android/iOS apps)
 
 ---
 
