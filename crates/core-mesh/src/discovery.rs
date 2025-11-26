@@ -338,6 +338,12 @@ pub struct DiscoveryBehavior {
     pub kademlia: Kademlia<MemoryStore>,
     /// mDNS for local network peer discovery
     pub mdns: mdns::async_io::Behaviour,
+    /// Identify protocol for peer information exchange
+    pub identify: libp2p::identify::Behaviour,
+    /// AutoNAT for NAT detection and public address discovery
+    pub autonat: libp2p::autonat::Behaviour,
+    /// Relay client for NAT traversal via relay nodes
+    pub relay_client: libp2p::relay::client::Behaviour,
 }
 
 /// Manages routing table populated from peer discovery events.
@@ -447,9 +453,37 @@ impl DiscoveryBehavior {
         )
         .map_err(|e| DiscoveryError::Mdns(format!("Failed to initialize mDNS: {}", e)))?;
 
-        log::info!("state-transition: Discovery initialized for peer {}", peer_id);
+        // Initialize Identify protocol for peer information exchange
+        let identify = libp2p::identify::Behaviour::new(
+            libp2p::identify::Config::new(
+                "/qnet/1.0.0".to_string(),
+                libp2p::identity::Keypair::generate_ed25519().public(),
+            )
+        );
 
-        Ok(Self { kademlia, mdns })
+        // Initialize AutoNAT for NAT detection and public address discovery
+        let autonat = libp2p::autonat::Behaviour::new(
+            peer_id,
+            libp2p::autonat::Config {
+                retry_interval: std::time::Duration::from_secs(30),
+                refresh_interval: std::time::Duration::from_secs(60),
+                boot_delay: std::time::Duration::from_secs(5),
+                ..Default::default()
+            },
+        );
+
+        // Initialize relay client for NAT traversal
+        let (_relay_transport, relay_client) = libp2p::relay::client::new(peer_id);
+
+        log::info!("state-transition: Discovery initialized for peer {} with NAT traversal support", peer_id);
+
+        Ok(Self { 
+            kademlia, 
+            mdns,
+            identify,
+            autonat,
+            relay_client,
+        })
     }
 
     /// Discovers peers using both DHT and mDNS.

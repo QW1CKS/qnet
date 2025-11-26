@@ -173,6 +173,16 @@ async fn main() -> Result<()> {
         return Err(e);
     }
 
+    // Parse expected peer IP from environment for easy testing (e.g., QNET_EXPECTED_PEER_IP=143.198.123.45)
+    if let Ok(ip_str) = std::env::var("QNET_EXPECTED_PEER_IP") {
+        if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+            cfg.expected_peer_ip = Some(ip);
+            info!(expected_peer_ip=%ip, "will highlight connections from expected peer");
+        } else {
+            warn!(invalid_ip=%ip_str, "QNET_EXPECTED_PEER_IP parse failed");
+        }
+    }
+
     info!(port = cfg.socks_port, status_port = cfg.status_port, mode=?cfg.mode, "config loaded");
 
     // M3: Catalog-first loader (bundled + cache + verify) and background updater
@@ -219,9 +229,12 @@ async fn main() -> Result<()> {
     spawn_mesh_discovery(app_state.clone(), mesh_rx);
 
     // Start a tiny local status server (headless-friendly)
-    if let Some(status_addr) = start_status_server("127.0.0.1", cfg.status_port, app_state.clone())? {
-        info!(%status_addr, "status server listening (GET /status)");
-        eprintln!("status-server:bound addr={}" , status_addr);
+    // Bind address controlled by QNET_STATUS_BIND env var (default: 127.0.0.1)
+    // Set to "0.0.0.0" on droplets for remote monitoring
+    let status_bind = std::env::var("QNET_STATUS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    if let Some(status_addr) = start_status_server(&status_bind, cfg.status_port, app_state.clone())? {
+        info!(%status_addr, bind=%status_bind, "status server listening (GET /status)");
+        eprintln!("status-server:bound addr={} (bind={})", status_addr, status_bind);
         cfg.status_port = status_addr.port();
     }
 
@@ -421,6 +434,8 @@ struct Config {
     // Mesh network configuration (Phase 2.4.4)
     mesh_max_circuits: usize,
     mesh_build_circuits: bool,
+    // Expected peer IP for easy identification during testing (QNET_EXPECTED_PEER_IP)
+    expected_peer_ip: Option<std::net::IpAddr>,
 }
 
 impl Default for Config {
@@ -441,6 +456,7 @@ impl Default for Config {
         mesh_enabled: true,  // Phase 2.4: mesh network enabled
         mesh_max_circuits: 10,  // Phase 2.4.4: circuit limit
         mesh_build_circuits: true,  // Phase 2.4.4: enable circuit building
+        expected_peer_ip: None,  // No expected peer by default
     }
     }
 }
@@ -842,6 +858,9 @@ fn spawn_mesh_discovery(
             use futures::StreamExt as FuturesStreamExt;  // For .fuse()
             let mut interval = async_std::stream::interval(std::time::Duration::from_secs(5)).fuse();
             
+            // Periodic DHT bootstrap to maintain routing table and keep connections alive
+            let mut bootstrap_interval = async_std::stream::interval(std::time::Duration::from_secs(300)).fuse(); // 5 minutes
+            
             info!("mesh: Swarm event loop starting");
             
             // Main event loop
@@ -970,14 +989,91 @@ fn spawn_mesh_discovery(
                                             }
                                         }
                                     }
+                                    DiscoveryBehaviorEvent::Identify(identify_event) => {
+                                        use libp2p::identify;
+                                        match identify_event {
+                                            identify::Event::Received { peer_id, info } => {
+                                                debug!("mesh: Identified peer {} with protocols: {:?}", peer_id, info.protocols);
+                                                
+                                                // Inform AutoNAT about discovered peer addresses for NAT probing
+                                                for addr in &info.listen_addrs {
+                                                    swarm.behaviour_mut().autonat.add_server(peer_id, Some(addr.clone()));
+                                                }
+                                            }
+                                            identify::Event::Sent { .. } => {
+                                                // Sent our identify info to a peer
+                                            }
+                                            identify::Event::Pushed { .. } => {
+                                                // Received updated identify info from a peer
+                                            }
+                                            identify::Event::Error { peer_id, error } => {
+                                                debug!("mesh: Identify error with peer {}: {}", peer_id, error);
+                                            }
+                                        }
+                                    }
+                                    DiscoveryBehaviorEvent::Autonat(autonat_event) => {
+                                        use libp2p::autonat;
+                                        match autonat_event {
+                                            autonat::Event::StatusChanged { old, new } => {
+                                                info!("mesh: NAT status changed: {:?} -> {:?}", old, new);
+                                                match new {
+                                                    autonat::NatStatus::Public(addr) => {
+                                                        info!("mesh: Public address detected: {}", addr);
+                                                    }
+                                                    autonat::NatStatus::Private => {
+                                                        info!("mesh: Behind NAT - relay will be used for connectivity");
+                                                    }
+                                                    autonat::NatStatus::Unknown => {
+                                                        debug!("mesh: NAT status unknown");
+                                                    }
+                                                }
+                                            }
+                                            autonat::Event::InboundProbe(probe_event) => {
+                                                debug!("mesh: AutoNAT inbound probe: {:?}", probe_event);
+                                            }
+                                            autonat::Event::OutboundProbe(probe_event) => {
+                                                debug!("mesh: AutoNAT outbound probe: {:?}", probe_event);
+                                            }
+                                        }
+                                    }
+                                    DiscoveryBehaviorEvent::RelayClient(relay_event) => {
+                                        debug!("mesh: Relay client event: {:?}", relay_event);
+                                    }
                                 }
                             }
                             SwarmEvent::ConnectionEstablished { peer_id, endpoint, connection_id, .. } => {
                                 let is_bootstrap = bootstrap_peer_ids.contains(&peer_id);
-                                if is_bootstrap {
-                                    debug!("mesh: Connected to bootstrap peer {} at {} (conn: {:?})", peer_id, endpoint.get_remote_address(), connection_id);
+                                let remote_addr = endpoint.get_remote_address();
+                                
+                                // Check if this matches the expected peer IP for testing
+                                let is_expected_peer = if let Some(expected_ip) = cfg.expected_peer_ip {
+                                    if let Some(ip_addr) = remote_addr.iter().find_map(|proto| match proto {
+                                        libp2p::multiaddr::Protocol::Ip4(ip) => Some(std::net::IpAddr::V4(ip)),
+                                        libp2p::multiaddr::Protocol::Ip6(ip) => Some(std::net::IpAddr::V6(ip)),
+                                        _ => None,
+                                    }) {
+                                        ip_addr == expected_ip
+                                    } else {
+                                        false
+                                    }
                                 } else {
-                                    info!("mesh: ✨ Connected to QNet peer {} at {} (conn: {:?})", peer_id, endpoint.get_remote_address(), connection_id);
+                                    false
+                                };
+                                
+                                if is_expected_peer {
+                                    // PROMINENT: Expected peer connected (e.g., your droplet)
+                                    warn!("╔════════════════════════════════════════════════════════════════╗");
+                                    warn!("║ ★★★ EXPECTED PEER CONNECTED ★★★                             ║");
+                                    warn!("║ Peer ID:  {}                              ", peer_id);
+                                    warn!("║ Address:  {}                       ", remote_addr);
+                                    warn!("║ Conn ID:  {:?}                                              ", connection_id);
+                                    warn!("╚════════════════════════════════════════════════════════════════╝");
+                                } else if is_bootstrap {
+                                    debug!("mesh: Connected to bootstrap peer {} at {} (conn: {:?})", peer_id, remote_addr, connection_id);
+                                } else {
+                                    // Note: These are DHT-discovered peers (could be IPFS nodes or QNet nodes)
+                                    // To distinguish QNet nodes, we need libp2p Identify protocol (future enhancement)
+                                    debug!("mesh: Connected to DHT peer {} at {} (conn: {:?})", peer_id, remote_addr, connection_id);
                                 }
                             }
                             SwarmEvent::ConnectionClosed { peer_id, cause, connection_id, .. } => {
@@ -1012,15 +1108,18 @@ fn spawn_mesh_discovery(
                             let bootstrap_count = swarm.connected_peers()
                                 .filter(|pid| bootstrap_peer_ids.contains(pid))
                                 .count();
-                            let qnet_count = total_count - bootstrap_count;
+                            let dht_peer_count = total_count - bootstrap_count;
                             
                             peer_count_ref.store(total_count as u32, Ordering::Relaxed);
                             
-                            info!("mesh: Peer count update: {} total ({} bootstrap + {} QNet)", 
-                                  total_count, bootstrap_count, qnet_count);
+                            // Note: "DHT peers" includes both QNet nodes and random IPFS nodes
+                            // To distinguish, we need libp2p Identify protocol (future enhancement)
+                            info!("mesh: Peer count update: {} total ({} bootstrap + {} DHT peers)", 
+                                  total_count, bootstrap_count, dht_peer_count);
                             last_total_count = total_count;
                             
                             // Update state to "connected" when mesh peers discovered (Phase 2.1.6)
+                            // Note: This triggers on ANY peer connection (bootstrap or DHT)
                             if total_count > 0 {
                                 let mut guard = state.status.lock().unwrap();
                                 if !matches!(guard.0.state, ConnState::Connected) {
@@ -1028,6 +1127,13 @@ fn spawn_mesh_discovery(
                                     guard.0.state = ConnState::Connected;
                                 }
                             }
+                        }
+                    }
+                    _ = bootstrap_interval.next() => {
+                        // Periodic DHT bootstrap to maintain routing table and connections
+                        info!("mesh: Running periodic DHT bootstrap");
+                        if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
+                            warn!("mesh: Bootstrap error: {:?}", e);
                         }
                     }
                 }

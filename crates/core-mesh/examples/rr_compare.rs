@@ -148,9 +148,8 @@ mod with_libp2p {
     let server_keys = identity::Keypair::generate_ed25519();
     let server_peer = server_keys.public().to_peer_id();
     let server_transport = if proto == "tcp" {
-        let mut ycfg = libp2p::yamux::Config::default();
-        ycfg.set_receive_window(1 << 20); // 1 MiB
-        // ycfg.set_max_buffer_size(2 << 20); // deprecated; skip to avoid warnings
+        let ycfg = libp2p::yamux::Config::default();
+        // Note: set_receive_window removed in newer libp2p versions
         libp2p::tcp::async_io::Transport::new(libp2p::tcp::Config::default().nodelay(true))
             .upgrade(upgrade::Version::V1)
             .authenticate(libp2p::noise::Config::new(&server_keys).map_err(|e| e.to_string())?)
@@ -181,8 +180,8 @@ mod with_libp2p {
     let client_keys = identity::Keypair::generate_ed25519();
     let client_peer = client_keys.public().to_peer_id();
     let client_transport = if proto == "tcp" {
-        let mut ycfg = libp2p::yamux::Config::default();
-        ycfg.set_receive_window(1 << 20);
+        let ycfg = libp2p::yamux::Config::default();
+        // Note: set_receive_window removed in newer libp2p versions
         libp2p::tcp::async_io::Transport::new(libp2p::tcp::Config::default().nodelay(true))
             .upgrade(upgrade::Version::V1)
             .authenticate(libp2p::noise::Config::new(&client_keys).map_err(|e| e.to_string())?)
@@ -233,7 +232,7 @@ mod with_libp2p {
     use futures::channel::mpsc;
     let (resp_tx, mut resp_rx) = mpsc::unbounded::<(request_response::ResponseChannel<String>, String, bool)>();
 
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::HashMap;
     let mut rtts = Vec::with_capacity(n);
     let mut outstanding: HashMap<String, std::time::Instant> = HashMap::new();
     let mut next_seq: usize = 0;

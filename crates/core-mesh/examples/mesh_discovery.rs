@@ -10,8 +10,8 @@
 
 #[cfg(feature = "with-libp2p")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use core_mesh::discovery::{BootstrapNode, DiscoveryBehavior};
-    use libp2p::{identity, Multiaddr, PeerId};
+    use core_mesh::discovery::DiscoveryBehavior;
+    use libp2p::identity;
     use std::time::Duration;
 
     async_std::task::block_on(async {
@@ -88,9 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// In production, this would load from the signed catalog.
 /// For this example, we return mock bootstrap nodes.
 #[cfg(feature = "with-libp2p")]
-fn load_bootstrap_nodes_example() -> Vec<BootstrapNode> {
-    use core_mesh::discovery::BootstrapNode;
-    use libp2p::{Multiaddr, PeerId};
+fn load_bootstrap_nodes_example() -> Vec<core_mesh::discovery::BootstrapNode> {
     
     // Example: Parse bootstrap nodes from environment or use defaults
     if let Ok(bootstrap_env) = std::env::var("QNET_BOOTSTRAP_NODES") {
@@ -106,7 +104,7 @@ fn load_bootstrap_nodes_example() -> Vec<BootstrapNode> {
 /// Format: "peer_id@multiaddr,peer_id@multiaddr,..."
 /// Example: "12D3Koo...@/ip4/198.51.100.1/tcp/4001"
 #[cfg(feature = "with-libp2p")]
-fn parse_bootstrap_from_env(env_value: &str) -> Vec<BootstrapNode> {
+fn parse_bootstrap_from_env(env_value: &str) -> Vec<core_mesh::discovery::BootstrapNode> {
     use core_mesh::discovery::BootstrapNode;
     use libp2p::{Multiaddr, PeerId};
     
