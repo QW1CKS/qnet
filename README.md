@@ -464,6 +464,30 @@ cargo run -p stealth-browser
 # - Status API: 127.0.0.1:8088
 ```
 
+### Status State Transitions
+
+The Helper's status page (`http://127.0.0.1:8088/`) displays the connection state with visual indicators:
+
+- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers/catalog
+- 🟠 **Calibrating** (orange): Bootstrap enabled but not yet connected
+- 🟢 **Connected** (green): Mesh network ready OR catalog loaded OR successful SOCKS5 traffic
+
+**State Transition Triggers:**
+```
+Offline → Connected:
+  - Any mesh peer discovered (mDNS, IPFS DHT, or public bootstrap nodes)
+  - Valid catalog loaded from seed URL or local cache
+  - Successful SOCKS5 connection established
+
+Calibrating → Connected:
+  - Same triggers as Offline → Connected
+```
+
+**Peer Discovery:**
+- **Local network (mDNS)**: Discovers other QNet Helpers on same WiFi (~5 seconds)
+- **Internet (DHT)**: Connects to IPFS bootstrap nodes (~10 seconds, typically 4-8 peers)
+- Status page shows `mesh_peer_count` and updates every 5 seconds
+
 ### Verify Installation
 
 ```powershell

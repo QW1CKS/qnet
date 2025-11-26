@@ -12,6 +12,8 @@ use std::time::{Duration as StdDuration, Instant as StdInstant};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::io::Write as _;
 
+
+
 // Instrumentation for status server diagnostics
 static STATUS_CONN_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 static STATUS_CONN_TOTAL: AtomicUsize  = AtomicUsize::new(0);
@@ -933,9 +935,42 @@ fn spawn_mesh_discovery(
                                 info!("mesh: Listening on {}", address);
                             }
                             SwarmEvent::Behaviour(discovery_event) => {
-                                // DiscoveryBehavior doesn't emit custom events in current impl
-                                // Events are handled via kademlia/mdns directly
-                                debug!("mesh: Discovery behavior event: {:?}", discovery_event);
+                                use core_mesh::discovery::DiscoveryBehaviorEvent;
+                                
+                                match discovery_event {
+                                    DiscoveryBehaviorEvent::Mdns(mdns_event) => {
+                                        use libp2p::mdns;
+                                        match mdns_event {
+                                            mdns::Event::Discovered(list) => {
+                                                for (peer_id, multiaddr) in list {
+                                                    if peer_id == *swarm.local_peer_id() {
+                                                        continue; // Skip self
+                                                    }
+                                                    info!("mesh: mDNS discovered peer {} at {}, dialing...", peer_id, multiaddr);
+                                                    if let Err(e) = swarm.dial(multiaddr.clone()) {
+                                                        warn!("mesh: Failed to dial mDNS peer {}: {}", peer_id, e);
+                                                    }
+                                                }
+                                            }
+                                            mdns::Event::Expired(list) => {
+                                                for (peer_id, _multiaddr) in list {
+                                                    debug!("mesh: mDNS peer expired: {}", peer_id);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    DiscoveryBehaviorEvent::Kademlia(kad_event) => {
+                                        use libp2p::kad;
+                                        match kad_event {
+                                            kad::Event::RoutingUpdated { peer, .. } => {
+                                                debug!("mesh: Kademlia routing updated for peer {}", peer);
+                                            }
+                                            _ => {
+                                                debug!("mesh: Kademlia event: {:?}", kad_event);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             SwarmEvent::ConnectionEstablished { peer_id, endpoint, connection_id, .. } => {
                                 let is_bootstrap = bootstrap_peer_ids.contains(&peer_id);
