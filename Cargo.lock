@@ -5990,6 +5990,7 @@ dependencies = [
  "core-framing",
  "core-mesh",
  "directories",
+ "futures",
  "hex",
  "html-escape",
  "htx",
