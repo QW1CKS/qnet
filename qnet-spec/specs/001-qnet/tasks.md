@@ -391,6 +391,63 @@
 
 ---
 
+### 2.7 Enhanced UX: Geographic Routing & Visualization
+**Goal**: Improve user experience with intelligent relay selection and visual network map.
+
+#### 2.7.1 Smart 1-Hop Relay (Default Behavior)
+- [ ] Implement geographic peer selection algorithm
+- [ ] Add GeoIP lookup for user country detection
+- [ ] Implement relay selection priority:
+  - [ ] Same country (lowest latency)
+  - [ ] Same continent (good latency)
+  - [ ] Any available relay (privacy over speed)
+  - [ ] Fallback to direct exit if no relay available
+- [ ] Add peer country metadata to DHT
+- [ ] Update circuit builder to use geographic selection
+- [ ] Test: Verify relay selection chooses closest peer
+- [ ] Test: Verify fallback to direct exit when no relay
+
+#### 2.7.2 Map API & Backend
+- [ ] Create `/api/map` endpoint for status page
+- [ ] Create `/api/peers/by-country` - aggregated peer data
+- [ ] Create `/api/exits` - exit node list with coordinates
+- [ ] Implement country-level anonymization (no city data)
+- [ ] Add current circuit path to API response
+- [ ] Test: Verify API returns valid GeoJSON
+- [ ] Test: Verify no PII leakage in responses
+
+#### 2.7.3 Interactive World Map Visualization
+- [ ] Create `static/map.html` with Leaflet.js or D3.js
+- [ ] Implement country color-coding (green = peers, red = none)
+- [ ] Add peer count overlays per country
+- [ ] Add exit node markers (exact locations)
+- [ ] Highlight user's country (no exact location)
+- [ ] Implement animated circuit path visualization
+- [ ] Add manual relay/exit selection controls
+- [ ] Test: Verify map loads and updates correctly
+- [ ] Test: Verify privacy (country-level only)
+
+#### 2.7.4 Browser Extension Integration
+- [ ] Create Chrome extension manifest
+- [ ] Implement native messaging to Helper
+- [ ] Create popup UI with status display
+- [ ] Add "Open Map View" button (opens localhost:8088/map)
+- [ ] Add quick settings access
+- [ ] Package extension for Chrome/Firefox
+- [ ] Test: Verify extension connects to Helper
+- [ ] Test: Verify map link opens correctly
+
+#### 2.7.5 Testing & Documentation
+- [ ] Test smart routing with multiple geographic peers
+- [ ] Test map visualization with sample data
+- [ ] Verify fallback behavior when no relays
+- [ ] Update `README.md` with map feature
+- [ ] Document geographic routing algorithm
+- [ ] Add screenshots of map visualization
+- [ ] Create user guide for extension
+
+---
+
 ## 🌐 Phase 3: Browser Extension
 
 ### 3.1 Extension Scaffold
