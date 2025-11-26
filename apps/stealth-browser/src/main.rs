@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
     // Rotating file logger (daily)
     let _ = std::fs::create_dir_all("logs");
     let file_appender = rolling::daily("logs", "stealth-browser.log");
-    let (nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
+    let (_nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
     
     // Output to BOTH stdout and file for visibility
     tracing_subscriber::fmt()
@@ -624,6 +624,7 @@ struct AppState {
 /// SOCKS5 handler and mesh thread. The mesh OpenStream handler creates
 /// bidirectional channels that are bridged to the TCP stream using
 /// tokio::select! to run both copy directions concurrently.
+#[allow(dead_code)]
 enum MeshCommand {
     DialPeer {
         peer_id: libp2p::PeerId,
@@ -886,7 +887,7 @@ fn spawn_mesh_discovery(
                             
                             // Create bidirectional channels
                             let (to_peer_tx, mut to_peer_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-                            let (from_peer_tx, from_peer_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                            let (_from_peer_tx, from_peer_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
                             
                             // Open libp2p stream using request_response pattern
                             // For simplicity, we'll use a direct stream approach via dial
@@ -895,7 +896,6 @@ fn spawn_mesh_discovery(
                             
                             // Clone for async task
                             let peer_id_clone = peer_id;
-                            let from_peer_tx_clone = from_peer_tx.clone();
                             
                             // Spawn task to handle stream I/O
                             async_std::task::spawn(async move {

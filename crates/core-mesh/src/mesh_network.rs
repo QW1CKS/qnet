@@ -42,7 +42,7 @@ pub enum MeshError {
 
 /// Unified mesh network interface combining discovery, relay, and circuits.
 pub struct MeshNetwork {
-    keypair: identity::Keypair,
+    _keypair: identity::Keypair,
     peer_id: PeerId,
     discovery: Option<Arc<Mutex<DiscoveryBehavior>>>,
     relay: Option<RelayBehavior>,
@@ -73,7 +73,7 @@ impl MeshNetwork {
         let routing_table = Arc::new(Mutex::new(RoutingTable::new()));
         
         Ok(Self {
-            keypair,
+            _keypair: keypair,
             peer_id,
             discovery: None,
             relay: None,

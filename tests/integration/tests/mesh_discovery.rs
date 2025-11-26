@@ -189,7 +189,7 @@ async fn test_multiple_bootstrap_nodes() {
     // (they appear in peer_count even without network connectivity)
     let peer_count = discovery.peer_count();
     assert!(
-        peer_count >= 0 && peer_count <= 3,
+        peer_count <= 3,
         "Peer count should be between 0-3 bootstrap nodes, got {}",
         peer_count
     );

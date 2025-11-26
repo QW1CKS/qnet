@@ -306,8 +306,6 @@ mod tests {
 
 #[cfg(all(test, feature = "stealth-mode"))]
 mod stealth_tests {
-    use super::*;
-
     #[test]
     fn sizing_bounds_and_determinism() {
         use crate::sizing::{Profile, Sizer};
