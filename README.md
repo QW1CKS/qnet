@@ -133,14 +133,16 @@ graph TB
 
 | Layer | Component | Status | Description |
 |-------|-----------|--------|-------------|
-| **L7** | Application | ✅ Active | `stealth-browser` Helper (SOCKS5 proxy) + Browser Extension UI |
+| **L7** | Application | ✅ Complete | `stealth-browser` Helper (SOCKS5 proxy) + Browser Extension UI |
 | **L6** | Incentives | 🔮 Future | Payment vouchers, reputation system, resource accounting |
 | **L5** | Naming | 🔮 Future | Decentralized identity, alias ledger, self-certifying names |
-| **L4** | Privacy | 🚧 Planned | Optional mixnet integration (Nym/Sphinx packets) for high anonymity |
-| **L3** | Mesh | 🚧 Active | P2P networking via libp2p, DHT discovery, gossip protocol |
-| **L2** | Transport | ✅ Active | **HTX protocol** - TLS fingerprint cloning + AEAD framing |
-| **L1** | Routing | 🚧 Planned | Multi-path selection, path validation (SCION-inspired) |
+| **L4** | Privacy | 🔮 Future | Optional mixnet integration (Nym/Sphinx packets) for high anonymity |
+| **L3** | Mesh | ✅ Complete | P2P networking via libp2p (mDNS, DHT, circuits, relay) - **Phase 2 done** |
+| **L2** | Transport | ✅ Complete | **HTX protocol** - TLS fingerprint cloning + AEAD framing |
+| **L1** | Routing | 📋 Deferred | Multi-path selection, path validation (SCION-inspired) - **Post-MVP** |
 | **L0** | Physical | ✅ System | OS-provided TCP/UDP/QUIC bearers |
+
+> **Note on L1 Routing**: SCION-inspired path-aware routing is architecturally fundamental for production (path validation, multi-path redundancy, geographic diversity). Currently deferred post-MVP to prioritize user delivery (Phase 3: Browser Extension). Current implementation relies on libp2p's built-in routing (L3) over standard IP (L0), which works but lacks the cryptographic path validation and explicit multi-path control that L1 will provide. **Planned for Phase 4** after extension deployment.
 
 ---
 
@@ -543,12 +545,12 @@ qnet/
 
 | Crate | Purpose | Status |
 |-------|---------|--------|
-| `htx` | HTX protocol implementation (TLS mirroring + Noise) | ✅ Active |
-| `core-framing` | AEAD frame encoding (ChaCha20-Poly1305) | ✅ Active |
-| `core-crypto` | Cryptographic wrappers (Ed25519, X25519, HKDF) | ✅ Active |
-| `core-cbor` | Deterministic CBOR serialization | ✅ Active |
-| `core-mesh` | P2P networking via libp2p | 🚧 Active Dev |
-| `core-routing` | Multi-path routing (SCION-inspired) | 🚧 Planned |
+| `htx` | HTX protocol implementation (TLS mirroring + Noise) | ✅ Complete |
+| `core-framing` | AEAD frame encoding (ChaCha20-Poly1305) | ✅ Complete |
+| `core-crypto` | Cryptographic wrappers (Ed25519, X25519, HKDF) | ✅ Complete |
+| `core-cbor` | Deterministic CBOR serialization | ✅ Complete |
+| `core-mesh` | P2P networking via libp2p (mDNS, DHT, circuits) | ✅ Complete |
+| `core-routing` | L1 multi-path routing (SCION-inspired) | 📋 Deferred |
 | `core-mix` | Mixnet integration (Sphinx packets) | 🔮 Future |
 | `alias-ledger` | Self-certifying identities | 🔮 Future |
 | `voucher` | Micropayment vouchers | 🔮 Future |
@@ -696,6 +698,9 @@ graph LR
 ---
 
 ## 📚 Documentation
+
+> [!WARNING]
+> This documentation is a work in progress. Please refer to the [qnet-spec/](qnet-spec/) directory for the most up-to-date technical specifications and design documents.
 
 ### For Users
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get running in 5 minutes

@@ -22,3 +22,6 @@ Cargo.lock.bak
 # Local logs and runtime artifacts
 /logs/
 *.log.*
+
+# Artifacts (benchmarks, temp notes, operator guides)
+/artifacts/
