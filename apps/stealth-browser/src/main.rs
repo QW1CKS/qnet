@@ -984,6 +984,15 @@ fn spawn_mesh_discovery(
                             info!("mesh: Peer count update: {} total ({} bootstrap + {} QNet)", 
                                   total_count, bootstrap_count, qnet_count);
                             last_total_count = total_count;
+                            
+                            // Update state to "connected" when mesh peers discovered (Phase 2.1.6)
+                            if total_count > 0 {
+                                let mut guard = state.status.lock().unwrap();
+                                if !matches!(guard.0.state, ConnState::Connected) {
+                                    info!("state-transition: Mesh network ready ({} peers) → connected", total_count);
+                                    guard.0.state = ConnState::Connected;
+                                }
+                            }
                         }
                     }
                 }
@@ -1097,9 +1106,6 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         }
     );
     json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
-    // Note: active_circuits would come from MeshNetwork instance if integrated
-    // For now, we can add a placeholder or skip until full integration
-    json["active_circuits"] = serde_json::json!(0); // TODO: Get from MeshNetwork
     
     // Distinguish bootstrap peers (IPFS) from QNet mesh peers
     // Currently all discovered peers include 6 public IPFS bootstrap nodes
@@ -1113,6 +1119,7 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     json["bootstrap_peers"] = serde_json::json!(bootstrap_count);
     json["qnet_peers"] = serde_json::json!(qnet_peers);
     json["peers_total"] = serde_json::json!(mesh_peers);
+    json["mesh_peer_count"] = serde_json::json!(mesh_peers); // Task 2.1.6 - field name for operator guide
     
     if let Some(lu) = last_update {
         let checked_ms_ago = lu.checked_at.map(|i| i.elapsed().as_millis() as u64);
