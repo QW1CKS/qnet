@@ -32,15 +32,15 @@ async fn test_three_nodes_mdns_discovery() {
     let peer_id3 = PeerId::from(keypair3.public());
 
     // Initialize discovery behaviors (no bootstrap nodes - mDNS only)
-    let mut discovery1 = DiscoveryBehavior::new(peer_id1, vec![])
+    let discovery1 = DiscoveryBehavior::new(peer_id1, vec![])
         .await
         .expect("Failed to create discovery1");
     
-    let mut discovery2 = DiscoveryBehavior::new(peer_id2, vec![])
+    let discovery2 = DiscoveryBehavior::new(peer_id2, vec![])
         .await
         .expect("Failed to create discovery2");
     
-    let mut discovery3 = DiscoveryBehavior::new(peer_id3, vec![])
+    let discovery3 = DiscoveryBehavior::new(peer_id3, vec![])
         .await
         .expect("Failed to create discovery3");
 
@@ -55,6 +55,10 @@ async fn test_three_nodes_mdns_discovery() {
     // qnet-spec/docs/physical-testing.md
 
     // Verify initial state: no peers discovered yet
+    let (_relay_transport1, mut discovery1) = discovery1;
+    let (_relay_transport2, mut discovery2) = discovery2;
+    let (_relay_transport3, mut discovery3) = discovery3;
+    
     assert_eq!(discovery1.peer_count(), 0);
     assert_eq!(discovery2.peer_count(), 0);
     assert_eq!(discovery3.peer_count(), 0);
@@ -96,7 +100,7 @@ async fn test_bootstrap_node_dht_discovery() {
     ];
 
     // Initialize discovery with bootstrap nodes
-    let mut discovery = DiscoveryBehavior::new(peer_id, bootstrap_nodes)
+    let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, bootstrap_nodes)
         .await
         .expect("Failed to create discovery with bootstrap");
 
@@ -137,7 +141,7 @@ async fn test_peer_count_increases() {
     let keypair = identity::Keypair::generate_ed25519();
     let peer_id = PeerId::from(keypair.public());
 
-    let mut discovery = DiscoveryBehavior::new(peer_id, vec![])
+    let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
         .await
         .expect("Failed to create discovery");
 
@@ -181,7 +185,7 @@ async fn test_multiple_bootstrap_nodes() {
         bootstrap_nodes.push(BootstrapNode::new(boot_peer_id, boot_addr));
     }
 
-    let mut discovery = DiscoveryBehavior::new(peer_id, bootstrap_nodes)
+    let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, bootstrap_nodes)
         .await
         .expect("Failed to create discovery with multiple bootstrap nodes");
 
@@ -215,7 +219,7 @@ mod discovery_api_tests {
     async fn test_peer_count_non_blocking() {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
-        let mut discovery = DiscoveryBehavior::new(peer_id, vec![])
+        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
             .await
             .expect("Failed to create discovery");
 
@@ -236,7 +240,7 @@ mod discovery_api_tests {
     async fn test_discover_peers_returns_current_state() {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
-        let mut discovery = DiscoveryBehavior::new(peer_id, vec![])
+        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
             .await
             .expect("Failed to create discovery");
 

@@ -248,6 +248,8 @@ pub struct DiscoveryBehavior {
     pub identify: libp2p::identify::Behaviour,
     /// AutoNAT for NAT detection and public address discovery
     pub autonat: libp2p::autonat::Behaviour,
+    /// Relay client for NAT traversal via relay nodes
+    pub relay_client: libp2p::relay::client::Behaviour,
 }
 
 /// Manages routing table populated from peer discovery events.
@@ -312,6 +314,9 @@ impl Default for DiscoveryRoutingTable {
 impl DiscoveryBehavior {
     /// Creates a new `DiscoveryBehavior` instance.
     ///
+    /// Returns both the behavior and the relay transport that must be composed
+    /// with the base transport before creating the Swarm.
+    ///
     /// # Arguments
     ///
     /// * `peer_id` - The local peer ID
@@ -326,10 +331,15 @@ impl DiscoveryBehavior {
     /// - Uses in-memory store for routing table
     /// - Configures 5-minute periodic refresh
     /// - Adds all bootstrap nodes to routing table
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (relay_transport, discovery_behavior) where the relay_transport
+    /// must be composed with the base transport using `.or_transport()`.
     pub async fn new(
         peer_id: PeerId,
         bootstrap_nodes: Vec<BootstrapNode>,
-    ) -> Result<Self, DiscoveryError> {
+    ) -> Result<(libp2p::relay::client::Transport, Self), DiscoveryError> {
         // Initialize Kademlia DHT with in-memory store
         let store = MemoryStore::new(peer_id);
         let kad_config = KademliaConfig::default();
@@ -376,14 +386,19 @@ impl DiscoveryBehavior {
             },
         );
 
-        log::info!("state-transition: Discovery initialized for peer {} with NAT detection support", peer_id);
+        // Initialize relay client for NAT traversal
+        // Returns (Transport, Behaviour) - transport MUST be composed with base transport
+        let (relay_transport, relay_client) = libp2p::relay::client::new(peer_id);
 
-        Ok(Self { 
+        log::info!("state-transition: Discovery initialized for peer {} with NAT traversal support", peer_id);
+
+        Ok((relay_transport, Self { 
             kademlia, 
             mdns,
             identify,
             autonat,
-        })
+            relay_client,
+        }))
     }
 
     /// Discovers peers using both DHT and mDNS.
@@ -480,8 +495,9 @@ mod tests {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
 
-        let discovery = DiscoveryBehavior::new(peer_id, vec![]).await;
-        assert!(discovery.is_ok());
+        let result = DiscoveryBehavior::new(peer_id, vec![]).await;
+        assert!(result.is_ok());
+        let (_relay_transport, _discovery) = result.unwrap();
     }
 
     #[async_std::test]
@@ -489,7 +505,7 @@ mod tests {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
 
-        let mut discovery = DiscoveryBehavior::new(peer_id, vec![])
+        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
             .await
             .expect("Failed to create discovery");
 
@@ -501,7 +517,7 @@ mod tests {
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
 
-        let mut discovery = DiscoveryBehavior::new(peer_id, vec![])
+        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
             .await
             .expect("Failed to create discovery");
 

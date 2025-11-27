@@ -15,7 +15,7 @@ async fn test_circuit_builder_creates_valid_circuit() {
     let keypair = identity::Keypair::generate_ed25519();
     let peer_id = PeerId::from(keypair.public());
     
-    let discovery = DiscoveryBehavior::new(peer_id, vec![]).await.unwrap();
+    let (_relay_transport, discovery) = DiscoveryBehavior::new(peer_id, vec![]).await.unwrap();
     let discovery_arc = Arc::new(Mutex::new(discovery));
     
     let builder = CircuitBuilder::new(discovery_arc.clone());

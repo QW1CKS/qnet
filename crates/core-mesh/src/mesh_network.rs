@@ -103,8 +103,8 @@ impl MeshNetwork {
         // Load bootstrap nodes (catalog-first, seeds as fallback)
         let bootstrap_nodes = Self::load_bootstrap_nodes();
         
-        // Create discovery behavior
-        let discovery = DiscoveryBehavior::new(self.peer_id, bootstrap_nodes).await?;
+        // Create discovery behavior (returns relay_transport + behavior)
+        let (_relay_transport, discovery) = DiscoveryBehavior::new(self.peer_id, bootstrap_nodes).await?;
         let discovery_arc = Arc::new(Mutex::new(discovery));
         
         // Create relay behavior

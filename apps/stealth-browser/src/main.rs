@@ -760,11 +760,11 @@ fn spawn_mesh_discovery(
                 }
             }
             
-            // Initialize discovery behavior
-            let discovery = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
-                Ok(d) => {
+            // Initialize discovery behavior (returns relay transport + behavior)
+            let (relay_transport, discovery) = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
+                Ok((transport, behavior)) => {
                     info!("mesh: Discovery behavior initialized successfully");
-                    d
+                    (transport, behavior)
                 }
                 Err(e) => {
                     warn!(error=?e, "mesh: Discovery initialization failed; peer count will remain 0");
@@ -786,7 +786,10 @@ fn spawn_mesh_discovery(
                 }
             };
             
-            let transport = tcp_transport
+            // CRITICAL: Compose relay transport with TCP transport
+            // This allows connections via relay when direct TCP fails (NAT traversal)
+            let transport = relay_transport
+                .or_transport(tcp_transport)  // Try relay first, fallback to direct TCP
                 .upgrade(Version::V1)
                 .authenticate(noise_config)
                 .multiplex(yamux::Config::default())
@@ -984,7 +987,7 @@ fn spawn_mesh_discovery(
                                                         info!("mesh: Public address detected: {}", addr);
                                                     }
                                                     autonat::NatStatus::Private => {
-                                                        info!("mesh: Behind NAT detected");
+                                                        info!("mesh: Behind NAT - relay will be used for connectivity");
                                                     }
                                                     autonat::NatStatus::Unknown => {
                                                         debug!("mesh: NAT status unknown");
@@ -998,6 +1001,11 @@ fn spawn_mesh_discovery(
                                                 debug!("mesh: AutoNAT outbound probe: {:?}", probe_event);
                                             }
                                         }
+                                    }
+                                    DiscoveryBehaviorEvent::RelayClient(relay_event) => {
+                                        // TODO: Fix relay event variants for libp2p 0.53.2
+                                        // The Event enum may have different variant names in this version
+                                        debug!("mesh: Relay client event: {:?}", relay_event);
                                     }
                                 }
                             }

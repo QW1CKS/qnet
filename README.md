@@ -45,7 +45,7 @@ graph LR
     A[User] -->|Traditional VPN| B[VPN Server]
     B -->|Easy to Block| C[Censored Internet]
     
-    D[User] -->|QNet| E[Disguised as microsoft.com]
+    D[User] -->|QNet| E[Disguised as trusted domain]
     E -->|Unblockable| F[Free Internet]
     
     style B fill:#ff6b6b
@@ -161,16 +161,21 @@ sequenceDiagram
     
     User->>Ext: Browse amazon.com
     Ext->>Helper: SOCKS5 request
-    Helper->>Helper: Select decoy (microsoft.com)
-    Helper->>Mesh: HTX tunnel to peer<br/>(looks like microsoft.com)
+    Helper->>Helper: Select decoy (e.g., trusted CDN)
+    Helper->>Mesh: HTX tunnel to peer<br/>(looks like normal HTTPS)
     Mesh->>Exit: Route through P2P mesh
     Exit->>Target: Fetch amazon.com
     Target->>Exit: Response
     Exit->>Mesh: Encrypted response
     Mesh->>Helper: Deliver via tunnel
+```
+
+### HTX Handshake (TLS Origin Mirroring)
+
+```mermaid
 sequenceDiagram
     participant Client as Client
-    participant Decoy as Decoy Server<br/>(microsoft.com)
+    participant Decoy as Decoy Server<br/>(trusted domain)
     participant QNet as QNet Peer
     
     Note over Client,Decoy: Phase 1: TLS Mirroring
@@ -197,13 +202,24 @@ sequenceDiagram
 - **Forward Secrecy**: Keys rotate, no persistent state compromise
 - **Integrity**: Ed25519 signatures on all config artifacts
 
-#### 3. **Mesh Routing Modes**
+### Mesh Routing Modes
 
 ```mermaid
 graph TB
     subgraph "Fast Mode (1-Hop)"
         U1[User] -->|Direct Tunnel| E1[Exit Node]
         E1 -->|Fetch| T1[Target Site]
+    end
+    
+    subgraph "Privacy Mode (3-Hop)"
+        U2[User] -->|Hop 1| R1[Relay 1]
+        R1 -->|Hop 2| R2[Relay 2]
+        R2 -->|Hop 3| E2[Exit Node]
+        E2 -->|Fetch| T2[Target Site]
+    end
+```
+
+---
     end
     
     subgraph "Privacy Mode (3-Hop)"
@@ -259,7 +275,7 @@ graph TB
 ```mermaid
 graph LR
     subgraph "What ISP Sees"
-        A[Your Computer] -->|HTTPS TLS 1.3| B[microsoft.com]
+        A[Your Computer] -->|HTTPS TLS 1.3| B[trusted-site.com]
         B -->|Normal Response| A
     end
     
@@ -459,8 +475,8 @@ Calibrating → Connected:
 # Check Helper status
 Invoke-WebRequest -Uri http://127.0.0.1:8088/status | ConvertFrom-Json
 
-# Test masked connection (connect to wikipedia disguised as decoy)
-pwsh ./scripts/test-masked-connect.ps1 -Target www.wikipedia.org
+# Test masked connection (any target site disguised via decoy)
+pwsh ./scripts/test-masked-connect.ps1 -Target example.com
 
 # Run full test suite
 cargo test --workspace

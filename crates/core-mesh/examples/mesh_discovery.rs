@@ -12,6 +12,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use core_mesh::discovery::DiscoveryBehavior;
     use libp2p::identity;
+    use libp2p::PeerId;
     use std::time::Duration;
 
     async_std::task::block_on(async {
