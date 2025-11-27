@@ -94,7 +94,7 @@ In countries with internet censorship:
 4. **🔒 Defense-in-Depth Security**
    - ChaCha20-Poly1305 AEAD encryption
    - Noise XK protocol for forward secrecy
-   - Ed25519 signatures for configuration integrity
+   - Ed25519 signatures for catalog integrity
    - Deterministic CBOR serialization
 
 ---
@@ -308,6 +308,7 @@ graph TB
 **No Central Servers:**
 - Leverages existing IPFS/libp2p DHT infrastructure
 - Fallback to operator seed nodes
+- Catalog-based updates for community additions
 - Resilient to regional blocking
 
 ### 3. Cryptographic Security
@@ -320,19 +321,22 @@ graph TB
         L1[TLS 1.3 Outer Layer<br/>Decoy Fingerprint]
         L2[Noise XK Handshake<br/>Mutual Authentication]
         L3[AEAD Framing<br/>ChaCha20-Poly1305]
+        L4[Ed25519 Signatures<br/>Catalog Integrity]
     end
     
     L1 --> L2
     L2 --> L3
+    L3 --> L4
     
     style L1 fill:#ffd43b
     style L2 fill:#74c0fc
     style L3 fill:#51cf66
+    style L4 fill:#b197fc
 ```
 
 **Cryptographic Primitives:**
 - **ChaCha20-Poly1305**: AEAD encryption (fast, secure)
-- **Ed25519**: Signatures for configuration validation
+- **Ed25519**: Signatures for catalog/config validation
 - **X25519**: Ephemeral key exchange (Noise protocol)
 - **HKDF-SHA256**: Key derivation
 
@@ -340,6 +344,7 @@ graph TB
 - Forward secrecy (ephemeral keys)
 - Message integrity (AEAD tags)
 - Replay protection (monotonic nonces)
+- Tamper detection (signed catalogs)
 
 ---
 
@@ -428,14 +433,15 @@ cargo run -p stealth-browser
 
 The Helper's status page (`http://127.0.0.1:8088/`) displays the connection state with visual indicators:
 
-- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers
+- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers/catalog
 - 🟠 **Calibrating** (orange): Bootstrap enabled but not yet connected
-- 🟢 **Connected** (green): Mesh network ready OR successful SOCKS5 traffic
+- 🟢 **Connected** (green): Mesh network ready OR catalog loaded OR successful SOCKS5 traffic
 
 **State Transition Triggers:**
 ```
 Offline → Connected:
   - Any mesh peer discovered (mDNS, IPFS DHT, or public bootstrap nodes)
+  - Valid catalog loaded from seed URL or local cache
   - Successful SOCKS5 connection established
 
 Calibrating → Connected:
@@ -501,6 +507,7 @@ qnet/
 │   ├── core-mix/              # 🎲 Mixnet integration (future)
 │   ├── alias-ledger/          # 📛 Decentralized naming (future)
 │   ├── voucher/               # 💰 Payment system (future)
+│   └── catalog-signer/        # ✍️ Catalog signing tool
 │
 ├── qnet-spec/                 # Specification & governance
 │   ├── specs/001-qnet/
@@ -585,6 +592,7 @@ graph TB
 | **Forward Secrecy** | Ephemeral X25519 keys (Noise XK) | Key rotation tests |
 | **Replay Protection** | Monotonic nonces | Nonce uniqueness tests |
 | **Traffic Masking** | TLS fingerprint cloning | DPI capture validation |
+| **Catalog Integrity** | Ed25519 + DET-CBOR | Signature verification tests |
 
 ### Security Best Practices
 
@@ -598,18 +606,20 @@ graph TB
     end
     
     subgraph "Operational Security"
+        S5[Signed Catalogs]
         S6[Pinned Public Keys]
         S7[Version Monotonicity]
         S8[Audit Logging]
     end
     
-    S1 --> S6
+    S1 --> S5
     S2 --> S6
     S3 --> S7
     S4 --> S8
     
     style S1 fill:#ffd43b
     style S2 fill:#ffd43b
+    style S5 fill:#74c0fc
     style S6 fill:#74c0fc
 ```
 
@@ -618,6 +628,7 @@ graph TB
 - No secret-dependent branching (constant-time guarantees)
 - Nonce uniqueness enforced via monotonic counters
 - Signed config objects validated before use
+- Expired catalogs rejected with grace period
 
 ---
 
@@ -632,6 +643,7 @@ graph TB
 | **HTX Handshake** | - | ~50ms (incl. TLS) |
 | **AEAD Frame Encoding** | 2.5 GB/s | ~400 ns/frame |
 | **AEAD Frame Decoding** | 2.3 GB/s | ~430 ns/frame |
+| **Catalog Verification** | - | ~2ms (Ed25519) |
 | **1-Hop Connection** | 80-120 Mbps | +5-15ms vs direct |
 | **3-Hop Connection** | 40-80 Mbps | +20-50ms vs direct |
 
@@ -676,51 +688,30 @@ graph LR
 
 ## 📚 Documentation
 
-Comprehensive guides for users, developers, and network operators.
+> [!WARNING]
+> This documentation is a work in progress. Please refer to the [qnet-spec/](qnet-spec/) directory for the most up-to-date technical specifications and design documents.
 
 ### For Users
-
-**Getting Started:**
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get running in 5 minutes
 - **[Browser Extension Guide](qnet-spec/docs/extension.md)** - Using the UI
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
-
-**Reference:**
-- **[Helper Documentation](qnet-spec/docs/helper.md)** - Helper node configuration and API
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues
 
 ### For Developers
-
-**Architecture & Design:**
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and 7-layer model
-- **[Protocol Specification](qnet-spec/specs/001-qnet/spec.md)** - Wire format and protocol details
-- **[Physical Testing Guide](qnet-spec/docs/physical-testing.md)** - Real-world testing procedures
-
-**Development Workflow:**
-- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute to QNet
-- **[Unified Task List](qnet-spec/specs/001-qnet/tasks.md)** - Development roadmap and checklist
-- **[Testing Rules](qnet-spec/memory/testing-rules.md)** - Test requirements and standards
-- **[AI Guardrails](qnet-spec/memory/ai-guardrail.md)** - AI coding standards and principles
-
-**Technical Specifications:**
-- **[HTX Protocol](qnet-spec/docs/ARCHITECTURE.md#layer-2-cover-transport-l2)** - HTTP Tunneling Extension
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design
+- **[Protocol Specification](qnet-spec/specs/001-qnet/spec.md)** - Wire format details
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute
+- **[Testing Rules](qnet-spec/memory/testing-rules.md)** - Test requirements
+- **[AI Guardrails](qnet-spec/memory/ai-guardrail.md)** - AI coding standards
 
 ### For Operators
+- **[Running an Exit Node](docs/EXIT_NODE.md)** - Deployment guide
+- **[Catalog Management](docs/CATALOG.md)** - Signing & distribution
+- **[Security Best Practices](SECURITY.md)** - Hardening guide
 
-**Infrastructure:**
-- **[Running an Exit Node](docs/EXIT_NODE.md)** - Deployment and operation guide
-- **[Exit Node Deployment Script](docs/exit_node_deployment.md)** - Automated setup
-
-**Security & Policy:**
-- **[Security Best Practices](SECURITY.md)** - Hardening and incident response
-- **[Strategic Plan](qnet-spec/specs/001-qnet/plan.md)** - Vision, phases, and governance
+### Specification Documents
+- **[Unified Task List](qnet-spec/specs/001-qnet/tasks.md)** - Development roadmap
+- **[Strategic Plan](qnet-spec/specs/001-qnet/plan.md)** - Vision & phases
 - **[Constitution](qnet-spec/specs/001-qnet/constitution.md)** - Governance principles
-
-### Additional Resources
-
-**Demos:**
-- **[Secure Connection Demo](docs/DEMO_SECURE_CONNECTION.md)** - Testing HTX masking
-
-For the most up-to-date technical specifications, see the **[qnet-spec/](qnet-spec/)** directory.
 
 ---
 
@@ -814,6 +805,7 @@ gantt
     Core Infrastructure    :done, p1, 2025-09-15, 2025-10-31
     HTX Protocol          :done, p1a, 2025-09-15, 2025-10-15
     Crypto & Framing      :done, p1b, 2025-09-20, 2025-10-20
+    Catalog System        :done, p1c, 2025-10-01, 2025-10-25
     
     section Phase 2 ✅
     Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-01
@@ -841,6 +833,7 @@ gantt
 - ✅ HTX protocol implementation (`htx/`)
 - ✅ AEAD framing layer (`core-framing/`)
 - ✅ Cryptographic primitives (`core-crypto/`)
+- ✅ Catalog signing system (`catalog-signer/`)
 - ✅ Deterministic CBOR encoding (`core-cbor/`)
 
 **Phase 2: P2P Mesh Network** (✅ 85% Complete - Oct 15 - Nov 27, 2025)
