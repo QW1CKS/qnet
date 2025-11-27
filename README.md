@@ -168,41 +168,6 @@ sequenceDiagram
     Target->>Exit: Response
     Exit->>Mesh: Encrypted response
     Mesh->>Helper: Deliver via tunnel
-    Helper->>User: Display content
-    
-    Note over Helper,Mesh: ISP sees: HTTPS to microsoft.com ✅
-    Note over Exit,Target: Reality: Access to amazon.com 🎯
-```
-
-### Detailed Connection Flow
-
-#### 1. **Bootstrap & Discovery**
-```mermaid
-graph TB
-    A[Helper Starts] --> B[Load Signed Catalog]
-    B --> C{Catalog Valid?}
-    C -->|Yes| D[Extract Decoy List + Seeds]
-    C -->|No| E[Use Fallback Seeds]
-    D --> F[Connect to libp2p DHT]
-    E --> F
-    F --> G[Discover QNet Peers]
-    G --> H[Establish P2P Connections]
-    H --> I[Ready to Route Traffic]
-    
-    style B fill:#ffd43b
-    style F fill:#74c0fc
-    style I fill:#51cf66
-```
-
-**Bootstrap Strategy:**
-- **Primary**: Global libp2p DHT (IPFS infrastructure - free, battle-tested)
-- **Secondary**: Operator seed nodes (small DigitalOcean droplets, $4-6/month)
-- **Updates**: Signed catalog system for adding community nodes
-- **Result**: Zero single point of failure
-
-#### 2. **Traffic Masking (HTX Protocol)**
-
-```mermaid
 sequenceDiagram
     participant Client as Client
     participant Decoy as Decoy Server<br/>(microsoft.com)

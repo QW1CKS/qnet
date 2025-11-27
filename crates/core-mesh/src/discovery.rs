@@ -7,9 +7,10 @@
 //! # Architecture
 //!
 //! The `DiscoveryBehavior` combines both discovery mechanisms into a unified
-//! interface. Bootstrap nodes from the catalog are used to seed the DHT, which
-//! then discovers additional peers across the internet. mDNS runs concurrently
-//! to find peers on the local network without requiring bootstrap infrastructure.
+//! interface. Bootstrap nodes (hardcoded operator exits + public libp2p DHT)
+//! seed the DHT, which then discovers additional peers across the internet.
+//! mDNS runs concurrently to find peers on the local network without requiring
+//! bootstrap infrastructure.
 //!
 //! # Example
 //!
@@ -42,7 +43,6 @@ use libp2p::{
     mdns,
     Multiaddr, PeerId,
 };
-use serde::Serialize;
 use thiserror::Error;
 
 use crate::relay::RoutingTable;
@@ -66,7 +66,7 @@ pub enum DiscoveryError {
 /// Represents a bootstrap node for DHT seeding.
 ///
 /// Bootstrap nodes are trusted entry points into the QNet mesh network.
-/// They are typically loaded from the signed catalog.
+/// These include hardcoded operator exits and public libp2p DHT nodes.
 #[derive(Debug, Clone)]
 pub struct BootstrapNode {
     /// The peer ID of the bootstrap node
@@ -85,145 +85,15 @@ impl BootstrapNode {
     }
 }
 
-/// Load bootstrap nodes from the catalog.
+/// Load bootstrap nodes using hardcoded operator exits + IPFS DHT.
 ///
-/// In production, this function loads bootstrap nodes from the signed catalog.
-/// If the catalog is unavailable or invalid, it falls back to hardcoded seed nodes.
+/// **Bootstrap Strategy** (no catalog):
+/// 1. Hardcoded operator exit nodes (6 droplets - always available)
+/// 2. Public IPFS DHT nodes (decentralized discovery)
 ///
-/// # Catalog-First Priority
-///
-/// Per QNet architecture, the catalog has priority over hardcoded seeds.
-/// Seeds are only used if no valid, fresh catalog is available.
+/// This provides both reliability (operator exits) and decentralization (DHT).
 pub fn load_bootstrap_nodes() -> Vec<BootstrapNode> {
-    // Try to load from environment variable first
-    if let Ok(catalog_json) = std::env::var("QNET_BOOTSTRAP_CATALOG_JSON") {
-        match load_catalog_from_json(&catalog_json) {
-            Ok(nodes) => {
-                log::info!("catalog-first: Loaded {} bootstrap nodes from catalog", nodes.len());
-                return nodes;
-            }
-            Err(e) => {
-                log::warn!("catalog-first: Failed to load catalog: {}, falling back to hardcoded seeds", e);
-            }
-        }
-    }
-
-    // Fallback to hardcoded seed nodes if catalog unavailable
-    log::info!("catalog-first: Using hardcoded seed nodes");
     hardcoded_seed_nodes()
-}
-
-/// Load bootstrap catalog from JSON string.
-///
-/// Supports two formats:
-/// 1. Signed catalog: `{"catalog": {...}, "signature_hex": "..."}`
-/// 2. Unsigned catalog (dev only): `{"catalog": {...}}`
-///
-/// Signature is verified using QNET_BOOTSTRAP_PUBKEY_HEX environment variable.
-fn load_catalog_from_json(json: &str) -> Result<Vec<BootstrapNode>, String> {
-    use serde::{Deserialize, Serialize};
-    
-    #[derive(Debug, Deserialize, Serialize)]
-    struct BootstrapEntry {
-        peer_id: String,
-        multiaddr: String,
-    }
-    
-    #[derive(Debug, Deserialize, Serialize)]
-    struct BootstrapCatalog {
-        version: u32,
-        updated_at: u64,
-        entries: Vec<BootstrapEntry>,
-    }
-    
-    #[derive(Debug, Deserialize)]
-    struct SignedCatalog {
-        catalog: BootstrapCatalog,
-        signature_hex: String,
-    }
-    
-    #[derive(Debug, Deserialize)]
-    struct UnsignedWrapper {
-        catalog: BootstrapCatalog,
-    }
-    
-    // Try signed catalog first
-    if let Ok(signed) = serde_json::from_str::<SignedCatalog>(json) {
-        if let Ok(pubkey_hex) = std::env::var("QNET_BOOTSTRAP_PUBKEY_HEX") {
-            verify_and_parse_catalog(&signed.catalog, &pubkey_hex, &signed.signature_hex)?;
-            return parse_catalog_entries(&signed.catalog);
-        } else {
-            return Err("Signed catalog provided but QNET_BOOTSTRAP_PUBKEY_HEX not set".into());
-        }
-    }
-    
-    // Try unsigned catalog (dev/testing only)
-    if std::env::var("QNET_BOOTSTRAP_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
-        if let Ok(unsigned) = serde_json::from_str::<UnsignedWrapper>(json) {
-            log::warn!("catalog-first: Using UNSIGNED catalog (dev mode)");
-            return parse_catalog_entries(&unsigned.catalog);
-        }
-    }
-    
-    Err("Failed to parse catalog JSON".into())
-}
-
-/// Verify catalog signature using Ed25519.
-fn verify_and_parse_catalog(
-    catalog: &impl Serialize,
-    pubkey_hex: &str,
-    signature_hex: &str,
-) -> Result<(), String> {
-    // Decode public key
-    let pubkey = hex::decode(pubkey_hex.trim())
-        .map_err(|e| format!("Invalid public key hex: {}", e))?;
-    
-    // Serialize catalog to deterministic CBOR
-    let cbor_bytes = core_cbor::to_det_cbor(catalog)
-        .map_err(|e| format!("CBOR encoding failed: {}", e))?;
-    
-    // Decode signature
-    let signature = hex::decode(signature_hex.trim())
-        .map_err(|e| format!("Invalid signature hex: {}", e))?;
-    
-    // Verify signature
-    core_crypto::ed25519::verify(&pubkey, &cbor_bytes, &signature)
-        .map_err(|_| "Signature verification failed".to_string())?;
-    
-    Ok(())
-}
-
-/// Parse catalog entries into BootstrapNode list.
-fn parse_catalog_entries(catalog: &impl serde::Serialize) -> Result<Vec<BootstrapNode>, String> {
-    use serde::Deserialize;
-    
-    #[derive(Deserialize)]
-    struct Entry {
-        peer_id: String,
-        multiaddr: String,
-    }
-    
-    #[derive(Deserialize)]
-    struct Cat {
-        entries: Vec<Entry>,
-    }
-    
-    // Re-serialize and deserialize to extract entries
-    let json = serde_json::to_string(catalog)
-        .map_err(|e| format!("Catalog serialization failed: {}", e))?;
-    let cat: Cat = serde_json::from_str(&json)
-        .map_err(|e| format!("Catalog parse failed: {}", e))?;
-    
-    let mut nodes = Vec::new();
-    for entry in cat.entries {
-        let peer_id = entry.peer_id.parse()
-            .map_err(|e| format!("Invalid peer_id {}: {}", entry.peer_id, e))?;
-        let multiaddr = entry.multiaddr.parse()
-            .map_err(|e| format!("Invalid multiaddr {}: {}", entry.multiaddr, e))?;
-        nodes.push(BootstrapNode::new(peer_id, multiaddr));
-    }
-    
-    Ok(nodes)
 }
 
 /// Public libp2p/IPFS DHT bootstrap nodes (Primary, Free).
@@ -264,22 +134,58 @@ fn public_libp2p_seeds() -> Vec<BootstrapNode> {
     nodes
 }
 
-/// QNet operator seed nodes (Secondary, Minimal Cost).
+/// QNet operator seed nodes (Primary, Operator-Controlled).
 ///
-/// DigitalOcean droplets ($8-18/month) run by the network operator.
-/// Serve dual purpose:
-/// 1. Backup bootstrap if public DHT unavailable
-/// 2. Primary exit nodes for actual web requests
+/// DigitalOcean droplets ($4-6/month each) run by the network operator.
+/// Serve triple duty:
+/// 1. Primary bootstrap nodes for peer discovery
+/// 2. Relay nodes for mesh networking
+/// 3. Exit nodes for actual web requests
 ///
-/// **Update this when deploying official QNet seed nodes.**
+/// **IMPORTANT**: After deploying droplets, update this function and release new binary.
+/// IP changes require binary recompilation and distribution.
+///
+/// **Deployment Instructions**: See `docs/exit_node_deployment.md`
 fn qnet_operator_seeds() -> Vec<BootstrapNode> {
-    // TODO: Replace with actual operator droplet IPs when deployed
-    // Example deployment:
-    // - Droplet 1 (NYC): 198.51.100.10:4001
-    // - Droplet 2 (Amsterdam): 198.51.100.20:4001
-    // - Droplet 3 (Singapore): 198.51.100.30:4001
+    // TODO: Replace placeholders with actual operator droplet configurations
+    // 
+    // When you deploy the 6 DigitalOcean droplets:
+    // 1. Get the peer IDs from each droplet (shown on startup)
+    // 2. Get the public IPs from DigitalOcean dashboard
+    // 3. Update the entries below
+    // 4. Build new binary: cargo build --release -p stealth-browser
+    // 5. Distribute via GitHub releases
+    //
+    // Example configuration:
+    // vec![
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet1NYC".parse().unwrap(),
+    //         "/ip4/198.51.100.10/tcp/4001".parse().unwrap(),
+    //     ),
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet2AMS".parse().unwrap(),
+    //         "/ip4/198.51.100.20/tcp/4001".parse().unwrap(),
+    //     ),
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet3SIN".parse().unwrap(),
+    //         "/ip4/198.51.100.30/tcp/4001".parse().unwrap(),
+    //     ),
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet4FRA".parse().unwrap(),
+    //         "/ip4/198.51.100.40/tcp/4001".parse().unwrap(),
+    //     ),
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet5TOR".parse().unwrap(),
+    //         "/ip4/198.51.100.50/tcp/4001".parse().unwrap(),
+    //     ),
+    //     BootstrapNode::new(
+    //         "12D3KooWExamplePeerIdForDroplet6SYD".parse().unwrap(),
+    //         "/ip4/198.51.100.60/tcp/4001".parse().unwrap(),
+    //     ),
+    // ]
     
-    // For now, return empty - will be populated after Phase 2.5.5 (droplet deployment)
+    // For now, return empty - network will bootstrap via public libp2p DHT only
+    log::info!("No operator seeds configured yet; using public libp2p DHT for bootstrap");
     Vec::new()
 }
 

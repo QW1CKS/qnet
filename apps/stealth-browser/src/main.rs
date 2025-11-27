@@ -33,15 +33,15 @@ static STATUS_PATH_METRICS: AtomicUsize = AtomicUsize::new(0);
 static STATUS_PATH_OTHER: AtomicUsize = AtomicUsize::new(0);
 
 /// Acquire a coarse single-instance lock.
-/// Strategy: place a `instance.lock` file inside the catalog cache dir (or fallback to ./tmp).
+/// Strategy: place a `instance.lock` file inside a temp directory.
 /// File content: PID + timestamp. If file exists and PID still running, refuse start.
 /// If PID not running (stale), overwrite. This avoids multi-instance status/SOCKS port split-brain.
 fn ensure_single_instance() -> Result<()> {
     // We purposely do *not* hold an open file handle (so upgrades / restarts can replace file);
     // race window is acceptable for dev usage. For production we could move to OS mutex / file lock.
-    let cache_dir = CatalogState::cache_dir().unwrap_or_else(|_| std::path::PathBuf::from("tmp"));
-    let _ = std::fs::create_dir_all(&cache_dir);
-    let lock_path = cache_dir.join("instance.lock");
+    let lock_dir = std::env::temp_dir().join("qnet-stealth-browser");
+    let _ = std::fs::create_dir_all(&lock_dir);
+    let lock_path = lock_dir.join("instance.lock");
     let pid = std::process::id();
     // Fast path: attempt create_new; if succeeds we are the only instance.
     match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
@@ -185,41 +185,10 @@ async fn main() -> Result<()> {
 
     info!(port = cfg.socks_port, status_port = cfg.status_port, mode=?cfg.mode, "config loaded");
 
-    // M3: Catalog-first loader (bundled + cache + verify) and background updater
-    let cache_dir = CatalogState::ensure_cache_dir()?;
-    info!(path=%cache_dir.display(), "catalog cache directory ready");
-    let cat_state = CatalogState::init_load().await?;
-    // Persist verified catalog to cache for subsequent runs
-    let _ = cat_state.persist_atomic().await;
-    if let Some(meta) = &cat_state.current {
-        info!(ver=meta.catalog.catalog_version, exp=%meta.catalog.expires_at, "catalog verified");
-    } else {
-        warn!("no valid catalog available; seeds may be used as fallback if enabled elsewhere");
-    }
-
     // Shared app state for status reporting
-    let (app_state, mesh_rx) = AppState::new(cfg.clone(), cat_state.clone());
+    let (app_state, mesh_rx) = AppState::new(cfg.clone());
     let app_state = Arc::new(app_state);
     
-    // Background updater: periodically check mirrors and swap active catalog on success
-    {
-        let app_for_update = app_state.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = check_for_updates_now(&app_for_update).await {
-                    warn!(error=?e, "catalog update cycle failed");
-                }
-                tokio::time::sleep(StdDuration::from_secs(600)).await; // 10 min
-            }
-        });
-    }
-    // Kick off a one-shot "Routine Checkup" on startup to align with signed+ship model
-    let app_state_for_checkup = app_state.clone();
-    tokio::spawn(async move {
-        if let Err(e) = run_routine_checkup(app_state_for_checkup).await {
-            warn!(error=?e, "routine checkup failed");
-        }
-    });
     // Background connectivity monitor (bootstrap gate)
     if cfg.bootstrap && !cfg.disable_bootstrap {
         spawn_connectivity_monitor(app_state.clone());
@@ -376,12 +345,6 @@ async fn get_status(state: tauri::State<'_, AppHandleState>) -> Result<StatusSna
     };
     let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
     let mut out = snap;
-    // Add catalog meta into snapshot (shallow)
-    if let Some(cm) = &state.state.catalog.current {
-        out.catalog_version = Some(cm.catalog.catalog_version);
-        out.catalog_expires_at = Some(cm.catalog.expires_at.clone());
-        out.catalog_source = cm.source.clone();
-    }
     out.last_checked_ms_ago = ms_ago;
     Ok(out)
         .map_err(|e: anyhow::Error| e.to_string())
@@ -589,10 +552,6 @@ struct StatusSnapshot {
     masked_successes: Option<u64>,
     masked_failures: Option<u64>,
     last_masked_error: Option<String>,
-    // M3 catalog status (optional)
-    catalog_version: Option<u32>,
-    catalog_expires_at: Option<String>,
-    catalog_source: Option<String>,
     // Decoy inventory (loaded from signed file during Routine Checkup)
     decoy_count: Option<u32>,
     peers_online: Option<u32>,
@@ -603,11 +562,9 @@ struct StatusSnapshot {
 struct AppState {
     cfg: Config,
     status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
-    catalog: Mutex<CatalogState>,
     // In-memory decoy catalog loaded during Routine Checkup (preferred over env)
     decoy_catalog: Mutex<Option<htx::decoy::DecoyCatalog>>,
-    // Last catalog update attempt/result (manual or background)
-    last_update: Mutex<Option<UpdateInfo>>,
+    // Last catalog update attempt/result (manual or background) - REMOVED: no more catalog updates
     // Timestamp of most recent explicit masked CONNECT success (used to suppress premature downgrade)
     last_masked_connect: Mutex<Option<StdInstant>>,
     // Masked stats (attempt/success/failure counters + last error)
@@ -679,7 +636,7 @@ struct MaskedStats {
 }
 
 impl AppState {
-    fn new(cfg: Config, catalog: CatalogState) -> (Self, tokio::sync::mpsc::UnboundedReceiver<MeshCommand>) {
+    fn new(cfg: Config) -> (Self, tokio::sync::mpsc::UnboundedReceiver<MeshCommand>) {
         let snap = StatusSnapshot {
             state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline },
             last_seed: None,
@@ -690,9 +647,6 @@ impl AppState {
             masked_successes: Some(0),
             masked_failures: Some(0),
             last_masked_error: None,
-            catalog_version: catalog.current.as_ref().map(|c| c.catalog.catalog_version as u32),
-            catalog_expires_at: catalog.current.as_ref().map(|c| c.catalog.expires_at.to_rfc3339()),
-            catalog_source: catalog.current.as_ref().and_then(|c| c.source.clone()),
             decoy_count: None,
             peers_online: None,
             checkup_phase: Some("idle".into()),
@@ -704,9 +658,7 @@ impl AppState {
         let state = Self {
             cfg,
             status: Mutex::new((snap, None)),
-            catalog: Mutex::new(catalog),
             decoy_catalog: Mutex::new(None),
-            last_update: Mutex::new(None),
             last_masked_connect: Mutex::new(None),
             masked_stats: Mutex::new(MaskedStats::default()),
             last_target_ip: Mutex::new(None),
@@ -1194,7 +1146,6 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
     let (snap, since_opt) = { let g = app.status.lock().unwrap(); (g.0.clone(), g.1) };
     let masked_stats = app.masked_stats.lock().ok().map(|g| g.clone());
-    let last_update = app.last_update.lock().ok().and_then(|g| g.clone());
     let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
     let decoy_ip = app.last_decoy_ip.lock().ok().and_then(|g| g.clone());
     // Read current mesh peer count from atomic (updated by discovery thread)
@@ -1228,9 +1179,7 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         json["masked_failures"] = serde_json::json!(ms.failures);
         if let Some(le) = &ms.last_error { json["last_masked_error"] = serde_json::json!(le); }
     }
-    if let Some(v) = snap.catalog_version { json["catalog_version"] = serde_json::json!(v); }
-    if let Some(exp) = snap.catalog_expires_at { json["catalog_expires_at"] = serde_json::json!(exp); }
-    if let Some(src) = snap.catalog_source { json["catalog_source"] = serde_json::json!(src); }
+    // Removed: catalog_version, catalog_expires_at, catalog_source (catalog system removed)
     if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
     // Prefer live mesh peer count over snapshot value (task 2.1.6)
     json["peers_online"] = serde_json::json!(mesh_peers);
@@ -1270,16 +1219,7 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     json["peers_total"] = serde_json::json!(mesh_peers);
     json["mesh_peer_count"] = serde_json::json!(mesh_peers); // Task 2.1.6 - field name for operator guide
     
-    if let Some(lu) = last_update {
-        let checked_ms_ago = lu.checked_at.map(|i| i.elapsed().as_millis() as u64);
-        json["last_update"] = serde_json::json!({
-            "updated": lu.updated,
-            "from": lu.from,
-            "version": lu.version,
-            "error": lu.error,
-            "checked_ms_ago": checked_ms_ago,
-        });
-    }
+    // Removed: last catalog update info (catalog system removed)
     json
 }
 
@@ -1349,7 +1289,7 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         if let Some(v) = get("current_decoy_host").or_else(|| get("current_decoy").or_else(|| get("last_decoy"))) { lines.push(format!("Current Decoy: {}", v.as_str().unwrap_or("?"))); }
         if let Some(v) = get("current_decoy_ip") { lines.push(format!("Current Decoy IP: {}", v.as_str().unwrap_or("?"))); }
         if let Some(v) = get("decoy_count") { lines.push(format!("Decoy count: {}", v)); }
-        if let Some(v) = get("catalog_version") { lines.push(format!("Catalog version: {}", v)); }
+        // Removed: catalog_version (catalog system removed)
         if let Some(v) = get("peers_online") { lines.push(format!("Peers online: {}", v)); }
         if let Some(v) = get("last_masked_error") { lines.push(format!("Last masked error: {}", v.as_str().unwrap_or("?"))); }
         if let Some(v) = get("last_checked_ms_ago") { lines.push(format!("Last checked ms ago: {}", v)); }
@@ -1368,13 +1308,13 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         if let Some(v) = js.get("decoy_count") { pre_hdr_lines.push(format!("Decoy count: {}", v)); }
         if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) { pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?"))); }
         if let Some(v) = js.get("current_decoy").or_else(|| js.get("last_decoy")) { pre_hdr_lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = js.get("catalog_version") { pre_hdr_lines.push(format!("Catalog version: {}", v)); }
+        // Removed: catalog_version (catalog system removed)
         if let Some(v) = js.get("peers_online") { pre_hdr_lines.push(format!("Peers online: {}", v)); }
         if let Some(v) = js.get("last_masked_error").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("Last masked error: {}", v)); }
         let pre_hdr = pre_hdr_lines.join("\n");
         let init_json = js.to_string();
         let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
-    let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;const decHost=j.current_decoy_host;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\nMode: '+j.mode;if(tgtHost)h+='\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\nCurrent Target: '+j.current_target;if(tgtIp)h+='\nCurrent Target IP: '+tgtIp;if(decHost)h+='\nCurrent Decoy: '+decHost;else if(j.current_decoy)h+='\nCurrent Decoy: '+j.current_decoy;if(decIp)h+='\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\nDecoy count: '+j.decoy_count;if(j.catalog_version)h+='\nCatalog version: '+j.catalog_version;if(j.peers_online!==undefined)h+='\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
+    let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;const decHost=j.current_decoy_host;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(decHost)h+='\\nCurrent Decoy: '+decHost;else if(j.current_decoy)h+='\\nCurrent Decoy: '+j.current_decoy;if(decIp)h+='\\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\\nDecoy count: '+j.decoy_count;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
         let html = html_template.replace("__STATE_CLASS__", state_cls)
             .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
             .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
@@ -1927,14 +1867,8 @@ fn ensure_decoy_env_from_signed() -> Result<()> {
 // =====================
 
 async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
-    // Phase: downloading-catalog (force a single update pass now)
-    {
-        let mut g = app.status.lock().unwrap();
-        g.0.checkup_phase = Some("downloading-catalog".into());
-    }
-    // Attempt a single catalog update; ignore errors
-    let _ = check_for_updates_now(&app).await;
-
+    // Removed: catalog update phase (catalog system removed)
+    
     // Phase: calibrating-decoys (load from signed file or env for dev)
     {
         let mut g = app.status.lock().unwrap();
@@ -2016,298 +1950,11 @@ async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> 
 }
 
 // =====================
-// M3: Catalog-first impl
-// =====================
-use chrono::{DateTime, Utc};
-use directories::ProjectDirs;
-use hex::FromHex;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CatalogEntry {
-    id: String,
-    host: String,
-    ports: Vec<u16>,
-    protocols: Vec<String>,
-    alpn: Vec<String>,
-    #[serde(default)]
-    region: Vec<String>,
-    #[serde(default)]
-    weight: Option<u64>,
-    #[serde(default)]
-    health_path: Option<String>,
-    #[serde(default)]
-    tls_profile: Option<String>,
-    #[serde(default)]
-    quic_hints: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CatalogInner {
-    schema_version: u64,
-    catalog_version: u64,
-    generated_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-    publisher_id: String,
-    update_urls: Vec<String>,
-    #[serde(default)]
-    seed_fallback_urls: Vec<String>,
-    entries: Vec<CatalogEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CatalogJson {
-    #[serde(flatten)]
-    catalog: CatalogInner,
-    #[serde(default)]
-    signature_hex: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct CatalogMeta {
-    catalog: CatalogInner,
-    signature_hex: Option<String>,
-    source: Option<String>, // bundled|cache|<url>
-}
-
-#[derive(Debug, Clone)]
-struct CatalogState {
-    current: Option<CatalogMeta>,
-}
-
-impl CatalogState {
-    fn cache_paths() -> anyhow::Result<(std::path::PathBuf, std::path::PathBuf)> {
-        let dirs = ProjectDirs::from("org", "qnet", "stealth-browser")
-            .ok_or_else(|| anyhow::anyhow!("project dirs"))?;
-        let dir = dirs.cache_dir();
-        std::fs::create_dir_all(dir)?;
-        let json = dir.join("catalog.json");
-        let sig = dir.join("catalog.json.sig");
-        Ok((json, sig))
-    }
-
-    fn cache_dir() -> anyhow::Result<std::path::PathBuf> {
-        let dirs = ProjectDirs::from("org", "qnet", "stealth-browser")
-            .ok_or_else(|| anyhow::anyhow!("project dirs"))?;
-        Ok(dirs.cache_dir().to_path_buf())
-    }
-
-    fn ensure_cache_dir() -> anyhow::Result<std::path::PathBuf> {
-        let p = Self::cache_dir()?;
-        std::fs::create_dir_all(&p)?;
-        Ok(p)
-    }
-
-    async fn init_load() -> anyhow::Result<Self> {
-        // 1) Try cache
-        if let Some(meta) = Self::load_from_cache().await? {
-            return Ok(Self { current: Some(meta) });
-        }
-        // 2) Try bundled assets (embedded with the binary)
-        if let Some(meta) = Self::load_from_bundled_assets()? {
-            return Ok(Self { current: Some(meta) });
-        }
-        // 3) Dev-only: try repo templates if present on disk
-        if let Some(meta) = Self::load_from_repo_templates().await? {
-            return Ok(Self { current: Some(meta) });
-        }
-        Ok(Self { current: None })
-    }
-
-    async fn load_from_cache() -> anyhow::Result<Option<CatalogMeta>> {
-        let (json_p, sig_p) = Self::cache_paths()?;
-        if !json_p.exists() || !sig_p.exists() { return Ok(None); }
-        let json = tokio::fs::read(&json_p).await?;
-        let sig = tokio::fs::read_to_string(&sig_p).await?;
-        match Self::parse_and_verify(&json, Some(&sig))? {
-            Some(mut cm) => { cm.source = Some("cache".into()); Ok(Some(cm)) }
-            None => Ok(None),
-        }
-    }
-
-    fn load_from_bundled_assets() -> anyhow::Result<Option<CatalogMeta>> {
-        // These files are generated at build-time and embedded into the binary
-        // Paths are relative to this source file (src/) -> ../assets/
-        let json_bytes: &'static [u8] = include_bytes!("../assets/catalog-default.json");
-        match Self::parse_and_verify(json_bytes, None)? {
-            Some(mut cm) => { cm.source = Some("bundled".into()); Ok(Some(cm)) }
-            None => Ok(None),
-        }
-    }
-
-    async fn load_from_repo_templates() -> anyhow::Result<Option<CatalogMeta>> {
-        let repo_json = std::path::Path::new("qnet-spec").join("templates").join("catalog.example.json");
-        let repo_sig = std::path::Path::new("qnet-spec").join("templates").join("catalog.example.json.sig");
-        if !repo_json.exists() || !repo_sig.exists() { return Ok(None); }
-        let json = tokio::fs::read(&repo_json).await?;
-        let sig = tokio::fs::read_to_string(&repo_sig).await?;
-        match Self::parse_and_verify(&json, Some(&sig))? {
-            Some(mut cm) => { cm.source = Some("bundled".into()); Ok(Some(cm)) }
-            None => Ok(None)
-        }
-    }
-
-    fn parse_and_verify(json_bytes: &[u8], sig_detached: Option<&str>) -> anyhow::Result<Option<CatalogMeta>> {
-        let cj: CatalogJson = serde_json::from_slice(json_bytes)?;
-        // TTL check early
-        let exp: DateTime<Utc> = cj.catalog.expires_at;
-        if exp <= Utc::now() {
-            warn!("catalog expired; rejecting");
-            return Ok(None);
-        }
-        // Determine signature source
-        let sig_hex_opt = match (sig_detached, cj.signature_hex.as_deref()) {
-            (Some(s), _) => Some(s.trim().to_string()),
-            (None, Some(inline)) => Some(inline.to_string()),
-            _ => None,
-        };
-    let allow_unsigned_env = std::env::var("STEALTH_CATALOG_ALLOW_UNSIGNED").map(|v| v=="1" || v.eq_ignore_ascii_case("true")).unwrap_or(false);
-    // Only honor unsigned catalogs on debug builds AND when env flag is set.
-    let allow_unsigned = cfg!(debug_assertions) && allow_unsigned_env;
-        if let Some(sig_hex) = sig_hex_opt {
-            let sig = match Vec::from_hex(&sig_hex) {
-                Ok(v) => v,
-                Err(e) => {
-                    if allow_unsigned {
-                        warn!(error=?e, "bad sig hex; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
-                        return Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: None, source: None }));
-                    } else {
-                        return Ok(None);
-                    }
-                }
-            };
-            // Inline verify: re-serialize inner to DET-CBOR and verify using pinned pubkey
-            let det = core_cbor::to_det_cbor(&cj.catalog)?;
-            let pk_hex = std::env::var("STEALTH_DECOY_PUBKEY_HEX")
-                .map_err(|_| anyhow::anyhow!("STEALTH_DECOY_PUBKEY_HEX not set (publisher pubkey required)"))?;
-            let cleaned = pk_hex
-                .lines()
-                .filter(|l| !l.trim_start().starts_with('#'))
-                .collect::<String>();
-            let pk = Vec::from_hex(cleaned.trim()).map_err(|_| anyhow::anyhow!("bad pubkey hex"))?;
-            core_crypto::ed25519::verify(&pk, &det, &sig)
-                .map_err(|_| anyhow::anyhow!("signature verify failed"))?;
-            Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: Some(hex::encode(sig)), source: None }))
-        } else if allow_unsigned {
-            warn!("missing signature; accepting unsigned catalog due to STEALTH_CATALOG_ALLOW_UNSIGNED");
-            Ok(Some(CatalogMeta { catalog: cj.catalog, signature_hex: None, source: None }))
-        } else {
-            warn!("missing signature");
-            Ok(None)
-        }
-    }
-
-    async fn persist_atomic(&self) -> anyhow::Result<()> {
-        if let Some(cur) = &self.current {
-            let cache_dir = Self::cache_dir()?;
-            if let Err(e) = std::fs::create_dir_all(&cache_dir) { warn!(error=?e, path=%cache_dir.display(), "create cache dir failed"); return Err(e.into()); }
-            let (json_p, sig_p) = Self::cache_paths()?;
-            let tmp_json = json_p.with_extension("json.tmp");
-            let tmp_sig = sig_p.with_extension("sig.tmp");
-            // Persist outer JSON with signature if available (self-contained cache)
-            let mut outer = serde_json::json!({
-                "schema_version": cur.catalog.schema_version,
-                "catalog_version": cur.catalog.catalog_version,
-                "generated_at": cur.catalog.generated_at,
-                "expires_at": cur.catalog.expires_at,
-                "publisher_id": cur.catalog.publisher_id,
-                "update_urls": cur.catalog.update_urls,
-                "seed_fallback_urls": cur.catalog.seed_fallback_urls,
-                "entries": cur.catalog.entries,
-            });
-            if let Some(sig_hex) = &cur.signature_hex {
-                outer["signature_hex"] = serde_json::Value::String(sig_hex.clone());
-            }
-            let json = serde_json::to_vec_pretty(&outer)?;
-            tokio::fs::write(&tmp_json, &json).await?;
-            tokio::fs::rename(&tmp_json, &json_p).await?;
-            // Write detached signature file for convenience
-            if let Some(sig_hex) = &cur.signature_hex {
-                if let Err(e) = tokio::fs::write(&tmp_sig, sig_hex).await { warn!(error=?e, path=%tmp_sig.display(), "sig write failed"); }
-                if let Err(e) = tokio::fs::rename(&tmp_sig, &sig_p).await { warn!(error=?e, from=%tmp_sig.display(), to=%sig_p.display(), "sig rename failed"); }
-            }
-            info!(path=%json_p.display(), "catalog cached");
-            return Ok(());
-        }
-        Err(anyhow::anyhow!("no catalog to persist"))
-    }
-
-    // updater removed in favor of app-level shared updater using AppState
-}
-
-// =====================
-// Catalog update trigger (manual + background)
+// Removed: Catalog system (CatalogEntry, CatalogInner, CatalogJson, CatalogMeta, CatalogState)
+// Bootstrap now uses hardcoded operator exits + public libp2p DHT
 // =====================
 
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct UpdateInfo {
-    updated: bool,
-    from: Option<String>,
-    version: Option<u64>,
-    error: Option<String>,
-    checked_at: Option<StdInstant>,
-}
-
-async fn check_for_updates_now(app: &Arc<AppState>) -> Result<UpdateInfo> {
-    use anyhow::Context as _;
-    let mut urls: Vec<String> = Vec::new();
-    let mut cur_ver: Option<u64> = None;
-    {
-        let guard = app.catalog.lock().unwrap();
-        if let Some(c) = &guard.current { urls = c.catalog.update_urls.clone(); cur_ver = Some(c.catalog.catalog_version); }
-    }
-    if urls.is_empty() {
-        let info = UpdateInfo { updated: false, from: None, version: cur_ver, error: Some("no update_urls".into()), checked_at: Some(StdInstant::now()) };
-        *app.last_update.lock().unwrap() = Some(info.clone());
-        return Ok(info);
-    }
-    let client = reqwest::Client::builder().use_rustls_tls().build().context("http client")?;
-    let mut last_err: Option<String> = None;
-    for u in urls {
-        match client.get(&u).send().await.and_then(|r| r.error_for_status()) {
-            Ok(resp) => {
-                match resp.bytes().await {
-                    Ok(bytes) => match CatalogState::parse_and_verify(&bytes, None) {
-                        Ok(Some(mut cm)) => {
-                            // Compare versions
-                            let newer = {
-                                let guard = app.catalog.lock().unwrap();
-                                match &guard.current { Some(cur) => cm.catalog.catalog_version > cur.catalog.catalog_version, None => true }
-                            };
-                            if newer {
-                                cm.source = Some(u.clone());
-                                // Persist and swap
-                                let new_state = CatalogState { current: Some(cm.clone()) };
-                                let _ = new_state.persist_atomic().await;
-                                {
-                                    let mut guard = app.catalog.lock().unwrap();
-                                    *guard = new_state;
-                                }
-                                // Update snapshot fields
-                                {
-                                    let mut g = app.status.lock().unwrap();
-                                    g.0.catalog_version = Some(cm.catalog.catalog_version as u32);
-                                    g.0.catalog_expires_at = Some(cm.catalog.expires_at.to_rfc3339());
-                                    g.0.catalog_source = cm.source.clone();
-                                }
-                                let info = UpdateInfo { updated: true, from: Some(u.clone()), version: Some(cm.catalog.catalog_version), error: None, checked_at: Some(StdInstant::now()) };
-                                *app.last_update.lock().unwrap() = Some(info.clone());
-                                info!(url=%u, ver=cm.catalog.catalog_version, "catalog updated");
-                                return Ok(info);
-                            } else {
-                                debug!(url=%u, "catalog same or older; skip");
-                            }
-                        }
-                        Ok(None) => { last_err = Some("verify/ttl rejection".into()); }
-                        Err(e) => { last_err = Some(format!("parse error: {e}")); }
-                    },
-                    Err(e) => { last_err = Some(format!("read body: {e}")); }
-                }
-            }
-            Err(e) => { last_err = Some(format!("http: {e}")); }
-        }
-    }
-    let info = UpdateInfo { updated: false, from: None, version: cur_ver, error: last_err, checked_at: Some(StdInstant::now()) };
-    *app.last_update.lock().unwrap() = Some(info.clone());
-    Ok(info)
-}
+// =====================
+// Removed: Catalog update trigger (manual + background)
+// Now using hardcoded operator seeds + public libp2p DHT
+// =====================

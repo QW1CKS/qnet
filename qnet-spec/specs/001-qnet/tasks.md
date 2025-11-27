@@ -265,8 +265,11 @@
   - [x] `/dnsaddr/bootstrap.libp2p.io`
   - [x] `/dnsaddr/ipfs.io`
   - [x] Public libp2p multiaddrs from IPFS docs
+- [x] Update `qnet_operator_seeds()` with placeholder structure for 6 droplets
 - [x] Test: Verify Helper can bootstrap via public DHT
 - [x] Test: `cargo test -p core-mesh --lib bootstrap`
+
+**Note**: Catalog system removed - bootstrap now uses hardcoded operator exits + public libp2p DHT
 
 #### 2.5.2 Prepare Droplet Deployment Script
 - [ ] Create file: `scripts/deploy-exit-node.sh`
