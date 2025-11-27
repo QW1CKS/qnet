@@ -1,1 +1,0 @@
-ed25519_signature_hex_over_DET_CBOR

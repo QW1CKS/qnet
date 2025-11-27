@@ -134,13 +134,7 @@ async fn main() -> Result<()> {
                 s if s.starts_with("--socks-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.socks_port=p; eprintln!("cli-override: socks_port={}", p); } } }
                 "--status-port" => { if let Some(v)=args.next() { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
                 s if s.starts_with("--status-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
-                "--allow-unsigned-decoy" => { std::env::set_var("STEALTH_DECOY_ALLOW_UNSIGNED", "1"); eprintln!("cli-override: allow unsigned decoy catalogs (dev only)"); }
-                "--decoy-catalog" => {
-                    if let Some(path) = args.next() { ingest_decoy_catalog_arg(&path); }
-                }
-                s if s.starts_with("--decoy-catalog=") => {
-                    if let Some(p)=s.split_once('=').map(|(_,v)| v) { ingest_decoy_catalog_arg(p); }
-                }
+
                 "--relay-only" => {
                     cfg.helper_mode = HelperMode::RelayOnly;
                     eprintln!("cli-override: helper_mode=relay-only (safe, no exit liability)");
@@ -159,7 +153,7 @@ async fn main() -> Result<()> {
                     eprintln!("cli-override: mesh_enabled=false (discovery/relay disabled)");
                 }
                 "--help" | "-h" => {
-                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  --decoy-catalog <path> (dev/testing)\n  --allow-unsigned-decoy (dev)\n  -h,--help show help");
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  -h,--help show help");
                     return Ok(());
                 }
                 _ => { /* ignore unknown for forward compat */ }
@@ -266,12 +260,7 @@ async fn main() -> Result<()> {
         None
     };
 
-    // If running in masked mode, ensure decoy catalog env is set from our signed file (production path)
-    if cfg.mode == Mode::Masked {
-        if let Err(e) = ensure_decoy_env_from_signed() {
-            warn!(error=?e, "masked mode: no decoy env set; htx::api::dial will route direct");
-        }
-    }
+
 
     // Start SOCKS5 server and wait for shutdown
     let addr = format!("127.0.0.1:{}", cfg.socks_port);
@@ -519,17 +508,7 @@ fn apply_mode(cfg: &mut Config, raw: &str) {
     eprintln!("cli-override: mode={:?}", cfg.mode);
 }
 
-fn ingest_decoy_catalog_arg(path: &str) {
-    let p = std::path::Path::new(path);
-    match std::fs::read_to_string(p) {
-        Ok(text) => {
-            if !text.is_empty() { std::env::set_var("STEALTH_DECOY_CATALOG_JSON", &text); eprintln!("cli-override: decoy catalog loaded path={}", p.display()); }
-        }
-        Err(e) => {
-            eprintln!("cli-warn: failed to read decoy catalog {}: {}", p.display(), e);
-        }
-    }
-}
+
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -562,9 +541,7 @@ struct StatusSnapshot {
 struct AppState {
     cfg: Config,
     status: Mutex<(StatusSnapshot, Option<StdInstant>)>,
-    // In-memory decoy catalog loaded during Routine Checkup (preferred over env)
-    decoy_catalog: Mutex<Option<htx::decoy::DecoyCatalog>>,
-    // Last catalog update attempt/result (manual or background) - REMOVED: no more catalog updates
+    // REMOVED: catalog system - no longer using decoy catalogs
     // Timestamp of most recent explicit masked CONNECT success (used to suppress premature downgrade)
     last_masked_connect: Mutex<Option<StdInstant>>,
     // Masked stats (attempt/success/failure counters + last error)
@@ -658,7 +635,7 @@ impl AppState {
         let state = Self {
             cfg,
             status: Mutex::new((snap, None)),
-            decoy_catalog: Mutex::new(None),
+
             last_masked_connect: Mutex::new(None),
             masked_stats: Mutex::new(MaskedStats::default()),
             last_target_ip: Mutex::new(None),
@@ -746,7 +723,7 @@ fn spawn_mesh_discovery(
             let peer_id = libp2p::PeerId::from(keypair.public());
             info!(peer_id=%peer_id, "mesh: Generated local peer ID");
             
-            // Load bootstrap nodes (catalog-first per architecture)
+            // Load bootstrap nodes from hardcoded seeds
             let bootstrap_nodes = core_mesh::discovery::load_bootstrap_nodes();
             if bootstrap_nodes.is_empty() {
                 info!("mesh: No bootstrap nodes available; relying on mDNS for local discovery");
@@ -1593,25 +1570,12 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             let (host, port) = parse_host_port(&target)?;
             // Build origin URL for dial (scheme decides default ports and ALPN templates)
             let origin = if port == 443 { format!("https://{}", host) } else { format!("https://{}:{}", host, port) };
-            // Try to resolve decoy using in-memory catalog (or env fallback) for visibility
-            let mut decoy_str: Option<String> = None;
-            if let Some(app) = &app_state {
-                // Prefer app-loaded catalog
-                let cat_opt = { app.decoy_catalog.lock().unwrap().clone() };
-                if let Some(cat) = cat_opt {
-                    if let Some((dh, dp, _)) = htx::decoy::resolve(&origin, &cat) {
-                        decoy_str = Some(format!("{}:{}", dh, dp));
-                    }
-                } else {
-                    // Fallback to env
-                    if let Some(cat) = htx::decoy::load_from_env() {
-                        if let Some((dh, dp, _)) = htx::decoy::resolve(&origin, &cat) {
-                            decoy_str = Some(format!("{}:{}", dh, dp));
-                        }
-                    }
-                }
-            }
-            // Attempt dial (htx will consult decoy env if present)
+            
+            // REMOVED: Decoy catalog resolution (catalog system removed)
+            // HTX will use direct connection or environment-based routing if configured
+            let decoy_str: Option<String> = None; // No catalog, no decoy resolution
+            
+            // Attempt dial (htx handles routing internally)
             if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.attempts = ms.attempts.saturating_add(1); } }
             let conn = match htx::api::dial(&origin) {
                 Ok(c) => c,
@@ -1812,157 +1776,23 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
     }
 }
 
-fn ensure_decoy_env_from_signed() -> Result<()> {
-    // Dev override: route all decoys to a local edge gateway on localhost:4443
-    // Enable with STEALTH_DECOY_DEV_LOCAL=1. This sets an unsigned catalog in env
-    // and configures HTX_TRUST_PEM to trust certs/edge.crt, so you can use a local self-signed cert.
-    if std::env::var("STEALTH_DECOY_DEV_LOCAL").ok().as_deref() == Some("1") {
-        let unsigned = serde_json::json!({
-            "catalog": {
-                "version": 1,
-                "updated_at": 1_726_000_000u64,
-                "entries": [
-                    {"host_pattern": "*", "decoy_host": "localhost", "port": 4443, "alpn": ["h2","http/1.1"], "weight": 1}
-                ]
-            }
-        });
-        std::env::set_var("STEALTH_DECOY_ALLOW_UNSIGNED", "1");
-        std::env::set_var("STEALTH_DECOY_CATALOG_JSON", unsigned.to_string());
-        // Trust local edge cert if present
-        let edge_crt = std::path::Path::new("certs").join("edge.crt");
-        if edge_crt.exists() {
-            let p = edge_crt.to_string_lossy().to_string();
-            match std::env::var("HTX_TRUST_PEM") {
-                Ok(curr) => {
-                    // Append if not already present (case-insensitive contains check)
-                    if !curr.to_ascii_lowercase().contains(&p.to_ascii_lowercase()) {
-                        let val = if curr.is_empty() { p } else { format!("{};{}", curr, p) };
-                        std::env::set_var("HTX_TRUST_PEM", val);
-                    }
-                }
-                Err(_) => std::env::set_var("HTX_TRUST_PEM", p),
-            }
-        }
-        info!("dev-local decoy enabled: routing all origins to https://localhost:4443 (unsigned)");
-        return Ok(());
-    }
-    // If already set externally, do nothing (now requires explicit pubkey via env)
-    if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
-        if std::env::var("STEALTH_DECOY_PUBKEY_HEX").is_err() {
-            bail!("STEALTH_DECOY_CATALOG_JSON provided but STEALTH_DECOY_PUBKEY_HEX missing (publisher pubkey hex)");
-        }
-        return Ok(());
-    }
-    // Try repo template (dev) — in production this would be a bundled asset
-    let p = std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json");
-    if p.exists() {
-        let text = std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-        // Basic sanity: must contain signature_hex to be considered signed
-        if text.contains("\"signature_hex\"") {
-            if std::env::var("STEALTH_DECOY_PUBKEY_HEX").is_err() {
-                bail!("found signed decoy catalog at {} but STEALTH_DECOY_PUBKEY_HEX not set", p.display());
-            }
-            std::env::set_var("STEALTH_DECOY_CATALOG_JSON", &text);
-            info!(path=%p.display(), "decoy catalog env set from signed file (env pubkey)");
-            return Ok(());
-        }
-    }
-    bail!("no signed decoy catalog available")
-}
-
 // =====================
-// Routine Checkup (download+verify catalog, load decoys, stub peer discovery)
+// Routine Checkup (stub - catalog system removed)
 // =====================
 
 async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
-    // Removed: catalog update phase (catalog system removed)
+    // REMOVED: Catalog system - no longer loading decoy catalogs
     
-    // Phase: calibrating-decoys (load from signed file or env for dev)
-    {
-        let mut g = app.status.lock().unwrap();
-        g.0.checkup_phase = Some("calibrating-decoys".into());
-    }
-    let decoy = load_decoy_catalog_signed_or_dev().await;
-    if let Some(ref cat) = decoy {
-        eprintln!("decoy-catalog:loaded entries={} (routine checkup)", cat.entries.len());
-    } else {
-        eprintln!("decoy-catalog:none-loaded (routine checkup)");
-    }
-    {
-        let mut dc = app.decoy_catalog.lock().unwrap();
-        *dc = decoy.clone();
-        let mut g = app.status.lock().unwrap();
-        g.0.decoy_count = Some(decoy.as_ref().map(|c| c.entries.len() as u32).unwrap_or(0));
-    }
-
-    // Phase: peer-discovery (stub)
-    {
-        let mut g = app.status.lock().unwrap();
-        g.0.checkup_phase = Some("peer-discovery".into());
-        // TODO: integrate real discovery; for now 0
-        g.0.peers_online = Some(0);
-    }
-
-    // Phase: ready
+    // Phase: ready (minimal bootstrap only)
     {
         let mut g = app.status.lock().unwrap();
         g.0.checkup_phase = Some("ready".into());
+        g.0.peers_online = Some(0); // Updated by mesh thread
     }
     Ok(())
 }
 
-// (legacy stub removed)
-
-async fn load_decoy_catalog_signed_or_dev() -> Option<htx::decoy::DecoyCatalog> {
-    // Prefer a signed decoy catalog from repo templates (dev) with optional unsigned fallback gated by env.
-    use serde::Deserialize;
-
-    // NEW: Environment precedence. If caller explicitly injected a catalog via env, honor it first
-    // (supports test harness derived catalogs / local edge overrides). This avoids template
-    // shadowing of ephemeral verified catalogs provided at runtime.
-    if std::env::var("STEALTH_DECOY_CATALOG_JSON").is_ok() {
-        if let Some(cat) = htx::decoy::load_from_env() {
-            eprintln!("decoy-catalog:loaded entries={} (env-precedence)", cat.entries.len());
-            return Some(cat);
-        }
-    }
-
-    let candidates = [
-        std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.json"),
-        std::path::Path::new("qnet-spec").join("templates").join("decoy-catalog.example.json"),
-    ];
-
-    for path in candidates {
-        if !path.exists() { continue; }
-        let Ok(text) = std::fs::read_to_string(&path) else { continue; };
-
-        // Signed catalog attempt
-        if let Ok(signed) = serde_json::from_str::<htx::decoy::SignedCatalog>(&text) {
-            if let Ok(pk_hex) = std::env::var("STEALTH_DECOY_PUBKEY_HEX") {
-                if let Ok(cat) = htx::decoy::verify_signed_catalog(pk_hex.trim(), &signed) {
-                    return Some(cat);
-                }
-            } else { continue; }
-        }
-
-        // Unsigned development fallback (only when explicitly allowed)
-        if std::env::var("STEALTH_DECOY_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
-            #[derive(Deserialize)]
-            struct Unsigned { catalog: htx::decoy::DecoyCatalog }
-            if let Ok(u) = serde_json::from_str::<Unsigned>(&text) { return Some(u.catalog); }
-        }
-    }
-
-    // Environment-based dynamic fallback (dev only)
-    htx::decoy::load_from_env()
-}
-
 // =====================
-// Removed: Catalog system (CatalogEntry, CatalogInner, CatalogJson, CatalogMeta, CatalogState)
+// Removed: Catalog system (decoy catalog loading, verification, updates)
 // Bootstrap now uses hardcoded operator exits + public libp2p DHT
-// =====================
-
-// =====================
-// Removed: Catalog update trigger (manual + background)
-// Now using hardcoded operator seeds + public libp2p DHT
 // =====================
