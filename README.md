@@ -507,7 +507,6 @@ qnet/
 │   ├── core-mix/              # 🎲 Mixnet integration (future)
 │   ├── alias-ledger/          # 📛 Decentralized naming (future)
 │   ├── voucher/               # 💰 Payment system (future)
-│   └── catalog-signer/        # ✍️ Catalog signing tool
 │
 ├── qnet-spec/                 # Specification & governance
 │   ├── specs/001-qnet/
