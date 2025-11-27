@@ -688,30 +688,57 @@ graph LR
 
 ## 📚 Documentation
 
-> [!WARNING]
-> This documentation is a work in progress. Please refer to the [qnet-spec/](qnet-spec/) directory for the most up-to-date technical specifications and design documents.
+Comprehensive guides for users, developers, and network operators.
 
 ### For Users
+
+**Getting Started:**
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get running in 5 minutes
 - **[Browser Extension Guide](qnet-spec/docs/extension.md)** - Using the UI
-- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+
+**Reference:**
+- **[Helper Documentation](qnet-spec/docs/helper.md)** - Helper node configuration and API
 
 ### For Developers
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design
-- **[Protocol Specification](qnet-spec/specs/001-qnet/spec.md)** - Wire format details
-- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute
-- **[Testing Rules](qnet-spec/memory/testing-rules.md)** - Test requirements
-- **[AI Guardrails](qnet-spec/memory/ai-guardrail.md)** - AI coding standards
+
+**Architecture & Design:**
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and 7-layer model
+- **[Protocol Specification](qnet-spec/specs/001-qnet/spec.md)** - Wire format and protocol details
+- **[Physical Testing Guide](qnet-spec/docs/physical-testing.md)** - Real-world testing procedures
+
+**Development Workflow:**
+- **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute to QNet
+- **[Unified Task List](qnet-spec/specs/001-qnet/tasks.md)** - Development roadmap and checklist
+- **[Testing Rules](qnet-spec/memory/testing-rules.md)** - Test requirements and standards
+- **[AI Guardrails](qnet-spec/memory/ai-guardrail.md)** - AI coding standards and principles
+
+**Technical Specifications:**
+- **[HTX Protocol](qnet-spec/docs/ARCHITECTURE.md#layer-2-cover-transport-l2)** - HTTP Tunneling Extension
+- **[Catalog Schema](qnet-spec/docs/catalog-schema.md)** - Decoy catalog format
+- **[Catalog Signer](qnet-spec/docs/catalog-signer.md)** - Signing tool documentation
 
 ### For Operators
-- **[Running an Exit Node](docs/EXIT_NODE.md)** - Deployment guide
-- **[Catalog Management](docs/CATALOG.md)** - Signing & distribution
-- **[Security Best Practices](SECURITY.md)** - Hardening guide
 
-### Specification Documents
-- **[Unified Task List](qnet-spec/specs/001-qnet/tasks.md)** - Development roadmap
-- **[Strategic Plan](qnet-spec/specs/001-qnet/plan.md)** - Vision & phases
+**Infrastructure:**
+- **[Running an Exit Node](docs/EXIT_NODE.md)** - Deployment and operation guide
+- **[Catalog Management](docs/CATALOG.md)** - Signing, distribution, and updates
+- **[Exit Node Deployment Script](docs/exit_node_deployment.md)** - Automated setup
+
+**Security & Policy:**
+- **[Security Best Practices](SECURITY.md)** - Hardening and incident response
+- **[Strategic Plan](qnet-spec/specs/001-qnet/plan.md)** - Vision, phases, and governance
 - **[Constitution](qnet-spec/specs/001-qnet/constitution.md)** - Governance principles
+
+### Additional Resources
+
+**Migration Guides:**
+- **[Catalog Removal Migration](docs/MIGRATION_CATALOG_REMOVAL.md)** - Transitioning from old catalog system
+
+**Demos:**
+- **[Secure Connection Demo](docs/DEMO_SECURE_CONNECTION.md)** - Testing HTX masking
+
+For the most up-to-date technical specifications, see the **[qnet-spec/](qnet-spec/)** directory.
 
 ---
 
