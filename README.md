@@ -219,22 +219,6 @@ graph TB
     end
 ```
 
----
-    end
-    
-    subgraph "Privacy Mode (3-Hop)"
-        U2[User] -->|HTX| P1[Peer 1]
-        P1 -->|Encrypted Relay| P2[Peer 2]
-        P2 -->|Encrypted Relay| E2[Exit Node]
-        E2 -->|Fetch| T2[Target Site]
-    end
-    
-    style U1 fill:#b197fc
-    style U2 fill:#b197fc
-    style E1 fill:#51cf66
-    style E2 fill:#51cf66
-```
-
 **Fast Mode**: Direct tunnel for maximum performance (default)
 **Privacy Mode**: Multi-hop relay for stronger anonymity (optional)
 
@@ -815,6 +799,8 @@ graph LR
 gantt
     title QNet Development Timeline
     dateFormat YYYY-MM-DD
+    todayMarker stroke-width:5px,stroke:#ff6b6b,opacity:0.8
+    
     section Phase 1 ✅
     Core Infrastructure    :done, p1, 2025-09-15, 2025-10-31
     HTX Protocol          :done, p1a, 2025-09-15, 2025-10-15
@@ -825,8 +811,8 @@ gantt
     Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-01
     Relay Logic (2.2)     :done, p2b, 2025-11-01, 2025-11-10
     Circuit Building (2.3):done, p2c, 2025-11-10, 2025-11-20
-    Helper Integration (2.4):done, p2d, 2025-11-20, 2025-11-26
-    Exit Infrastructure (2.5):p2e, 2025-11-27, 2025-12-15
+    Helper Integration (2.4):done, p2d, 2025-11-20, 2025-11-27
+    Exit Infrastructure (2.5):active, p2e, 2025-11-27, 2025-12-15
     
     section Phase 3 🚧
     Browser Extension     :p3, 2025-12-01, 2026-02-28
@@ -841,7 +827,7 @@ gantt
     Governance            :p4d, 2026-07-01, 2026-10-31
 ```
 
-### Current Status: Phase 2 Core Complete (80%) → Phase 2.5 & 3 Next
+### Current Status: Phase 2.4 Complete → Phase 2.5 Exit Infrastructure (Active)
 
 **Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
 - ✅ HTX protocol implementation (`htx/`)
@@ -850,16 +836,18 @@ gantt
 - ✅ Catalog signing system (`catalog-signer/`)
 - ✅ Deterministic CBOR encoding (`core-cbor/`)
 
-**Phase 2: P2P Mesh Network** (✅ 80% Complete - Oct 15 - Nov 26, 2025)
+**Phase 2: P2P Mesh Network** (✅ 85% Complete - Oct 15 - Nov 27, 2025)
 
 *Completed Sections (2.1-2.4):*
 - ✅ **2.1 Peer Discovery** - mDNS local + Kademlia DHT + public IPFS bootstrap
 - ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking  
 - ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
-- ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes
+- ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
 
-*Pending (2.5-2.6):*
-- 🚧 **2.5 Infrastructure** - Exit node deployment scripts, bandwidth policies, operator droplets
+*In Progress (2.5):*
+- 🚧 **2.5 Exit Infrastructure** - Exit node deployment scripts, bandwidth policies, operator droplets
+
+*Pending (2.6):*
 - 📋 **2.6 Production Checkpoint** - Security audit, 24hr stability test, performance validation
 
 **Phase 3: User Experience** (📋 0% - Starting Dec 2025)
