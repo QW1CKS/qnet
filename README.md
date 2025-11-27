@@ -94,7 +94,7 @@ In countries with internet censorship:
 4. **🔒 Defense-in-Depth Security**
    - ChaCha20-Poly1305 AEAD encryption
    - Noise XK protocol for forward secrecy
-   - Ed25519 signatures for catalog integrity
+   - Ed25519 signatures for peer identity
    - Deterministic CBOR serialization
 
 ---
@@ -308,7 +308,7 @@ graph TB
 **No Central Servers:**
 - Leverages existing IPFS/libp2p DHT infrastructure
 - Fallback to operator seed nodes
-- Catalog-based updates for community additions
+- Hardcoded bootstrap nodes for reliability
 - Resilient to regional blocking
 
 ### 3. Cryptographic Security
@@ -321,7 +321,7 @@ graph TB
         L1[TLS 1.3 Outer Layer<br/>Decoy Fingerprint]
         L2[Noise XK Handshake<br/>Mutual Authentication]
         L3[AEAD Framing<br/>ChaCha20-Poly1305]
-        L4[Ed25519 Signatures<br/>Catalog Integrity]
+        L4[Ed25519 Signatures<br/>Peer Identity]
     end
     
     L1 --> L2
@@ -336,7 +336,7 @@ graph TB
 
 **Cryptographic Primitives:**
 - **ChaCha20-Poly1305**: AEAD encryption (fast, secure)
-- **Ed25519**: Signatures for catalog/config validation
+- **Ed25519**: Signatures for peer identity validation
 - **X25519**: Ephemeral key exchange (Noise protocol)
 - **HKDF-SHA256**: Key derivation
 
@@ -344,7 +344,7 @@ graph TB
 - Forward secrecy (ephemeral keys)
 - Message integrity (AEAD tags)
 - Replay protection (monotonic nonces)
-- Tamper detection (signed catalogs)
+- Tamper detection (AEAD integrity)
 
 ---
 
@@ -433,15 +433,14 @@ cargo run -p stealth-browser
 
 The Helper's status page (`http://127.0.0.1:8088/`) displays the connection state with visual indicators:
 
-- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers/catalog
+- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers
 - 🟠 **Calibrating** (orange): Bootstrap enabled but not yet connected
-- 🟢 **Connected** (green): Mesh network ready OR catalog loaded OR successful SOCKS5 traffic
+- 🟢 **Connected** (green): Mesh network ready OR successful SOCKS5 traffic
 
 **State Transition Triggers:**
 ```
 Offline → Connected:
   - Any mesh peer discovered (mDNS, IPFS DHT, or public bootstrap nodes)
-  - Valid catalog loaded from seed URL or local cache
   - Successful SOCKS5 connection established
 
 Calibrating → Connected:
@@ -498,16 +497,15 @@ qnet/
 │   ├── stealth-browser/       # 💻 Helper Node (SOCKS5 + status API)
 │   └── edge-gateway/          # 🚪 Server-side exit node
 │
-├── crates/                    # Core Rust libraries
-│   ├── htx/                   # 🎭 HTX protocol (TLS mirroring)
-│   ├── core-framing/          # 📦 AEAD frame encoding/decoding
-│   ├── core-crypto/           # 🔐 Cryptographic primitives
+├── crates/                   # Core libraries
+│   ├── htx/                   # 🔒 HTX protocol (TLS tunneling)
+│   ├── core-framing/          # 📦 AEAD frame codec
+│   ├── core-crypto/           # 🔑 Cryptographic primitives
 │   ├── core-mesh/             # 🕸️ P2P mesh networking (libp2p)
 │   ├── core-routing/          # 🗺️ Path selection (future)
 │   ├── core-mix/              # 🎲 Mixnet integration (future)
 │   ├── alias-ledger/          # 📛 Decentralized naming (future)
-│   ├── voucher/               # 💰 Payment system (future)
-│   └── catalog-signer/        # ✍️ Catalog signing tool
+│   └── voucher/               # 💰 Payment system (future)
 │
 ├── qnet-spec/                 # Specification & governance
 │   ├── specs/001-qnet/
@@ -592,7 +590,6 @@ graph TB
 | **Forward Secrecy** | Ephemeral X25519 keys (Noise XK) | Key rotation tests |
 | **Replay Protection** | Monotonic nonces | Nonce uniqueness tests |
 | **Traffic Masking** | TLS fingerprint cloning | DPI capture validation |
-| **Catalog Integrity** | Ed25519 + DET-CBOR | Signature verification tests |
 
 ### Security Best Practices
 
@@ -606,7 +603,7 @@ graph TB
     end
     
     subgraph "Operational Security"
-        S5[Signed Catalogs]
+        S5[Key Rotation]
         S6[Pinned Public Keys]
         S7[Version Monotonicity]
         S8[Audit Logging]
@@ -628,7 +625,7 @@ graph TB
 - No secret-dependent branching (constant-time guarantees)
 - Nonce uniqueness enforced via monotonic counters
 - Signed config objects validated before use
-- Expired catalogs rejected with grace period
+- Peer identity verification required for handshake
 
 ---
 
@@ -643,7 +640,6 @@ graph TB
 | **HTX Handshake** | - | ~50ms (incl. TLS) |
 | **AEAD Frame Encoding** | 2.5 GB/s | ~400 ns/frame |
 | **AEAD Frame Decoding** | 2.3 GB/s | ~430 ns/frame |
-| **Catalog Verification** | - | ~2ms (Ed25519) |
 | **1-Hop Connection** | 80-120 Mbps | +5-15ms vs direct |
 | **3-Hop Connection** | 40-80 Mbps | +20-50ms vs direct |
 
@@ -705,7 +701,6 @@ graph LR
 
 ### For Operators
 - **[Running an Exit Node](docs/EXIT_NODE.md)** - Deployment guide
-- **[Catalog Management](docs/CATALOG.md)** - Signing & distribution
 - **[Security Best Practices](SECURITY.md)** - Hardening guide
 
 ### Specification Documents
@@ -805,7 +800,7 @@ gantt
     Core Infrastructure    :done, p1, 2025-09-15, 2025-10-31
     HTX Protocol          :done, p1a, 2025-09-15, 2025-10-15
     Crypto & Framing      :done, p1b, 2025-09-20, 2025-10-20
-    Catalog System        :done, p1c, 2025-10-01, 2025-10-25
+    Catalog System (REMOVED):crit, p1c, 2025-10-01, 2025-10-25
     
     section Phase 2 ✅
     Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-01
@@ -833,7 +828,7 @@ gantt
 - ✅ HTX protocol implementation (`htx/`)
 - ✅ AEAD framing layer (`core-framing/`)
 - ✅ Cryptographic primitives (`core-crypto/`)
-- ✅ Catalog signing system (`catalog-signer/`)
+- ❌ Catalog system (removed - replaced by hardcoded bootstrap)
 - ✅ Deterministic CBOR encoding (`core-cbor/`)
 
 **Phase 2: P2P Mesh Network** (✅ 85% Complete - Oct 15 - Nov 27, 2025)

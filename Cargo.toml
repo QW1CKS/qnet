@@ -13,7 +13,6 @@ members = [
     "crates/voucher",
     "crates/core-governance",
     "crates/c-lib",
-    "crates/catalog-signer",
     "examples/echo",
     "apps/stealth-browser",
     "apps/edge-gateway",

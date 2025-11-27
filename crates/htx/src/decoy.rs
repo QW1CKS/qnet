@@ -2,9 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use url::Url;
 
-use core_cbor as cbor;
-use core_crypto as crypto;
-
 static ROT_IDX: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -26,12 +23,7 @@ pub struct DecoyCatalog {
     pub entries: Vec<DecoyEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SignedCatalog {
-    pub catalog: DecoyCatalog,
-    // Hex-encoded Ed25519 signature over deterministic CBOR of `catalog`
-    pub signature_hex: String,
-}
+// Removed: SignedCatalog struct (catalog system removed)
 
 fn host_matches(pattern: &str, host: &str) -> bool {
     if pattern == "*" || pattern == host {
@@ -43,63 +35,9 @@ fn host_matches(pattern: &str, host: &str) -> bool {
     false
 }
 
-fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
-    let s = s.trim();
-    if s.len() % 2 != 0 {
-        return Err("hex len".into());
-    }
-    let mut out = Vec::with_capacity(s.len() / 2);
-    let bytes = s.as_bytes();
-    for i in (0..bytes.len()).step_by(2) {
-        let h = (bytes[i] as char).to_digit(16).ok_or("hex")?;
-        let l = (bytes[i + 1] as char).to_digit(16).ok_or("hex")?;
-        out.push(((h << 4) | l) as u8);
-    }
-    Ok(out)
-}
-
-#[cfg(test)]
-fn bytes_to_hex(b: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(b.len() * 2);
-    for &x in b {
-        out.push(HEX[(x >> 4) as usize] as char);
-        out.push(HEX[(x & 0x0f) as usize] as char);
-    }
-    out
-}
-
-pub fn verify_signed_catalog(pk_hex: &str, signed: &SignedCatalog) -> Result<DecoyCatalog, String> {
-    let pk = hex_to_bytes(pk_hex)?;
-    let det = cbor::to_det_cbor(&signed.catalog).map_err(|_| "cbor")?;
-    let sig = hex_to_bytes(&signed.signature_hex)?;
-    crypto::ed25519::verify(&pk, &det, &sig).map_err(|_| "sig")?;
-    Ok(signed.catalog.clone())
-}
-
-/// Load signed catalog from environment variables.
-///
-/// STEALTH_DECOY_PUBKEY_HEX: hex-encoded Ed25519 public key
-/// STEALTH_DECOY_CATALOG_JSON: JSON with { catalog:{...}, signature_hex:"..." }
-/// STEALTH_DECOY_ALLOW_UNSIGNED: if set to "1", accepts unsigned {catalog:{...}} for dev/testing
-pub fn load_from_env() -> Option<DecoyCatalog> {
-    let json = std::env::var("STEALTH_DECOY_CATALOG_JSON").ok()?;
-    // Try signed form first
-    if let Ok(signed) = serde_json::from_str::<SignedCatalog>(&json) {
-        if let Ok(pk_hex) = std::env::var("STEALTH_DECOY_PUBKEY_HEX") {
-            return verify_signed_catalog(&pk_hex, &signed).ok();
-        }
-    }
-    // If unsigned allowed, accept {"catalog":{...}}
-    if std::env::var("STEALTH_DECOY_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
-        #[derive(Deserialize)]
-        struct Unsigned { catalog: DecoyCatalog }
-        if let Ok(u) = serde_json::from_str::<Unsigned>(&json) {
-            return Some(u.catalog);
-        }
-    }
-    None
-}
+// Removed: hex_to_bytes(), bytes_to_hex() (catalog signature verification removed)
+// Removed: verify_signed_catalog() (catalog signature verification removed)
+// Removed: load_from_env() (catalog loading removed)
 
 /// Resolve a decoy host/port for an origin using the provided catalog.
 /// Returns (decoy_host, port, alpn_override?) when a match is found.
@@ -137,10 +75,9 @@ pub fn resolve(origin: &str, catalog: &DecoyCatalog) -> Option<(String, u16, Opt
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ring::signature::{Ed25519KeyPair, KeyPair};
 
     #[test]
-    fn signed_catalog_verifies_and_resolves() {
+    fn catalog_resolves() {
         // Build a tiny catalog
         let catalog = DecoyCatalog {
             version: 1,
@@ -153,19 +90,9 @@ mod tests {
                 weight: 1,
             }],
         };
-        // Deterministic keypair from seed
-        let seed = [9u8; 32];
-        let kp = Ed25519KeyPair::from_seed_unchecked(&seed).unwrap();
-        let pk_hex = bytes_to_hex(kp.public_key().as_ref());
-        // Sign DET-CBOR of catalog
-        let det = cbor::to_det_cbor(&catalog).unwrap();
-        let sig = crypto::ed25519::sign(&seed, &det);
-        let signed = SignedCatalog { catalog: catalog.clone(), signature_hex: bytes_to_hex(&sig) };
-        let verified = verify_signed_catalog(&pk_hex, &signed).expect("verify");
-        assert_eq!(verified, catalog);
 
         // Resolve
-        let r = resolve("https://example.com", &verified).expect("resolve");
+        let r = resolve("https://example.com", &catalog).expect("resolve");
         assert_eq!(r.0, "cdn.example.net");
         assert_eq!(r.1, 443);
         assert!(r.2.as_ref().unwrap().contains(&"h2".to_string()));
