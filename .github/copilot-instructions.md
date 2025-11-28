@@ -179,6 +179,59 @@ Supplemental quick references:
 Prefer: (Spec Task) -> (Small Test) -> (Implementation) -> (Bench/Fuzz if needed) -> (Docs tweak) -> (PR).
 If ambiguity in spec: open an issue referencing spec section instead of guessing; keep code conservative until resolved.
 
+### Research-First Mandate (Critical)
+When you encounter uncertainty about HOW a technology/protocol actually works:
+1. **STOP** implementation immediately
+2. **TELL USER**: "I need research on [TOPIC] before implementing this correctly"
+3. **PROVIDE** a **SINGLE comprehensive research super-prompt** consolidating ALL related questions (see `qnet-spec/memory/ai-guardrail.md` Section 7)
+4. **WAIT** for user to complete research and provide findings
+5. **IMPLEMENT** based on evidence from research
+
+**CRITICAL RULE**: Consolidate ALL uncertainty about a technology into ONE super-prompt. Do NOT create separate prompts for related aspects (e.g., if uncertain about DHT discovery, include provider records, querying, mode configuration, timing, event handling, etc. ALL in one prompt).
+
+**Topics requiring research-first approach:**
+- Distributed protocol mechanics (DHT, Kademlia, gossip, consensus)
+- Cryptographic handshake sequences (beyond API usage)
+- Network protocol specifications (TLS internals, HTTP/2 framing, QUIC)
+- Third-party library behaviors (especially libp2p, async runtimes)
+- NAT traversal techniques (STUN/TURN mechanics, not just config)
+- Performance characteristics of algorithms (actual benchmarks needed)
+
+**Red flags that trigger research requirement:**
+- "I think this might work..."
+- "Based on documentation, it seems..."
+- "This should probably..."
+- Multiple failed attempts at same feature
+- Uncertainty about why previous implementation failed
+
+**Super-Prompt Template Structure (ONE comprehensive prompt for ALL related questions):**
+```
+# Research Request: [TOPIC]
+
+## Context
+[What we're trying to build + what failed]
+
+## Specific Unknowns
+[COMPREHENSIVE numbered list of ALL precise questions about this technology - consolidate everything related]
+
+## Research Instructions for User
+1. Official docs to study: [URLs]
+2. Working code to analyze: [GitHub repos/examples]
+3. Output format: markdown in /research/[topic]/
+   - [topic]-mechanics.md (how it works)
+   - [topic]-patterns.md (code patterns)
+   - [topic]-gaps.md (what QNet needs)
+
+## Success Criteria
+[What we'll know after research that we don't know now]
+```
+
+**Example:**
+"I don't fully understand libp2p Kademlia DHT mechanics. Before implementing peer discovery, we need comprehensive research on ALL these aspects: provider records, query patterns, mode configuration, AutoNAT interaction, Circuit Relay advertisement, timing expectations, event handling, and error patterns. Here's ONE comprehensive super-prompt consolidating all questions for a research agent: [paste template with ALL specifics]."
+
+**WRONG Approach (Don't Do This):**
+Creating separate prompts like: "Research provider records", then later "Research query patterns", then "Research timing" - this fragments understanding and wastes effort.
+
 Conflict resolution & escalation:
 - If spec and implementation disagree: file issue referencing exact lines in `spec.md` + observed code path; propose minimal interim patch if security-relevant.
 - If performance regression discovered post-merge: open regression issue with benchmark diff + environment; prioritize rollback if >5% on hot path and no functional justification.

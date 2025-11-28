@@ -342,12 +342,29 @@ impl DiscoveryBehavior {
     ) -> Result<(libp2p::relay::client::Transport, Self), DiscoveryError> {
         // Initialize Kademlia DHT with in-memory store
         let store = MemoryStore::new(peer_id);
-        let kad_config = KademliaConfig::default();
+        
+        // Configure Kademlia for peer discovery with provider records
+        let mut kad_config = KademliaConfig::default();
+        
+        // Provider records stay alive for 1 hour on storage nodes
+        kad_config.set_provider_record_ttl(Some(std::time::Duration::from_secs(3600)));
+        
+        // Re-publish provider records every 30 minutes to handle churn
+        kad_config.set_provider_publication_interval(Some(std::time::Duration::from_secs(1800)));
+        
+        // Query timeout (default 10s might be too short over internet)
+        kad_config.set_query_timeout(std::time::Duration::from_secs(30));
         
         // Note: Periodic bootstrap is triggered manually via bootstrap() calls
         // The automatic_throttle config option controls internal DHT maintenance
         
         let mut kademlia = Kademlia::with_config(peer_id, store, kad_config);
+        
+        // CRITICAL: Set Kademlia mode based on NAT status
+        // Server mode: Answers DHT queries (required for public relay nodes)
+        // Client mode: Only queries DHT (default for private clients)
+        // This will be updated dynamically once AutoNAT detects NAT status
+        kademlia.set_mode(Some(libp2p::kad::Mode::Client));
 
         // Add bootstrap nodes to Kademlia routing table
         for node in bootstrap_nodes {

@@ -206,6 +206,95 @@ AI-Guardrail: PASS
 Testing-Rules: PASS
 ```
 
+### 7. **Research-First Principle (MANDATORY)**
+- [ ] If you don't understand how a technology/protocol works, **STOP**.
+- [ ] Tell the user: "I need research on [TOPIC] before implementing."
+- [ ] Provide them with **ONE comprehensive super-prompt** consolidating ALL related questions (see template below).
+- [ ] Wait for user's research findings before proceeding.
+
+**CRITICAL**: When multiple aspects of a technology are uncertain, consolidate ALL questions into a SINGLE super-prompt. Do NOT create separate prompts for related topics.
+
+**NEVER** guess or implement based on incomplete understanding of:
+- Distributed protocols (DHT, Kademlia, libp2p behaviors)
+- Cryptographic handshakes or key derivation
+- Network protocol specifications (TLS, HTTP/2, QUIC)
+- Third-party library mechanics (especially P2P/networking)
+
+#### Super-Prompt Template for User Research
+When asking user to research, provide this template filled with ALL related questions in ONE comprehensive prompt:
+
+```markdown
+# Research Request: [TOPIC]
+
+## What I Need to Understand
+[COMPREHENSIVE list of ALL specific questions/mechanics you're uncertain about - consolidate everything related to this technology/protocol into this single prompt]
+
+## Super-Prompt for Research Agent
+
+You are a technical research assistant. Your task is to deeply analyze [TECHNOLOGY/PROTOCOL] 
+and produce actionable documentation.
+
+### Research Scope
+1. **Official Documentation**
+   - Read: [list URLs]
+   - Extract: [specific concepts]
+   
+2. **Working Implementations**
+   - Study: [example projects, e.g., IPFS, Substrate]
+   - Analyze: [specific patterns, e.g., DHT provider publishing]
+   
+3. **Code Examples**
+   - Find: [GitHub repo examples]
+   - Focus on: [particular functionality]
+
+### Required Output Format
+
+Create markdown files in `/research/[topic]/`:
+
+1. **[topic]-mechanics.md**
+   - How it works (step-by-step)
+   - Key concepts and terminology
+   - Common misconceptions
+   
+2. **[topic]-implementation-patterns.md**
+   - Code patterns from working projects
+   - Best practices
+   - Anti-patterns to avoid
+   
+3. **[topic]-qnet-gaps.md**
+   - What QNet is currently missing
+   - Specific API calls/configurations needed
+   - Test validation approach
+
+### Success Criteria
+After reading your documentation, a developer should:
+- Understand the underlying mechanics (not just API calls)
+- Know exactly what to implement (with code references)
+- Have a test plan to validate correctness
+
+### Key Questions to Answer
+[Insert specific technical questions here]
+```
+
+**Example Usage:**
+```
+I don't fully understand libp2p's Kademlia DHT peer discovery mechanics. 
+Before implementing fixes, we need research on ALL of these aspects:
+
+- How provider records are published to DHT
+- How clients query for providers of a specific key
+- The relationship between Kademlia mode (client/server) and provider records
+- How IPFS and Substrate implement peer discovery
+- AutoNAT interaction with DHT participation
+- Circuit Relay address advertisement in DHT
+- Realistic timing expectations for DHT propagation
+- Event handling patterns for discovery success/failure
+
+Please use this SINGLE comprehensive super-prompt with a research AI: [paste template with ALL specifics above consolidated]
+
+Note: Do NOT create separate prompts for AutoNAT, Circuit Relay, timing, etc. - consolidate ALL related questions into ONE research request.
+```
+
 ## 🎓 When In Doubt
 
 ### Ask These Questions:

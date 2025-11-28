@@ -4,6 +4,73 @@
 
 ---
 
+## 🔥 URGENT: Phase 2.1.9 - Fix DHT Peer Discovery (Temporary Task)
+
+**Context**: Research completed (see `/research/findings/`) identified missing Identify protocol integration with Kademlia routing table. Two nodes connect to DHT but can't discover each other because Kademlia has peer_ids but no addresses to dial.
+
+**Root Cause**: Identify protocol events not wired to call `kademlia.add_address()`.
+
+### 2.1.9 Fix Identify Integration with Kademlia
+**Goal**: Enable peer-to-peer discovery by wiring Identify protocol to Kademlia routing table.
+
+#### 2.1.9.1 Wire Identify Event Handler
+- [x] Locate Identify event handler in `apps/stealth-browser/src/main.rs`
+- [x] Add `kademlia.add_address(&peer_id, addr)` for each address in `info.listen_addrs`
+- [x] Add logging: "Added {} addresses for peer {}"
+- [x] Verify event handler is reached during bootstrap
+
+#### 2.1.9.2 Implement Bootstrap Sequence
+- [x] Call `kademlia.bootstrap()` after connecting to bootstrap nodes
+- [x] Track bootstrap query_id in pending queries map
+- [x] Handle `QueryResult::Bootstrap(Ok)` event
+- [x] Log: "DHT bootstrap complete, routing table ready"
+- [x] Only proceed to provider operations after bootstrap complete
+
+#### 2.1.9.3 Configure Kademlia Provider Settings
+- [x] Set provider record TTL: `set_provider_record_ttl(Duration::from_secs(3600))`
+- [x] Set republish interval: `set_provider_publication_interval(Duration::from_secs(1800))`
+- [x] Set query timeout: `QueryConfig::with_timeout(Duration::from_secs(30))`
+- [x] Verify configuration in logs at startup
+
+#### 2.1.9.4 Implement Provider Publishing (Public Nodes)
+- [x] After bootstrap complete, check if AutoNAT status is Public
+- [x] If Public: call `kademlia.start_providing(RecordKey::from(b"qnet-discovery"))`
+- [x] Track providing query_id
+- [x] Handle `QueryResult::StartProviding(Ok)` event
+- [x] Log: "Published as provider for qnet-discovery"
+
+#### 2.1.9.5 Implement Provider Querying (All Nodes)
+- [x] After bootstrap, periodically query: `kademlia.get_providers(RecordKey::from(b"qnet-discovery"))`
+- [x] Handle `QueryResult::GetProviders(Ok { providers })` event
+- [x] For each provider peer_id, check `kademlia.addresses_of_peer(&peer_id)`
+- [x] If addresses exist, attempt dial
+- [x] Log: "Found {} providers, dialing..."
+
+#### 2.1.9.6 Add Debug Logging
+- [x] Log all Kademlia events with `RUST_LOG=libp2p_kad=debug`
+- [x] Log Identify events: "Identified peer X with Y addresses"
+- [x] Log address additions: "Added address Z for peer X"
+- [x] Log provider operations: publishing, querying, finding
+- [x] Log dial attempts: "Dialing peer X at address Y"
+
+#### 2.1.9.7 Testing
+- [ ] Build on Windows: `cargo build --release --bin stealth-browser`
+- [ ] Deploy to droplet: rebuild with same changes
+- [ ] Start droplet with: `RUST_LOG=debug ./stealth-browser --bootstrap`
+- [ ] Start laptop with: `RUST_LOG=debug cargo run --release --bin stealth-browser`
+- [ ] Verify logs show: Identify events, address additions, bootstrap complete
+- [ ] Verify logs show: Provider publishing (droplet), provider query (laptop)
+- [ ] Verify logs show: Providers found, dial attempts
+- [ ] SUCCESS: Connection established between nodes
+
+#### 2.1.9.8 Cleanup After Success
+- [ ] Remove temporary task section from tasks.md
+- [ ] Mark Phase 2.1 as fully complete
+- [ ] Document findings in `docs/ARCHITECTURE.md`
+- [ ] Update `/research/findings/` with actual test results
+
+---
+
 ## ✅ Phase 1: Core Infrastructure (COMPLETED)
 
 ### 1.1 Project Setup

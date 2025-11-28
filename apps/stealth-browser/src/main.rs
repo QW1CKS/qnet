@@ -922,6 +922,74 @@ fn spawn_mesh_discovery(
                                             kad::Event::RoutingUpdated { peer, .. } => {
                                                 debug!("mesh: Kademlia routing updated for peer {}", peer);
                                             }
+                                            kad::Event::OutboundQueryProgressed { id, result, .. } => {
+                                                match result {
+                                                    kad::QueryResult::Bootstrap(Ok(kad::BootstrapOk { peer: _, .. })) => {
+                                                        info!("mesh: DHT bootstrap complete, routing table populated (query_id: {:?})", id);
+                                                        
+                                                        // After successful bootstrap, start provider operations
+                                                        // Public nodes: publish as provider
+                                                        // All nodes: query for providers
+                                                        
+                                                        // TODO: Track AutoNAT status to determine if we should publish
+                                                        // For now, attempt publishing - it will work on public nodes
+                                                        
+                                                        // Publish this node as a QNet peer provider
+                                                        let key = libp2p::kad::RecordKey::from(b"qnet-discovery".to_vec());
+                                                        match swarm.behaviour_mut().kademlia.start_providing(key.clone()) {
+                                                            Ok(query_id) => {
+                                                                info!("mesh: Publishing as QNet provider (query_id: {:?})", query_id);
+                                                            }
+                                                            Err(e) => {
+                                                                warn!("mesh: Failed to start providing: {:?}", e);
+                                                            }
+                                                        }
+                                                        
+                                                        // Query for other QNet peers
+                                                        let query_key = libp2p::kad::RecordKey::from(b"qnet-discovery".to_vec());
+                                                        let query_id = swarm.behaviour_mut().kademlia.get_providers(query_key);
+                                                        info!("mesh: Querying for QNet providers (query_id: {:?})", query_id);
+                                                    }
+                                                    kad::QueryResult::Bootstrap(Err(e)) => {
+                                                        warn!("mesh: DHT bootstrap failed: {:?}", e);
+                                                    }
+                                                    kad::QueryResult::StartProviding(Ok(kad::AddProviderOk { key })) => {
+                                                        info!("mesh: ✓ Successfully published as provider for key: {:?}", String::from_utf8_lossy(key.as_ref()));
+                                                    }
+                                                    kad::QueryResult::StartProviding(Err(e)) => {
+                                                        warn!("mesh: ✗ Failed to publish provider record: {:?}", e);
+                                                    }
+                                                    kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FoundProviders { key, providers, .. })) => {
+                                                        info!("mesh: Found {} providers for key: {:?}", providers.len(), String::from_utf8_lossy(key.as_ref()));
+                                                        
+                                                        for provider_id in providers {
+                                                            if provider_id == *swarm.local_peer_id() {
+                                                                debug!("mesh: Skipping self as provider");
+                                                                continue;
+                                                            }
+                                                            
+                                                            // Get addresses for this provider from Kademlia k-buckets
+                                                            // In libp2p 0.53, we need to check the routing table via kbuckets
+                                                            info!("mesh: Discovered provider peer: {}", provider_id);
+                                                            
+                                                            // Attempt to dial - libp2p will use Identify protocol to learn addresses
+                                                            match swarm.dial(provider_id) {
+                                                                Ok(_) => info!("mesh: Dialing provider peer {}", provider_id),
+                                                                Err(e) => debug!("mesh: Dial attempt for provider {}: {:?}", provider_id, e),
+                                                            }
+                                                        }
+                                                    }
+                                                    kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. })) => {
+                                                        debug!("mesh: Provider query finished with no additional records");
+                                                    }
+                                                    kad::QueryResult::GetProviders(Err(e)) => {
+                                                        debug!("mesh: Provider query failed: {:?}", e);
+                                                    }
+                                                    _ => {
+                                                        debug!("mesh: Kademlia query result: {:?}", result);
+                                                    }
+                                                }
+                                            }
                                             _ => {
                                                 debug!("mesh: Kademlia event: {:?}", kad_event);
                                             }
@@ -931,7 +999,15 @@ fn spawn_mesh_discovery(
                                         use libp2p::identify;
                                         match identify_event {
                                             identify::Event::Received { peer_id, info } => {
-                                                debug!("mesh: Identified peer {} with protocols: {:?}", peer_id, info.protocols);
+                                                info!("mesh: Identified peer {} with {} addresses and protocols: {:?}", 
+                                                    peer_id, info.listen_addrs.len(), info.protocols);
+                                                
+                                                // CRITICAL: Wire Identify addresses into Kademlia routing table
+                                                // This is THE KEY fix - without this, we have peer_ids but no addresses to dial
+                                                for addr in &info.listen_addrs {
+                                                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
+                                                }
+                                                info!("mesh: Added {} addresses to Kademlia for peer {}", info.listen_addrs.len(), peer_id);
                                                 
                                                 // Inform AutoNAT about discovered peer addresses for NAT probing
                                                 for addr in &info.listen_addrs {
@@ -957,9 +1033,15 @@ fn spawn_mesh_discovery(
                                                 match new {
                                                     autonat::NatStatus::Public(addr) => {
                                                         info!("mesh: Public address detected: {}", addr);
+                                                        // CRITICAL: Switch Kademlia to server mode when public
+                                                        // This allows other peers to discover us via DHT queries
+                                                        swarm.behaviour_mut().kademlia.set_mode(Some(libp2p::kad::Mode::Server));
+                                                        info!("mesh: Kad mode switched to Server (answering DHT queries)");
                                                     }
                                                     autonat::NatStatus::Private => {
                                                         info!("mesh: Behind NAT - relay will be used for connectivity");
+                                                        // Keep Kademlia in client mode (queries only, no serving)
+                                                        swarm.behaviour_mut().kademlia.set_mode(Some(libp2p::kad::Mode::Client));
                                                     }
                                                     autonat::NatStatus::Unknown => {
                                                         debug!("mesh: NAT status unknown");

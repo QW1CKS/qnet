@@ -31,5 +31,6 @@
 1.  **Test-Driven Development**: Write the test case before the implementation.
 2.  **Documentation**: Every crate and module MUST have a README.
 3.  **CI/CD**: No code merges without passing CI (Build + Test + Lint).
+4.  **Research-First**: AI agents MUST NOT guess protocol/technology mechanics. When uncertain, request user research with a structured super-prompt. Implementation proceeds only after evidence-based understanding is established.
 
-**Version**: 1.0 | **Ratified**: 2025-11-25
+**Version**: 1.1 | **Ratified**: 2025-11-28

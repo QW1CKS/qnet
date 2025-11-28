@@ -25,3 +25,6 @@ Cargo.lock.bak
 
 # Artifacts (benchmarks, temp notes, operator guides)
 /artifacts/
+
+# Research documentation (user-maintained, not for commits)
+/research/
