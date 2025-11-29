@@ -151,8 +151,17 @@ async fn main() -> Result<()> {
                     cfg.mesh_enabled = false;
                     eprintln!("cli-override: mesh_enabled=false (discovery/relay disabled)");
                 }
+                "--generate-keypair" => {
+                    if let Some(path) = args.next() {
+                        return generate_keypair_file(&path);
+                    } else {
+                        eprintln!("Error: --generate-keypair requires a file path argument");
+                        eprintln!("Usage: stealth-browser --generate-keypair /path/to/keypair.pb");
+                        return Err(anyhow!("Missing keypair path argument"));
+                    }
+                }
                 "--help" | "-h" => {
-                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  -h,--help show help");
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  --generate-keypair <path> (generate persistent keypair for operator nodes)\n  -h,--help show help");
                     return Ok(());
                 }
                 _ => { /* ignore unknown for forward compat */ }
@@ -688,6 +697,93 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
     });
 }
 
+/// Load a persistent keypair from file or generate a new random one.
+///
+/// Environment variables:
+/// - `QNET_KEYPAIR_PATH`: Path to Ed25519 keypair file (protobuf format)
+/// - If file exists: Load and use (enables persistent peer ID for operator nodes)
+/// - If file missing: Generate new random keypair (suitable for transient clients)
+///
+/// To generate a persistent keypair for a droplet:
+/// ```bash
+/// # On droplet, generate once:
+/// cargo run --release --bin stealth-browser -- --generate-keypair /root/.qnet/keypair.pb
+/// 
+/// # Then configure systemd/startup to set:
+/// export QNET_KEYPAIR_PATH=/root/.qnet/keypair.pb
+/// ```
+fn load_or_generate_keypair() -> libp2p::identity::Keypair {
+    use libp2p::identity::Keypair;
+    
+    if let Ok(path) = std::env::var("QNET_KEYPAIR_PATH") {
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                match Keypair::from_protobuf_encoding(&bytes) {
+                    Ok(keypair) => {
+                        let peer_id = libp2p::PeerId::from(keypair.public());
+                        info!(path=%path, peer_id=%peer_id, "mesh: Loaded persistent keypair from file");
+                        return keypair;
+                    }
+                    Err(e) => {
+                        warn!(path=%path, error=%e, "mesh: Failed to decode keypair file, generating new random keypair");
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(path=%path, error=%e, "mesh: Failed to read keypair file, generating new random keypair");
+            }
+        }
+    }
+    
+    // No persistent keypair configured or load failed -> generate random
+    let keypair = Keypair::generate_ed25519();
+    let peer_id = libp2p::PeerId::from(keypair.public());
+    info!(peer_id=%peer_id, "mesh: Generated new random keypair (transient peer ID)");
+    keypair
+}
+
+/// Generate a new keypair and save it to a file for persistent peer identity.
+///
+/// This is typically run once on droplet setup to create a stable peer ID.
+/// The generated peer ID must then be configured in `discovery.rs` operator seeds.
+fn generate_keypair_file(path: &str) -> Result<()> {
+    use libp2p::identity::Keypair;
+    use std::io::Write;
+    
+    let keypair = Keypair::generate_ed25519();
+    let peer_id = libp2p::PeerId::from(keypair.public());
+    
+    let encoded = keypair.to_protobuf_encoding()
+        .map_err(|e| anyhow!("Failed to encode keypair: {:?}", e))?;
+    
+    // Create parent directory if needed
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+    }
+    
+    let mut file = std::fs::File::create(path)
+        .with_context(|| format!("Failed to create keypair file: {}", path))?;
+    
+    file.write_all(&encoded)
+        .with_context(|| format!("Failed to write keypair to: {}", path))?;
+    
+    file.sync_all()
+        .with_context(|| format!("Failed to sync keypair file: {}", path))?;
+    
+    println!("✅ Generated new keypair:");
+    println!("   Peer ID: {}", peer_id);
+    println!("   File: {}", path);
+    println!();
+    println!("Next steps:");
+    println!("1. Update crates/core-mesh/src/discovery.rs with this peer ID");
+    println!("2. Set environment variable before starting: export QNET_KEYPAIR_PATH={}", path);
+    println!("3. Rebuild all nodes: cargo build --release --bin stealth-browser");
+    println!("4. Deploy and restart");
+    
+    Ok(())
+}
+
 /// Spawn mesh peer discovery thread (task 2.1.6, Phase 2.4.2)
 /// 
 /// Runs libp2p Swarm event loop in a dedicated async-std thread.
@@ -713,10 +809,10 @@ fn spawn_mesh_discovery(
         
         // Run async-std runtime in this thread
         async_std::task::block_on(async {
-            // Generate local peer identity
-            let keypair = libp2p::identity::Keypair::generate_ed25519();
+            // Load or generate local peer identity
+            let keypair = load_or_generate_keypair();
             let peer_id = libp2p::PeerId::from(keypair.public());
-            info!(peer_id=%peer_id, "mesh: Generated local peer ID");
+            info!(peer_id=%peer_id, "mesh: Loaded local peer ID");
             
             // Load hardcoded bootstrap nodes
             let bootstrap_nodes = core_mesh::discovery::load_bootstrap_nodes();
