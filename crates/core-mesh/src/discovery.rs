@@ -185,18 +185,16 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     // ]
     
     // Direct peering configuration for testing (Nov 29 2025)
-    // Windows node: 169.224.95.142
-    // Droplet node: 138.197.176.64
-    // Using standard libp2p port 4001
+    // One-way connection: Windows behind NAT/firewall, so only Windows connects TO droplet
+    // Droplet is publicly accessible and will accept the connection
+    // Once connected, both nodes can bootstrap via each other
     vec![
         BootstrapNode::new(
-            "12D3KooWFVDqDyzVzRzkYyn6oDFJyTSSJ9kmGFstvcGihH7UtRRv".parse().unwrap(), // Windows peer ID
-            "/ip4/169.224.95.142/tcp/4001".parse().unwrap(),
-        ),
-        BootstrapNode::new(
-            "12D3KooWAmMZjcPQEa3wTN4KU9BEXmUdQRXTtpFui4FE7yzCmGAS".parse().unwrap(), // Droplet peer ID
+            "12D3KooWAmMZjcPQEa3wTN4KU9BEXmUdQRXTtpFui4FE7yzCmGAS".parse().unwrap(), // Droplet peer ID (public)
             "/ip4/138.197.176.64/tcp/4001".parse().unwrap(),
         ),
+        // Note: Windows peer removed from seeds because it's not publicly reachable
+        // Windows will connect to droplet, then both discover each other via DHT provider records
     ]
 }
 
