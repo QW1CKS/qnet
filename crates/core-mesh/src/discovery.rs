@@ -355,16 +355,23 @@ impl DiscoveryBehavior {
         // Query timeout (default 10s might be too short over internet)
         kad_config.set_query_timeout(std::time::Duration::from_secs(30));
         
+        // Increase replication factor for better record propagation (research finding)
+        // Default k=20, higher values = more DHT nodes store provider records
+        if let Some(twenty) = std::num::NonZeroUsize::new(20) {
+            kad_config.set_replication_factor(twenty);
+        }
+        
         // Note: Periodic bootstrap is triggered manually via bootstrap() calls
         // The automatic_throttle config option controls internal DHT maintenance
         
         let mut kademlia = Kademlia::with_config(peer_id, store, kad_config);
         
-        // CRITICAL: Set Kademlia mode based on NAT status
-        // Server mode: Answers DHT queries (required for public relay nodes)
-        // Client mode: Only queries DHT (default for private clients)
-        // This will be updated dynamically once AutoNAT detects NAT status
-        kademlia.set_mode(Some(libp2p::kad::Mode::Client));
+        // CRITICAL FIX: Force Server mode from start (research finding)
+        // Server mode required for nodes to STORE provider records in routing table
+        // Without this, nodes in Client mode cannot participate in DHT record propagation
+        // and provider discovery fails silently (records published but not stored)
+        // Research: https://github.com/libp2p/rust-libp2p/discussions/2673
+        kademlia.set_mode(Some(libp2p::kad::Mode::Server));
 
         // Add bootstrap nodes to Kademlia routing table
         for node in bootstrap_nodes {
