@@ -791,6 +791,32 @@ fn spawn_mesh_discovery(
                 .map(|n| n.peer_id)
                 .collect();
             
+            // CRITICAL FIX: Explicitly dial operator seeds BEFORE starting event loop
+            // Issue: Bootstrap only auto-dials DNS seeds (/dnsaddr/...), not IP seeds (/ip4/...)
+            // This ensures operator seeds are dialed immediately for reliable bootstrap
+            let operator_seeds = core_mesh::discovery::load_bootstrap_nodes()
+                .into_iter()
+                .filter(|n| n.multiaddr.to_string().contains("/ip4/"))
+                .collect::<Vec<_>>();
+            
+            if !operator_seeds.is_empty() {
+                info!("mesh: Explicitly dialing {} operator seed(s)", operator_seeds.len());
+                for seed in operator_seeds {
+                    info!("mesh:   → Dialing operator seed {} at {}", seed.peer_id, seed.multiaddr);
+                    match swarm.dial(seed.multiaddr.clone()) {
+                        Ok(_) => {
+                            info!("mesh:     ✅ Dial initiated successfully");
+                        }
+                        Err(e) => {
+                            warn!("mesh:     ❌ Dial failed: {:?}", e);
+                        }
+                    }
+                }
+                
+                // Brief delay to allow operator seed connections to establish
+                info!("mesh: Waiting 2s for operator seed connections...");
+                async_std::task::sleep(std::time::Duration::from_secs(2)).await;
+            }
             
             let mut last_total_count = 0usize;
             use futures::StreamExt as FuturesStreamExt;  // For .fuse()
