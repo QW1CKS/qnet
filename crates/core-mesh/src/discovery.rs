@@ -1,16 +1,15 @@
 //! Peer discovery module for QNet mesh networking.
 //!
-//! This module implements peer discovery using two mechanisms:
-//! - **Kademlia DHT**: For wide-area peer discovery via bootstrap nodes
+//! This module implements peer discovery using:
+//! - **Operator Directory**: Query 6 operator nodes for peer list (catalog-first)
 //! - **mDNS**: For local network (LAN) peer discovery
 //!
 //! # Architecture
 //!
-//! The `DiscoveryBehavior` combines both discovery mechanisms into a unified
-//! interface. Bootstrap nodes (hardcoded operator exits + public libp2p DHT)
-//! seed the DHT, which then discovers additional peers across the internet.
-//! mDNS runs concurrently to find peers on the local network without requiring
-//! bootstrap infrastructure.
+//! The `DiscoveryBehavior` combines operator directory queries and mDNS into a unified
+//! interface. Operator nodes (6 DigitalOcean droplets) maintain a peer directory via
+//! heartbeat registrations. Clients query this directory for instant peer discovery.
+//! mDNS runs concurrently to find peers on the local network.
 //!
 //! # Example
 //!
@@ -23,7 +22,7 @@
 //! let keypair = identity::Keypair::generate_ed25519();
 //! let peer_id = PeerId::from(keypair.public());
 //!
-//! // Load bootstrap nodes (in production, from catalog)
+//! // Load operator nodes
 //! let bootstrap_nodes = vec![
 //!     BootstrapNode {
 //!         peer_id: PeerId::from_str("12D3KooWExamplePeerId")?,
@@ -31,18 +30,12 @@
 //!     },
 //! ];
 //!
-//! let mut discovery = DiscoveryBehavior::new(peer_id, bootstrap_nodes).await?;
-//! let peers = discovery.discover_peers().await?;
-//! println!("Discovered {} peers", peers.len());
+//! let _discovery = DiscoveryBehavior::new(peer_id, bootstrap_nodes).await?;
 //! # Ok(())
 //! # }
 //! ```
 
-use libp2p::{
-    kad::{store::MemoryStore, Behaviour as Kademlia, Config as KademliaConfig},
-    mdns,
-    Multiaddr, PeerId,
-};
+use libp2p::{mdns, Multiaddr, PeerId};
 use thiserror::Error;
 
 use crate::relay::RoutingTable;
@@ -50,9 +43,6 @@ use crate::relay::RoutingTable;
 /// Errors that can occur during peer discovery.
 #[derive(Debug, Error)]
 pub enum DiscoveryError {
-    #[error("Kademlia DHT error: {0}")]
-    Kademlia(String),
-
     #[error("mDNS error: {0}")]
     Mdns(String),
 
@@ -63,10 +53,10 @@ pub enum DiscoveryError {
     Bootstrap(String),
 }
 
-/// Represents a bootstrap node for DHT seeding.
+/// Represents an operator node for peer directory queries.
 ///
-/// Bootstrap nodes are trusted entry points into the QNet mesh network.
-/// These include hardcoded operator exits and public libp2p DHT nodes.
+/// Operator nodes are trusted entry points into the QNet mesh network.
+/// These are the 6 DigitalOcean droplets running the peer directory service.
 #[derive(Debug, Clone)]
 pub struct BootstrapNode {
     /// The peer ID of the bootstrap node
@@ -78,60 +68,18 @@ pub struct BootstrapNode {
 impl BootstrapNode {
     /// Creates a new bootstrap node.
     pub fn new(peer_id: PeerId, multiaddr: Multiaddr) -> Self {
-        Self {
-            peer_id,
-            multiaddr,
-        }
+        Self { peer_id, multiaddr }
     }
 }
 
-/// Load bootstrap nodes using hardcoded operator exits + IPFS DHT.
+/// Load operator nodes for peer directory queries.
 ///
-/// **Bootstrap Strategy** (no catalog):
-/// 1. Hardcoded operator exit nodes (6 droplets - always available)
-/// 2. Public IPFS DHT nodes (decentralized discovery)
+/// **Bootstrap Strategy** (catalog-first):
+/// 1. Hardcoded operator nodes (6 droplets - always available)
 ///
-/// This provides both reliability (operator exits) and decentralization (DHT).
+/// Clients query operator directory endpoints for instant peer discovery.
 pub fn load_bootstrap_nodes() -> Vec<BootstrapNode> {
     hardcoded_seed_nodes()
-}
-
-/// Public libp2p/IPFS DHT bootstrap nodes (Primary, Free).
-///
-/// These are well-known IPFS bootstrap nodes maintained by the global IPFS community.
-/// QNet leverages this existing infrastructure for decentralized peer discovery at zero cost.
-///
-/// **No QNet-specific servers required for bootstrap!**
-fn public_libp2p_seeds() -> Vec<BootstrapNode> {
-    // Well-known IPFS bootstrap nodes from https://github.com/ipfs/kubo
-    let bootstrap_addrs = [
-        // IPFS bootstrap nodes (maintained by Protocol Labs & community)
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-        "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-        
-        // Fallback to IP addresses in case DNS fails
-        "/ip4/104.131.131.82/tcp/4001/p2p/QmaCpDMGvV2BGHeYERUEnRQAwe3N8SzbUtfsmvsqQLuvuJ",
-        "/ip4/104.236.179.241/tcp/4001/p2p/QmSoLPppuBtQSGwKDZT2M73ULpjvfd3aZ6ha4oFGL1KrGM",
-    ];
-    
-    let mut nodes = Vec::new();
-    for addr_str in &bootstrap_addrs {
-        if let Ok(multiaddr) = addr_str.parse::<Multiaddr>() {
-            // Extract PeerId from multiaddr
-            if let Some(protocol) = multiaddr.iter().find(|p| matches!(p, libp2p::multiaddr::Protocol::P2p(_))) {
-                if let libp2p::multiaddr::Protocol::P2p(peer_id) = protocol {
-                    nodes.push(BootstrapNode::new(peer_id, multiaddr));
-                }
-            }
-        } else {
-            log::warn!("Failed to parse public libp2p bootstrap address: {}", addr_str);
-        }
-    }
-    
-    log::info!("Loaded {} public libp2p DHT bootstrap nodes", nodes.len());
-    nodes
 }
 
 /// QNet operator seed nodes (Primary, Operator-Controlled).
@@ -148,7 +96,7 @@ fn public_libp2p_seeds() -> Vec<BootstrapNode> {
 /// **Deployment Instructions**: See `docs/exit_node_deployment.md`
 fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     // TODO: Replace placeholders with actual operator droplet configurations
-    // 
+    //
     // When you deploy the 6 DigitalOcean droplets:
     // 1. Get the peer IDs from each droplet (shown on startup)
     // 2. Get the public IPs from DigitalOcean dashboard
@@ -183,14 +131,16 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     //         "/ip4/198.51.100.60/tcp/4001".parse().unwrap(),
     //     ),
     // ]
-    
+
     // Direct peering configuration for testing (Nov 29 2025)
     // One-way connection: Windows behind NAT/firewall, so only Windows connects TO droplet
     // Droplet is publicly accessible and will accept the connection
     // Once connected, both nodes can bootstrap via each other
     vec![
         BootstrapNode::new(
-            "12D3KooWNcvVLoDYXo6oFfJ4ENCcVGE61SPpsXxSc18N165oQqbw".parse().unwrap(), // Droplet peer ID (persistent keypair)
+            "12D3KooWNcvVLoDYXo6oFfJ4ENCcVGE61SPpsXxSc18N165oQqbw"
+                .parse()
+                .unwrap(), // Droplet peer ID (persistent keypair)
             "/ip4/138.197.176.64/tcp/4001".parse().unwrap(),
         ),
         // Note: Windows peer removed from seeds because it's not publicly reachable
@@ -198,59 +148,31 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     ]
 }
 
-/// Hardcoded seed nodes for resilience when catalog is unavailable.
+/// Hardcoded operator nodes for resilience when catalog is unavailable.
 ///
-/// **Hybrid Bootstrap Strategy**:
-/// 1. Primary: Public libp2p DHT (free, decentralized)
-/// 2. Secondary: QNet operator seeds (backup bootstrap + primary exits)
-/// 3. Tertiary: Community volunteer seeds (future)
+/// **Operator Directory Strategy**:
+/// 1. Primary: 6 QNet operator nodes (peer directory endpoints)
+/// 2. Fallback: Disk cache (24hr TTL) if directory unreachable
+/// 3. Emergency: Hardcoded operator list (always available)
 fn hardcoded_seed_nodes() -> Vec<BootstrapNode> {
-    let mut nodes = Vec::new();
-    
-    // Primary: Public libp2p/IPFS DHT nodes (free infrastructure)
-    nodes.extend(public_libp2p_seeds());
-    
-    // Secondary: Operator droplets (if deployed)
-    nodes.extend(qnet_operator_seeds());
-    
+    let nodes = qnet_operator_seeds();
+
     if nodes.is_empty() {
-        log::warn!("No bootstrap nodes available! Network discovery may fail.");
+        log::warn!("No operator nodes available! Network discovery may fail.");
     } else {
-        log::info!("Bootstrap: {} total seed nodes available ({} public DHT + {} operator)", 
-                   nodes.len(),
-                   public_libp2p_seeds().len(),
-                   qnet_operator_seeds().len());
+        log::info!("Bootstrap: {} operator nodes available", nodes.len());
     }
-    
+
     nodes
 }
 
-
-/// Combined peer discovery behavior using Kademlia DHT and mDNS.
+/// Combined peer discovery behavior using operator directory and mDNS.
 ///
 /// This struct implements the `NetworkBehaviour` trait and can be integrated
-/// into a libp2p `Swarm`. It manages both wide-area (DHT) and local (mDNS)
-/// peer discovery.
-///
-/// # Periodic Refresh
-///
-/// The Kademlia DHT is automatically refreshed every 5 minutes to maintain
-/// up-to-date routing information and discover new peers.
-///
-/// Combined peer discovery behavior using Kademlia DHT and mDNS.
-///
-/// This struct implements the `NetworkBehaviour` trait and can be integrated
-/// into a libp2p `Swarm`. It manages both wide-area (DHT) and local (mDNS)
-/// peer discovery.
-///
-/// # Periodic Refresh
-///
-/// The Kademlia DHT is automatically refreshed every 5 minutes to maintain
-/// up-to-date routing information and discover new peers.
+/// into a libp2p `Swarm`. It manages both wide-area (operator directory) and
+/// local (mDNS) peer discovery.
 #[derive(libp2p::swarm::NetworkBehaviour)]
 pub struct DiscoveryBehavior {
-    /// Kademlia DHT for wide-area peer discovery
-    pub kademlia: Kademlia<MemoryStore>,
     /// mDNS for local network peer discovery
     pub mdns: mdns::async_io::Behaviour,
     /// Identify protocol for peer information exchange
@@ -289,7 +211,8 @@ impl DiscoveryRoutingTable {
     /// * `peer_id` - The peer that was discovered
     pub fn on_peer_discovered(&mut self, peer_id: PeerId) {
         // Add direct route to discovered peer (via itself)
-        self.routing_table.add_route(peer_id, peer_id, Some(std::time::Duration::from_secs(300)));
+        self.routing_table
+            .add_route(peer_id, peer_id, Some(std::time::Duration::from_secs(300)));
         log::debug!("relay: peer discovered, added route to {}", peer_id);
     }
 
@@ -329,17 +252,11 @@ impl DiscoveryBehavior {
     /// # Arguments
     ///
     /// * `peer_id` - The local peer ID
-    /// * `bootstrap_nodes` - Initial bootstrap nodes to seed the DHT
+    /// * `bootstrap_nodes` - Operator nodes for peer directory queries (logged for reference)
     ///
     /// # Errors
     ///
     /// Returns an error if mDNS initialization fails.
-    ///
-    /// # DHT Configuration
-    ///
-    /// - Uses in-memory store for routing table
-    /// - Configures 5-minute periodic refresh
-    /// - Adds all bootstrap nodes to routing table
     ///
     /// # Returns
     ///
@@ -349,66 +266,24 @@ impl DiscoveryBehavior {
         peer_id: PeerId,
         bootstrap_nodes: Vec<BootstrapNode>,
     ) -> Result<(libp2p::relay::client::Transport, Self), DiscoveryError> {
-        // Initialize Kademlia DHT with in-memory store
-        let store = MemoryStore::new(peer_id);
-        
-        // Configure Kademlia for peer discovery with provider records
-        let mut kad_config = KademliaConfig::default();
-        
-        // Provider records stay alive for 1 hour on storage nodes
-        kad_config.set_provider_record_ttl(Some(std::time::Duration::from_secs(3600)));
-        
-        // Re-publish provider records every 30 minutes to handle churn
-        kad_config.set_provider_publication_interval(Some(std::time::Duration::from_secs(1800)));
-        
-        // Query timeout: extended to 90s for bootstrap queries over unstable IPFS DHT connections
-        // Research: Bootstrap needs time to populate k-buckets when connecting to random IPFS peers
-        // 30s was too short when peers frequently disconnect (seen in Nov 29 droplet testing)
-        kad_config.set_query_timeout(std::time::Duration::from_secs(90));
-        
-        // Increase replication factor for better record propagation (research finding)
-        // Default k=20, higher values = more DHT nodes store provider records
-        if let Some(twenty) = std::num::NonZeroUsize::new(20) {
-            kad_config.set_replication_factor(twenty);
-        }
-        
-        // Note: Periodic bootstrap is triggered manually via bootstrap() calls
-        // The automatic_throttle config option controls internal DHT maintenance
-        
-        let mut kademlia = Kademlia::with_config(peer_id, store, kad_config);
-        
-        // CRITICAL FIX: Force Server mode from start (research finding)
-        // Server mode required for nodes to STORE provider records in routing table
-        // Without this, nodes in Client mode cannot participate in DHT record propagation
-        // and provider discovery fails silently (records published but not stored)
-        // Research: https://github.com/libp2p/rust-libp2p/discussions/2673
-        kademlia.set_mode(Some(libp2p::kad::Mode::Server));
-
-        // Add bootstrap nodes to Kademlia routing table
+        // Log operator nodes for reference (directory queries happen at higher layer)
         for node in bootstrap_nodes {
-            kademlia.add_address(&node.peer_id, node.multiaddr.clone());
-            log::info!("state-transition: Added bootstrap peer {} at {}", node.peer_id, node.multiaddr);
-        }
-
-        // Trigger initial bootstrap
-        if let Err(e) = kademlia.bootstrap() {
-            log::warn!("catalog: Bootstrap failed: {:?}", e);
+            log::info!(
+                "state-transition: Operator node available {} at {}",
+                node.peer_id,
+                node.multiaddr
+            );
         }
 
         // Initialize mDNS for local peer discovery
-        let mdns = mdns::async_io::Behaviour::new(
-            mdns::Config::default(),
-            peer_id,
-        )
-        .map_err(|e| DiscoveryError::Mdns(format!("Failed to initialize mDNS: {}", e)))?;
+        let mdns = mdns::async_io::Behaviour::new(mdns::Config::default(), peer_id)
+            .map_err(|e| DiscoveryError::Mdns(format!("Failed to initialize mDNS: {}", e)))?;
 
         // Initialize Identify protocol for peer information exchange
-        let identify = libp2p::identify::Behaviour::new(
-            libp2p::identify::Config::new(
-                "/qnet/1.0.0".to_string(),
-                libp2p::identity::Keypair::generate_ed25519().public(),
-            )
-        );
+        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+            "/qnet/1.0.0".to_string(),
+            libp2p::identity::Keypair::generate_ed25519().public(),
+        ));
 
         // Initialize AutoNAT for NAT detection and public address discovery
         let autonat = libp2p::autonat::Behaviour::new(
@@ -425,73 +300,20 @@ impl DiscoveryBehavior {
         // Returns (Transport, Behaviour) - transport MUST be composed with base transport
         let (relay_transport, relay_client) = libp2p::relay::client::new(peer_id);
 
-        log::info!("state-transition: Discovery initialized for peer {} with NAT traversal support", peer_id);
+        log::info!(
+            "state-transition: Discovery initialized for peer {} with NAT traversal support",
+            peer_id
+        );
 
-        Ok((relay_transport, Self { 
-            kademlia, 
-            mdns,
-            identify,
-            autonat,
-            relay_client,
-        }))
-    }
-
-    /// Discovers peers using both DHT and mDNS.
-    ///
-    /// This method returns all currently known peers from both discovery mechanisms.
-    /// It does not block waiting for new peers; instead, it returns the current state.
-    ///
-    /// # Returns
-    ///
-    /// A vector of discovered peer IDs. May be empty if no peers have been discovered yet.
-    ///
-    /// # Note
-    ///
-    /// Peer discovery is an ongoing process. Call this method periodically to get
-    /// updated peer lists as the swarm processes network events.
-    pub async fn discover_peers(&mut self) -> Result<Vec<PeerId>, DiscoveryError> {
-        // Collect peers from Kademlia routing table
-        let mut peers: Vec<PeerId> = Vec::new();
-        
-        // Kademlia peers are in the routing table buckets
-        for bucket in self.kademlia.kbuckets() {
-            for entry in bucket.iter() {
-                let peer_id = *entry.node.key.preimage();
-                if !peers.contains(&peer_id) {
-                    peers.push(peer_id);
-                }
-            }
-        }
-
-        log::debug!("catalog: Discovered {} total peers", peers.len());
-
-        Ok(peers)
-    }
-
-    /// Returns the current count of discovered peers.
-    ///
-    /// This is a lightweight alternative to `discover_peers()` when you only
-    /// need the count and not the full list of peer IDs.
-    pub fn peer_count(&mut self) -> usize {
-        let mut count = 0;
-        for bucket in self.kademlia.kbuckets() {
-            count += bucket.num_entries();
-        }
-        count
-    }
-
-    /// Get the list of currently discovered peer IDs.
-    ///
-    /// Returns all peers currently in the Kademlia routing table.
-    /// Useful for circuit building and peer selection.
-    pub fn get_peers(&mut self) -> Vec<PeerId> {
-        let mut peers = Vec::new();
-        for bucket in self.kademlia.kbuckets() {
-            for entry in bucket.iter() {
-                peers.push(*entry.node.key.preimage());
-            }
-        }
-        peers
+        Ok((
+            relay_transport,
+            Self {
+                mdns,
+                identify,
+                autonat,
+                relay_client,
+            },
+        ))
     }
 }
 
@@ -512,13 +334,13 @@ mod tests {
     }
 
     #[test]
-    fn test_load_bootstrap_nodes_includes_public_dht() {
-        // With Phase 2.5.1: Should load public libp2p DHT nodes (free infrastructure)
+    fn test_load_bootstrap_nodes_returns_operator_nodes() {
+        // Should load only operator nodes (6 droplets)
         let nodes = load_bootstrap_nodes();
-        
-        // Should have at least some public libp2p bootstrap nodes
-        assert!(nodes.len() > 0, "Should have bootstrap nodes from public libp2p DHT");
-        
+
+        // Verify we have operator nodes available
+        assert!(nodes.len() > 0, "Should have operator nodes");
+
         // Verify structure: each node should have peer_id and multiaddr
         for node in &nodes {
             assert!(!node.multiaddr.to_string().is_empty());
@@ -536,28 +358,13 @@ mod tests {
     }
 
     #[async_std::test]
-    async fn test_peer_count_initially_zero() {
+    async fn test_discovery_behavior_no_kademlia_field() {
+        // Compile-time check: DiscoveryBehavior should not have kademlia field
         let keypair = identity::Keypair::generate_ed25519();
         let peer_id = PeerId::from(keypair.public());
 
-        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
-            .await
-            .expect("Failed to create discovery");
-
-        assert_eq!(discovery.peer_count(), 0);
-    }
-
-    #[async_std::test]
-    async fn test_discover_peers_empty_initially() {
-        let keypair = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from(keypair.public());
-
-        let (_relay_transport, mut discovery) = DiscoveryBehavior::new(peer_id, vec![])
-            .await
-            .expect("Failed to create discovery");
-
-        let peers = discovery.discover_peers().await.expect("discover_peers failed");
-        assert_eq!(peers.len(), 0);
+        let result = DiscoveryBehavior::new(peer_id, vec![]).await;
+        assert!(result.is_ok(), "Discovery should initialize without DHT");
     }
 
     #[async_std::test]
@@ -593,7 +400,10 @@ mod tests {
         // Remove peer
         routing.on_peer_lost(discovered_peer);
         assert_eq!(routing.get_routing_table().route_count(), 0);
-        assert_eq!(routing.get_routing_table().find_route(&discovered_peer), None);
+        assert_eq!(
+            routing.get_routing_table().find_route(&discovered_peer),
+            None
+        );
     }
 
     #[async_std::test]

@@ -459,7 +459,7 @@ mod libp2p_impl {
 pub use libp2p_impl::*;
 
 #[cfg(feature = "with-libp2p")]
-pub use mesh_network::{MeshNetwork, MeshError};
+pub use mesh_network::{MeshError, MeshNetwork};
 
 #[cfg(not(feature = "with-libp2p"))]
 pub mod stub {

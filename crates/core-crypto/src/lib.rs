@@ -48,9 +48,13 @@ pub mod aead {
         in_out: &mut [u8],
     ) -> [u8; 16] {
         let unbound = UnboundKey::new(&aead::CHACHA20_POLY1305, key).expect("aead key");
-    let key = LessSafeKey::new(unbound);
+        let key = LessSafeKey::new(unbound);
         let tag = key
-            .seal_in_place_separate_tag(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), in_out)
+            .seal_in_place_separate_tag(
+                Nonce::assume_unique_for_key(*nonce),
+                Aad::from(aad),
+                in_out,
+            )
             .expect("aead seal in place");
         let mut out = [0u8; 16];
         out.copy_from_slice(tag.as_ref());

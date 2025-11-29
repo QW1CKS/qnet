@@ -55,7 +55,10 @@ pub fn resolve(origin: &str, catalog: &DecoyCatalog) -> Option<(String, u16, Opt
         return None;
     }
     // weighted rotation
-    let total_weight: usize = matches.iter().map(|e| if e.weight == 0 { 1 } else { e.weight as usize }).sum();
+    let total_weight: usize = matches
+        .iter()
+        .map(|e| if e.weight == 0 { 1 } else { e.weight as usize })
+        .sum();
     let idx = ROT_IDX.fetch_add(1, Ordering::Relaxed) % total_weight.max(1);
     let mut acc = 0usize;
     let mut chosen = matches[0];
@@ -68,7 +71,11 @@ pub fn resolve(origin: &str, catalog: &DecoyCatalog) -> Option<(String, u16, Opt
         acc += w;
     }
     let dport = chosen.port.unwrap_or(port);
-    let alpn = if chosen.alpn.is_empty() { None } else { Some(chosen.alpn.clone()) };
+    let alpn = if chosen.alpn.is_empty() {
+        None
+    } else {
+        Some(chosen.alpn.clone())
+    };
     Some((chosen.decoy_host.clone(), dport, alpn))
 }
 

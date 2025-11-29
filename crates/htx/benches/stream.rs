@@ -1,6 +1,9 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use htx::api::dial_inproc_secure;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 fn bench_stream(c: &mut Criterion) {
@@ -17,8 +20,10 @@ fn bench_stream(c: &mut Criterion) {
             let rflag = running.clone();
             let echo = std::thread::spawn(move || {
                 // Accept and service new streams continuously while running
-        'outer: loop {
-                    if !rflag.load(Ordering::Relaxed) { break; }
+                'outer: loop {
+                    if !rflag.load(Ordering::Relaxed) {
+                        break;
+                    }
                     if let Some(s) = server.accept_stream(1_000) {
                         loop {
                             if let Some(buf) = s.read() {
@@ -48,7 +53,7 @@ fn bench_stream(c: &mut Criterion) {
                 // Read until the entire payload is echoed back
                 let mut got = 0usize;
                 let mut tmp_bytes = 0usize;
-        let start = std::time::Instant::now();
+                let start = std::time::Instant::now();
                 while got < size {
                     if let Some(chunk) = st.read() {
                         tmp_bytes = chunk.len();

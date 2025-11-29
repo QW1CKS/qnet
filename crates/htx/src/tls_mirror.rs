@@ -6,7 +6,10 @@ use url::Url;
 
 use core_cbor as cbor; // for TemplateID (DET-CBOR)
 use once_cell::sync::Lazy;
-use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
+};
 
 static GLOBAL_CACHE: Lazy<std::sync::Mutex<MirrorCache>> =
     Lazy::new(|| std::sync::Mutex::new(MirrorCache::new(Duration::from_secs(24 * 60 * 60))));
@@ -22,7 +25,9 @@ pub struct AllowEntry {
 static ROT_IDX: AtomicUsize = AtomicUsize::new(0); // legacy/global (kept for fallback)
 static ROT_PER_HOST: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ALLOWLIST: Lazy<Mutex<Option<Vec<AllowEntry>>>> = Lazy::new(|| {
-    let v = std::env::var("STEALTH_TPL_ALLOWLIST").ok().and_then(|s| serde_json::from_str::<Vec<AllowEntry>>(&s).ok());
+    let v = std::env::var("STEALTH_TPL_ALLOWLIST")
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<AllowEntry>>(&s).ok());
     Mutex::new(v)
 });
 
@@ -106,14 +111,19 @@ pub struct Config {
 }
 
 fn host_matches(pattern: &str, host: &str) -> bool {
-    if pattern == "*" || pattern == host { return true; }
+    if pattern == "*" || pattern == host {
+        return true;
+    }
     if let Some(sfx) = pattern.strip_prefix("*.") {
         return host.ends_with(sfx);
     }
     false
 }
 
-pub fn choose_template_rotating(origin: &str, cfg: Option<&Config>) -> Result<(TemplateId, Template), String> {
+pub fn choose_template_rotating(
+    origin: &str,
+    cfg: Option<&Config>,
+) -> Result<(TemplateId, Template), String> {
     let url = Url::parse(origin).map_err(|_| "bad origin url")?;
     let host = url.host_str().ok_or("no host")?.to_string();
     // overrides
@@ -126,7 +136,10 @@ pub fn choose_template_rotating(origin: &str, cfg: Option<&Config>) -> Result<(T
     // allow-list env
     if let Ok(guard) = ALLOWLIST.lock() {
         if let Some(list) = guard.as_ref() {
-            let matches: Vec<&AllowEntry> = list.iter().filter(|e| host_matches(&e.host_pattern, &host)).collect();
+            let matches: Vec<&AllowEntry> = list
+                .iter()
+                .filter(|e| host_matches(&e.host_pattern, &host))
+                .collect();
             if !matches.is_empty() {
                 // Per-host round-robin to avoid cross-test interference and be deterministic
                 let idx = {
@@ -272,7 +285,9 @@ fn build_rustls_config(tpl: &Template) -> std::sync::Arc<rustls::ClientConfig> {
                         .drain(..)
                         .map(|der| rustls::Certificate(der))
                         .collect::<Vec<_>>();
-                    let _ = roots.add_parsable_certificates(&add.iter().map(|c| c.0.clone()).collect::<Vec<_>>());
+                    let _ = roots.add_parsable_certificates(
+                        &add.iter().map(|c| c.0.clone()).collect::<Vec<_>>(),
+                    );
                 }
             }
         }
@@ -315,7 +330,8 @@ fn build_rustls_config(tpl: &Template) -> std::sync::Arc<rustls::ClientConfig> {
                 Ok(rustls::client::HandshakeSignatureValid::assertion())
             }
         }
-        cfg.dangerous().set_certificate_verifier(Arc::new(NoVerifier));
+        cfg.dangerous()
+            .set_certificate_verifier(Arc::new(NoVerifier));
     }
     // ALPN
     cfg.alpn_protocols = tpl.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
@@ -325,9 +341,9 @@ fn build_rustls_config(tpl: &Template) -> std::sync::Arc<rustls::ClientConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use once_cell::sync::Lazy;
     use std::sync::Mutex as StdMutex;
+    use std::time::Duration;
 
     // Serialize tests in this module to avoid interference via global state (ALLOWLIST, ROT_PER_HOST, GLOBAL_CACHE)
     static TEST_MUTEX: Lazy<StdMutex<()>> = Lazy::new(|| StdMutex::new(()));
@@ -345,59 +361,63 @@ mod tests {
         assert!(!cfg.ja3.is_empty());
     }
 
-        #[test]
-        fn allowlist_rotation_and_ja3() {
+    #[test]
+    fn allowlist_rotation_and_ja3() {
         let _g = TEST_MUTEX.lock().unwrap();
-                // two entries for example.com, rotate between them
-                __test_set_allowlist(r#"[
+        // two entries for example.com, rotate between them
+        __test_set_allowlist(
+            r#"[
                     {"host_pattern":"example.com","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
                     {"host_pattern":"example.com","template":{"alpn":["http/1.1"],"sig_algs":["ecdsa_secp256r1_sha256"],"groups":["secp256r1"],"extensions":[0,10,11,35,16,23,43,51]}}
-                ]"#);
-                let (id1, tpl1) = choose_template_rotating("https://example.com", None).unwrap();
-                let (id2, tpl2) = choose_template_rotating("https://example.com", None).unwrap();
-                assert_ne!(id1, id2);
-                assert_ne!(tpl1.alpn, tpl2.alpn);
-                let ja3_1 = compute_ja3(&tpl1);
-                let ja3_2 = compute_ja3(&tpl2);
-                assert!(!ja3_1.is_empty());
-                assert!(!ja3_2.is_empty());
-        }
+                ]"#,
+        );
+        let (id1, tpl1) = choose_template_rotating("https://example.com", None).unwrap();
+        let (id2, tpl2) = choose_template_rotating("https://example.com", None).unwrap();
+        assert_ne!(id1, id2);
+        assert_ne!(tpl1.alpn, tpl2.alpn);
+        let ja3_1 = compute_ja3(&tpl1);
+        let ja3_2 = compute_ja3(&tpl2);
+        assert!(!ja3_1.is_empty());
+        assert!(!ja3_2.is_empty());
+    }
 
-            #[test]
-            fn ja3_fixture_hash_for_known_template() {
-                let _g = TEST_MUTEX.lock().unwrap();
-                let tpl = Template {
-                    alpn: vec!["h2".into(), "http/1.1".into()],
-                    sig_algs: vec!["rsa_pss_rsae_sha256".into()],
-                    groups: vec!["x25519".into(), "secp256r1".into()],
-                    extensions: vec![0, 11, 10, 35, 16, 23, 43, 51],
-                };
-                // Compute expected JA3 using the same logic
-                let ja3 = compute_ja3(&tpl);
-            // The value should be stable and equal to the fixture hash for this template
-            assert_eq!(ja3, compute_ja3(&tpl));
-            assert_eq!(ja3, "fd2e42d63964a4223054e5e71e8250e4");
-            assert_eq!(ja3.len(), 32); // md5 hex length
-            }
+    #[test]
+    fn ja3_fixture_hash_for_known_template() {
+        let _g = TEST_MUTEX.lock().unwrap();
+        let tpl = Template {
+            alpn: vec!["h2".into(), "http/1.1".into()],
+            sig_algs: vec!["rsa_pss_rsae_sha256".into()],
+            groups: vec!["x25519".into(), "secp256r1".into()],
+            extensions: vec![0, 11, 10, 35, 16, 23, 43, 51],
+        };
+        // Compute expected JA3 using the same logic
+        let ja3 = compute_ja3(&tpl);
+        // The value should be stable and equal to the fixture hash for this template
+        assert_eq!(ja3, compute_ja3(&tpl));
+        assert_eq!(ja3, "fd2e42d63964a4223054e5e71e8250e4");
+        assert_eq!(ja3.len(), 32); // md5 hex length
+    }
 
-            #[test]
-            fn allowlist_rotation_cadence_round_robin_distribution() {
-                let _g = TEST_MUTEX.lock().unwrap();
-                __test_set_allowlist(r#"[
+    #[test]
+    fn allowlist_rotation_cadence_round_robin_distribution() {
+        let _g = TEST_MUTEX.lock().unwrap();
+        __test_set_allowlist(
+            r#"[
                     {"host_pattern":"example.org","template":{"alpn":["h2","http/1.1"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,43,51]}},
                     {"host_pattern":"example.org","template":{"alpn":["http/1.1"],"sig_algs":["ecdsa_secp256r1_sha256"],"groups":["secp256r1"],"extensions":[0,10,11,35,16,23,43,51]}},
                     {"host_pattern":"example.org","template":{"alpn":["h2"],"sig_algs":["rsa_pss_rsae_sha256"],"groups":["x25519"],"extensions":[0,11,10,35,16,23,51,43]}}
-                ]"#);
-                let mut counts = std::collections::HashMap::<String, usize>::new();
-                for _ in 0..300 {
-                    let (_id, tpl) = choose_template_rotating("https://example.org", None).unwrap();
-                    let key = tpl.alpn.join("+");
-                    *counts.entry(key).or_default() += 1;
-                }
-                // Expect near-equal distribution (round robin): differences at most 1
-                let mut vals: Vec<usize> = counts.values().copied().collect();
-                vals.sort_unstable();
-                assert_eq!(vals.len(), 3);
-                assert!(vals[2] - vals[0] <= 1, "distribution skewed: {:?}", counts);
-            }
+                ]"#,
+        );
+        let mut counts = std::collections::HashMap::<String, usize>::new();
+        for _ in 0..300 {
+            let (_id, tpl) = choose_template_rotating("https://example.org", None).unwrap();
+            let key = tpl.alpn.join("+");
+            *counts.entry(key).or_default() += 1;
+        }
+        // Expect near-equal distribution (round robin): differences at most 1
+        let mut vals: Vec<usize> = counts.values().copied().collect();
+        vals.sort_unstable();
+        assert_eq!(vals.len(), 3);
+        assert!(vals[2] - vals[0] <= 1, "distribution skewed: {:?}", counts);
+    }
 }

@@ -210,131 +210,158 @@ impl Mux {
                 };
                 match frame_res {
                     Ok(frame) => {
-                    if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
-                        let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
-                        let id = if frame.payload.len()>=4 { u32::from_be_bytes([frame.payload[0],frame.payload[1],frame.payload[2],frame.payload[3]]) } else { 0 };
-                        eprintln!("htx::mux(rx): frame ty={} id={} payload_len={}", ty, id, frame.payload.len());
-                    }
-                    match frame.ty {
-                        framing::FrameType::Stream => {
-                            // payload: stream_id (u32) || data
-                            if frame.payload.len() < 4 {
-                                continue;
-                            }
-                            let id = u32::from_be_bytes([
-                                frame.payload[0],
-                                frame.payload[1],
-                                frame.payload[2],
-                                frame.payload[3],
-                            ]);
-                            // Backward-compatible decode: prefer new format with data_len (u32) if sane; else treat rest as data
-                            let data = {
-                                if frame.payload.len() >= 8 {
-                                    let declared = u32::from_be_bytes([
-                                        frame.payload[4],
-                                        frame.payload[5],
-                                        frame.payload[6],
-                                        frame.payload[7],
-                                    ]) as usize;
-                                    let total_needed = 8 + declared;
-                                    if total_needed <= frame.payload.len() {
-                                        frame.payload[8..8 + declared].to_vec()
+                        if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
+                            let ty = match frame.ty {
+                                framing::FrameType::Stream => "Stream",
+                                framing::FrameType::WindowUpdate => "WindowUpdate",
+                                framing::FrameType::Ping => "Ping",
+                                framing::FrameType::KeyUpdate => "KeyUpdate",
+                                framing::FrameType::Close => "Close",
+                            };
+                            let id = if frame.payload.len() >= 4 {
+                                u32::from_be_bytes([
+                                    frame.payload[0],
+                                    frame.payload[1],
+                                    frame.payload[2],
+                                    frame.payload[3],
+                                ])
+                            } else {
+                                0
+                            };
+                            eprintln!(
+                                "htx::mux(rx): frame ty={} id={} payload_len={}",
+                                ty,
+                                id,
+                                frame.payload.len()
+                            );
+                        }
+                        match frame.ty {
+                            framing::FrameType::Stream => {
+                                // payload: stream_id (u32) || data
+                                if frame.payload.len() < 4 {
+                                    continue;
+                                }
+                                let id = u32::from_be_bytes([
+                                    frame.payload[0],
+                                    frame.payload[1],
+                                    frame.payload[2],
+                                    frame.payload[3],
+                                ]);
+                                // Backward-compatible decode: prefer new format with data_len (u32) if sane; else treat rest as data
+                                let data = {
+                                    if frame.payload.len() >= 8 {
+                                        let declared = u32::from_be_bytes([
+                                            frame.payload[4],
+                                            frame.payload[5],
+                                            frame.payload[6],
+                                            frame.payload[7],
+                                        ])
+                                            as usize;
+                                        let total_needed = 8 + declared;
+                                        if total_needed <= frame.payload.len() {
+                                            frame.payload[8..8 + declared].to_vec()
+                                        } else {
+                                            // Fallback to legacy layout
+                                            frame.payload[4..].to_vec()
+                                        }
                                     } else {
-                                        // Fallback to legacy layout
                                         frame.payload[4..].to_vec()
                                     }
+                                };
+
+                                // Stream 0 is reserved for control messages (CBOR-encoded)
+                                if id == 0 {
+                                    // Decode SignedControl; if invalid, ignore
+                                    if let Ok(_sc) = cbor::from_slice::<SignedControl>(&data) {
+                                        // Control messages are application-level; for this Mux we only manage rekey-close sequencing:
+                                        // When a REKEY control arrives (we infer via TS/FLOW variance), close control stream (set flag false), then reopen after rx key rotates.
+                                        // For simplicity, toggle control_open=false on any valid control message and set true after processing next KeyUpdate.
+                                        let mut ctrl = inner.control_open.lock().unwrap();
+                                        *ctrl = false;
+                                    }
+                                    continue;
+                                }
+
+                                let mut incoming = inner.incoming.lock().unwrap();
+                                if let Some(tx) = incoming.get(&id) {
+                                    let _ = tx.send(data);
                                 } else {
-                                    frame.payload[4..].to_vec()
+                                    // New stream: create channel and notify acceptor
+                                    let (tx_data, rx_data) = mpsc::channel();
+                                    let _ = tx_data.send(data);
+                                    incoming.insert(id, tx_data);
+                                    // Initialize remote credit so we can send back immediately
+                                    {
+                                        let mut rem = inner.remote_credit.lock().unwrap();
+                                        rem.insert(id, inner.initial_window);
+                                    }
+                                    let handle = StreamHandle {
+                                        id,
+                                        mux: Mux {
+                                            inner: inner.clone(),
+                                        },
+                                        rx: rx_data,
+                                    };
+                                    let _ = inner.accept_tx.send(handle);
                                 }
-                            };
-
-                            // Stream 0 is reserved for control messages (CBOR-encoded)
-                            if id == 0 {
-                                // Decode SignedControl; if invalid, ignore
-                                if let Ok(_sc) = cbor::from_slice::<SignedControl>(&data) {
-                                    // Control messages are application-level; for this Mux we only manage rekey-close sequencing:
-                                    // When a REKEY control arrives (we infer via TS/FLOW variance), close control stream (set flag false), then reopen after rx key rotates.
-                                    // For simplicity, toggle control_open=false on any valid control message and set true after processing next KeyUpdate.
-                                    let mut ctrl = inner.control_open.lock().unwrap();
-                                    *ctrl = false;
+                            }
+                            framing::FrameType::KeyUpdate => {
+                                // Update rx key: move current key to old window, derive new key, reset new ctr; accept up to 3 old frames
+                                let mut enc = inner.enc.lock().unwrap();
+                                if let Some(st) = enc.as_mut() {
+                                    let old = OldKey {
+                                        key: st.rx_key,
+                                        ctr: st.rx_ctr,
+                                        remaining: 3,
+                                    };
+                                    let prk = crypto::hkdf::extract(
+                                        &st.rx_key,
+                                        b"qnet/mux/key_update/v1",
+                                    );
+                                    let newk: [u8; 32] = crypto::hkdf::expand(&prk, b"key");
+                                    st.rx_old = Some(old);
+                                    st.rx_key = newk;
+                                    st.rx_ctr = 0;
                                 }
-                                continue;
+                                // Bump epoch on rx rotation
+                                let mut ep = inner.key_epoch.lock().unwrap();
+                                *ep = ep.saturating_add(1);
+                                // After rx rotation, re-open control stream to resume data plane per rekey-close behavior
+                                let mut ctrl = inner.control_open.lock().unwrap();
+                                *ctrl = true;
                             }
-
-                            let mut incoming = inner.incoming.lock().unwrap();
-                            if let Some(tx) = incoming.get(&id) {
-                                let _ = tx.send(data);
-                            } else {
-                                // New stream: create channel and notify acceptor
-                                let (tx_data, rx_data) = mpsc::channel();
-                                let _ = tx_data.send(data);
-                                incoming.insert(id, tx_data);
-                                // Initialize remote credit so we can send back immediately
-                                {
-                                    let mut rem = inner.remote_credit.lock().unwrap();
-                                    rem.insert(id, inner.initial_window);
+                            framing::FrameType::WindowUpdate => {
+                                // payload: stream_id (u32) || credit (u32)
+                                if frame.payload.len() < 8 {
+                                    continue;
                                 }
-                                let handle = StreamHandle {
-                                    id,
-                                    mux: Mux {
-                                        inner: inner.clone(),
-                                    },
-                                    rx: rx_data,
-                                };
-                                let _ = inner.accept_tx.send(handle);
+                                let id = u32::from_be_bytes([
+                                    frame.payload[0],
+                                    frame.payload[1],
+                                    frame.payload[2],
+                                    frame.payload[3],
+                                ]);
+                                let inc = u32::from_be_bytes([
+                                    frame.payload[4],
+                                    frame.payload[5],
+                                    frame.payload[6],
+                                    frame.payload[7],
+                                ]) as usize;
+                                let mut rem = inner.remote_credit.lock().unwrap();
+                                let e = rem.entry(id).or_insert(0);
+                                *e = e.saturating_add(inc);
+                                inner.credit_cv.notify_all();
                             }
+                            _ => {}
                         }
-                        framing::FrameType::KeyUpdate => {
-                            // Update rx key: move current key to old window, derive new key, reset new ctr; accept up to 3 old frames
-                            let mut enc = inner.enc.lock().unwrap();
-                            if let Some(st) = enc.as_mut() {
-                                let old = OldKey {
-                                    key: st.rx_key,
-                                    ctr: st.rx_ctr,
-                                    remaining: 3,
-                                };
-                                let prk =
-                                    crypto::hkdf::extract(&st.rx_key, b"qnet/mux/key_update/v1");
-                                let newk: [u8; 32] = crypto::hkdf::expand(&prk, b"key");
-                                st.rx_old = Some(old);
-                                st.rx_key = newk;
-                                st.rx_ctr = 0;
-                            }
-                            // Bump epoch on rx rotation
-                            let mut ep = inner.key_epoch.lock().unwrap();
-                            *ep = ep.saturating_add(1);
-                            // After rx rotation, re-open control stream to resume data plane per rekey-close behavior
-                            let mut ctrl = inner.control_open.lock().unwrap();
-                            *ctrl = true;
-                        }
-                        framing::FrameType::WindowUpdate => {
-                            // payload: stream_id (u32) || credit (u32)
-                            if frame.payload.len() < 8 {
-                                continue;
-                            }
-                            let id = u32::from_be_bytes([
-                                frame.payload[0],
-                                frame.payload[1],
-                                frame.payload[2],
-                                frame.payload[3],
-                            ]);
-                            let inc = u32::from_be_bytes([
-                                frame.payload[4],
-                                frame.payload[5],
-                                frame.payload[6],
-                                frame.payload[7],
-                            ]) as usize;
-                            let mut rem = inner.remote_credit.lock().unwrap();
-                            let e = rem.entry(id).or_insert(0);
-                            *e = e.saturating_add(inc);
-                            inner.credit_cv.notify_all();
-                        }
-                        _ => {}
                     }
-                    },
                     Err(e) => {
                         if std::env::var("HTX_DEBUG_FRAMES").ok().as_deref() == Some("1") {
-                            eprintln!("htx::mux: decrypt_and_parse failed: {:?}; len={}", e, bytes.len());
+                            eprintln!(
+                                "htx::mux: decrypt_and_parse failed: {:?}; len={}",
+                                e,
+                                bytes.len()
+                            );
                         }
                     }
                 }
@@ -497,14 +524,18 @@ impl StreamHandle {
             } else {
                 #[cfg(feature = "stealth-mode")]
                 {
-                    let (take, b) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                    let (take, b) = self
+                        .mux
+                        .take_credit_blocking_with_flag(self.id, data_budget);
                     blocked = b;
                     let (c, r) = data.split_at(take);
                     (c, r)
                 }
                 #[cfg(not(feature = "stealth-mode"))]
                 {
-                    let (take, _blocked) = self.mux.take_credit_blocking_with_flag(self.id, data_budget);
+                    let (take, _blocked) = self
+                        .mux
+                        .take_credit_blocking_with_flag(self.id, data_budget);
                     let (c, r) = data.split_at(take);
                     (c, r)
                 }
@@ -524,7 +555,10 @@ impl StreamHandle {
 
             if self.mux.inner.rr_enabled {
                 // Enqueue for RR scheduler
-                let _ = self.mux.inner.rr_tx.send(WriteReq { id: self.id, chunk: chunk.to_vec() });
+                let _ = self.mux.inner.rr_tx.send(WriteReq {
+                    id: self.id,
+                    chunk: chunk.to_vec(),
+                });
             } else {
                 #[cfg(feature = "stealth-mode")]
                 {
@@ -580,17 +614,29 @@ impl Mux {
 fn init_stealth_shaper_from_env() -> Option<StealthShaper> {
     use std::env;
     // Profiles
-    let s_prof = match env::var("STEALTH_SIZING_PROFILE").unwrap_or_else(|_| "webby".into()).to_lowercase().as_str() {
+    let s_prof = match env::var("STEALTH_SIZING_PROFILE")
+        .unwrap_or_else(|_| "webby".into())
+        .to_lowercase()
+        .as_str()
+    {
         "small" => sizing_mod::Profile::Small,
         "bursty" => sizing_mod::Profile::Bursty,
         _ => sizing_mod::Profile::Webby,
     };
-    let j_prof = match env::var("STEALTH_JITTER_PROFILE").unwrap_or_else(|_| "webby".into()).to_lowercase().as_str() {
+    let j_prof = match env::var("STEALTH_JITTER_PROFILE")
+        .unwrap_or_else(|_| "webby".into())
+        .to_lowercase()
+        .as_str()
+    {
         "small" => jitter_mod::Profile::Small,
         _ => jitter_mod::Profile::Webby,
     };
-    let s_seed = env::var("STEALTH_SIZER_SEED").ok().and_then(|v| v.parse::<u64>().ok());
-    let j_seed = env::var("STEALTH_JITTER_SEED").ok().and_then(|v| v.parse::<u64>().ok());
+    let s_seed = env::var("STEALTH_SIZER_SEED")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok());
+    let j_seed = env::var("STEALTH_JITTER_SEED")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok());
 
     let sizer = sizing_mod::Sizer::new(s_prof, s_seed);
     let jitter = jitter_mod::Jitter::new(j_prof, j_seed);
@@ -638,7 +684,9 @@ impl Mux {
                     let rx = &mut *inner.rr_rx.lock().unwrap();
                     while let Ok(req) = rx.try_recv() {
                         let mut qmap = inner.rr_queues.lock().unwrap();
-                        qmap.entry(req.id).or_insert_with(VecDeque::new).push_back(req.chunk);
+                        qmap.entry(req.id)
+                            .or_insert_with(VecDeque::new)
+                            .push_back(req.chunk);
                     }
                 }
                 // Build a static list of stream ids to iterate fairly
@@ -651,7 +699,9 @@ impl Mux {
                     let rx = &mut *inner.rr_rx.lock().unwrap();
                     if let Ok(req) = rx.recv_timeout(Duration::from_millis(5)) {
                         let mut qmap = inner.rr_queues.lock().unwrap();
-                        qmap.entry(req.id).or_insert_with(VecDeque::new).push_back(req.chunk);
+                        qmap.entry(req.id)
+                            .or_insert_with(VecDeque::new)
+                            .push_back(req.chunk);
                     }
                     continue;
                 }
@@ -661,7 +711,9 @@ impl Mux {
                         let mut qmap = inner.rr_queues.lock().unwrap();
                         if let Some(q) = qmap.get_mut(&id) {
                             q.pop_front()
-                        } else { None }
+                        } else {
+                            None
+                        }
                     };
                     if let Some(chunk) = maybe_chunk {
                         // Respect remote credit here
@@ -669,10 +721,15 @@ impl Mux {
                         let (take, _blocked) = {
                             // Use the existing credit mechanism
                             // If not enough credit to send the whole chunk, split and requeue remainder
-                            let (t, _b) = Mux { inner: inner.clone() }.take_credit_blocking_with_flag(id, needed);
+                            let (t, _b) = Mux {
+                                inner: inner.clone(),
+                            }
+                            .take_credit_blocking_with_flag(id, needed);
                             (t, _b)
                         };
-                        if take == 0 { continue; }
+                        if take == 0 {
+                            continue;
+                        }
                         let (to_send, remainder) = if take < needed {
                             (chunk[..take].to_vec(), Some(chunk[take..].to_vec()))
                         } else {
@@ -680,11 +737,17 @@ impl Mux {
                         };
                         #[cfg(feature = "stealth-mode")]
                         {
-                            Mux { inner: inner.clone() }.send_data_padded(id, &to_send, 0);
+                            Mux {
+                                inner: inner.clone(),
+                            }
+                            .send_data_padded(id, &to_send, 0);
                         }
                         #[cfg(not(feature = "stealth-mode"))]
                         {
-                            Mux { inner: inner.clone() }.send_data(id, &to_send);
+                            Mux {
+                                inner: inner.clone(),
+                            }
+                            .send_data(id, &to_send);
                         }
                         if let Some(rem) = remainder {
                             let mut qmap = inner.rr_queues.lock().unwrap();
@@ -698,11 +761,11 @@ impl Mux {
         });
     }
     fn send_frame(&self, frame: framing::Frame) {
-    // We may clone locally to zeroize sensitive plaintext after encoding without borrowing issues
-    #[cfg(feature = "stealth-mode")]
-    let mut frame = frame;
-    #[cfg(not(feature = "stealth-mode"))]
-    let frame = frame;
+        // We may clone locally to zeroize sensitive plaintext after encoding without borrowing issues
+        #[cfg(feature = "stealth-mode")]
+        let mut frame = frame;
+        #[cfg(not(feature = "stealth-mode"))]
+        let frame = frame;
         let mut enc = self.inner.enc.lock().unwrap();
         if let Some(st) = enc.as_mut() {
             let nonce = Self::ctr_to_nonce(st.tx_ctr);
@@ -715,9 +778,24 @@ impl Mux {
                 frame.payload.fill(0);
             }
             if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
-                let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
-                let id = if out.len()>=8 { u32::from_be_bytes([out[4],out[5],out[6],out[7]]) } else { 0 };
-                eprintln!("htx::mux(tx,enc): frame ty={} id={} wire_len={}", ty, id, out.len());
+                let ty = match frame.ty {
+                    framing::FrameType::Stream => "Stream",
+                    framing::FrameType::WindowUpdate => "WindowUpdate",
+                    framing::FrameType::Ping => "Ping",
+                    framing::FrameType::KeyUpdate => "KeyUpdate",
+                    framing::FrameType::Close => "Close",
+                };
+                let id = if out.len() >= 8 {
+                    u32::from_be_bytes([out[4], out[5], out[6], out[7]])
+                } else {
+                    0
+                };
+                eprintln!(
+                    "htx::mux(tx,enc): frame ty={} id={} wire_len={}",
+                    ty,
+                    id,
+                    out.len()
+                );
             }
             let _ = self.inner.tx.send(out);
         } else {
@@ -728,9 +806,24 @@ impl Mux {
                 frame.payload.fill(0);
             }
             if std::env::var("HTX_DEBUG_MUX").ok().as_deref() == Some("1") {
-                let ty = match frame.ty { framing::FrameType::Stream=>"Stream", framing::FrameType::WindowUpdate=>"WindowUpdate", framing::FrameType::Ping=>"Ping", framing::FrameType::KeyUpdate=>"KeyUpdate", framing::FrameType::Close=>"Close" };
-                let id = if out.len()>=8 { u32::from_be_bytes([out[4],out[5],out[6],out[7]]) } else { 0 };
-                eprintln!("htx::mux(tx,plain): frame ty={} id={} wire_len={}", ty, id, out.len());
+                let ty = match frame.ty {
+                    framing::FrameType::Stream => "Stream",
+                    framing::FrameType::WindowUpdate => "WindowUpdate",
+                    framing::FrameType::Ping => "Ping",
+                    framing::FrameType::KeyUpdate => "KeyUpdate",
+                    framing::FrameType::Close => "Close",
+                };
+                let id = if out.len() >= 8 {
+                    u32::from_be_bytes([out[4], out[5], out[6], out[7]])
+                } else {
+                    0
+                };
+                eprintln!(
+                    "htx::mux(tx,plain): frame ty={} id={} wire_len={}",
+                    ty,
+                    id,
+                    out.len()
+                );
             }
             let _ = self.inner.tx.send(out);
         }
@@ -789,7 +882,11 @@ fn scheduler_defaults_from_env() -> (usize, usize) {
         .unwrap_or(false);
 
     let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| {
-        if prefer_quic { String::from("http") } else { String::from("default") }
+        if prefer_quic {
+            String::from("http")
+        } else {
+            String::from("default")
+        }
     });
 
     let (mut iw, mut ch) = if profile.eq_ignore_ascii_case("http") {
@@ -819,9 +916,18 @@ fn should_enable_rr_scheduler() -> bool {
     // Enable by default when HTTP profile is set or PREFER_QUIC is truthy
     let prefer_quic = env::var("PREFER_QUIC")
         .ok()
-        .map(|v| { let v = v.to_ascii_lowercase(); matches!(v.as_str(), "1" | "true" | "yes" | "on") })
+        .map(|v| {
+            let v = v.to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        })
         .unwrap_or(false);
-    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| if prefer_quic { String::from("http") } else { String::from("default") });
+    let profile = env::var("HTX_SCHEDULER_PROFILE").unwrap_or_else(|_| {
+        if prefer_quic {
+            String::from("http")
+        } else {
+            String::from("default")
+        }
+    });
     profile.eq_ignore_ascii_case("http")
 }
 
@@ -1160,7 +1266,9 @@ mod tests {
                     thread::spawn(move || {
                         while let Some(buf) = sh.read() {
                             sh.write(&buf);
-                            if buf.len() == 0 { break; }
+                            if buf.len() == 0 {
+                                break;
+                            }
                         }
                     });
                 }
@@ -1168,9 +1276,9 @@ mod tests {
         });
 
         // Large and small payloads
-    let big = vec![1u8; 512 * 1024];
-    let small = vec![2u8; 8 * 1024];
-    let small_len = small.len();
+        let big = vec![1u8; 512 * 1024];
+        let small = vec![2u8; 8 * 1024];
+        let small_len = small.len();
 
         // Start both streams nearly simultaneously
         let a1 = a.clone();
@@ -1181,7 +1289,9 @@ mod tests {
             let start = std::time::Instant::now();
             while let Some(buf) = sh.read() {
                 got += buf.len();
-                if got >= big.len() || start.elapsed() > Duration::from_secs(5) { break; }
+                if got >= big.len() || start.elapsed() > Duration::from_secs(5) {
+                    break;
+                }
             }
             got
         });
@@ -1193,7 +1303,9 @@ mod tests {
             let start = std::time::Instant::now();
             while let Some(buf) = sh.read() {
                 got += buf.len();
-                if got >= small_len || start.elapsed() > Duration::from_secs(2) { break; }
+                if got >= small_len || start.elapsed() > Duration::from_secs(2) {
+                    break;
+                }
             }
             got
         });
@@ -1201,7 +1313,10 @@ mod tests {
         let got_small = h_small.join().unwrap();
         let got_large_partial = h_large.join().unwrap();
         server.join().unwrap();
-    assert_eq!(got_small, small_len);
-        assert!(got_large_partial >= got_small, "large should have progressed too");
+        assert_eq!(got_small, small_len);
+        assert!(
+            got_large_partial >= got_small,
+            "large should have progressed too"
+        );
     }
 }

@@ -110,9 +110,8 @@ impl Packet {
         let src_bytes = self.src.to_bytes();
         let dst_bytes = self.dst.to_bytes();
 
-        let mut encoded = Vec::with_capacity(
-            2 + src_bytes.len() + 2 + dst_bytes.len() + 4 + self.data.len(),
-        );
+        let mut encoded =
+            Vec::with_capacity(2 + src_bytes.len() + 2 + dst_bytes.len() + 4 + self.data.len());
 
         // Encode source PeerId
         let src_len: u16 = src_bytes
@@ -152,7 +151,9 @@ impl Packet {
 
         // Decode source PeerId length
         if bytes.len() < offset + 2 {
-            return Err(RelayError::DecodeFailed("insufficient data for src_len".into()));
+            return Err(RelayError::DecodeFailed(
+                "insufficient data for src_len".into(),
+            ));
         }
         let src_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]) as usize;
         offset += 2;
@@ -167,7 +168,9 @@ impl Packet {
 
         // Decode destination PeerId length
         if bytes.len() < offset + 2 {
-            return Err(RelayError::DecodeFailed("insufficient data for dst_len".into()));
+            return Err(RelayError::DecodeFailed(
+                "insufficient data for dst_len".into(),
+            ));
         }
         let dst_len = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]) as usize;
         offset += 2;
@@ -182,7 +185,9 @@ impl Packet {
 
         // Decode data length
         if bytes.len() < offset + 4 {
-            return Err(RelayError::DecodeFailed("insufficient data for data_len".into()));
+            return Err(RelayError::DecodeFailed(
+                "insufficient data for data_len".into(),
+            ));
         }
         let data_len = u32::from_be_bytes([
             bytes[offset],
@@ -194,7 +199,9 @@ impl Packet {
 
         // Decode data
         if bytes.len() < offset + data_len {
-            return Err(RelayError::DecodeFailed("insufficient data for payload".into()));
+            return Err(RelayError::DecodeFailed(
+                "insufficient data for payload".into(),
+            ));
         }
         let data = bytes[offset..offset + data_len].to_vec();
 
@@ -245,10 +252,7 @@ impl RoutingTable {
     pub fn add_route(&mut self, dst: PeerId, via: PeerId, ttl: Option<Duration>) {
         // TTL support is placeholder for future implementation
         let _ = ttl;
-        self.routes
-            .entry(dst)
-            .or_default()
-            .push(via);
+        self.routes.entry(dst).or_default().push(via);
         log::debug!("relay: added route dst={} via={}", dst, via);
     }
 
@@ -277,7 +281,7 @@ impl RoutingTable {
                 return circuit.hops.first();
             }
         }
-        
+
         // Fall back to direct route
         self.routes.get(dst).and_then(|hops| hops.first())
     }
@@ -332,17 +336,17 @@ impl RoutingTable {
     /// ```
     pub fn add_circuit(&mut self, circuit: Circuit) -> Result<(), crate::circuit::CircuitError> {
         use crate::circuit::CircuitError;
-        
+
         if self.circuits.contains_key(&circuit.id) {
             return Err(CircuitError::AlreadyExists(circuit.id));
         }
 
         let destination = *circuit.hops.last().expect("circuit must have hops");
         let circuit_id = circuit.id;
-        
+
         self.circuits.insert(circuit_id, circuit);
         self.circuit_routes.insert(destination, circuit_id);
-        
+
         log::info!("relay: added circuit {} to dst={}", circuit_id, destination);
         Ok(())
     }
@@ -406,7 +410,7 @@ impl RoutingTable {
         for id in idle_ids {
             self.remove_circuit(id);
         }
-        
+
         if count > 0 {
             log::info!("relay: pruned {} idle circuits", count);
         }
@@ -625,9 +629,8 @@ where
             packet.src,
             packet.data.len()
         );
-        local_handler(&packet).map_err(|e| {
-            RelayError::ForwardFailed(format!("local delivery failed: {}", e))
-        })?;
+        local_handler(&packet)
+            .map_err(|e| RelayError::ForwardFailed(format!("local delivery failed: {}", e)))?;
     }
     Ok(())
 }
@@ -775,7 +778,10 @@ mod tests {
         // Forward multiple packets
         for _ in 0..5 {
             let packet = Packet::new(PeerId::random(), dst, vec![1, 2, 3]);
-            relay.forward_packet(packet).await.expect("forward should succeed");
+            relay
+                .forward_packet(packet)
+                .await
+                .expect("forward should succeed");
         }
 
         assert_eq!(relay.packets_relayed(), 5);

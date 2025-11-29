@@ -131,10 +131,10 @@ async fn test_packet_encoding_integrity() {
 
     // Test various data sizes
     let test_cases = vec![
-        vec![],                                      // Empty
-        vec![0xff; 1],                               // Single byte
-        vec![0xaa; 100],                             // Medium
-        vec![0x55; 10000],                           // Large
+        vec![],                                                  // Empty
+        vec![0xff; 1],                                           // Single byte
+        vec![0xaa; 100],                                         // Medium
+        vec![0x55; 10000],                                       // Large
         b"Unicode test: \xE2\x9C\x93 \xF0\x9F\x8E\x89".to_vec(), // UTF-8
     ];
 

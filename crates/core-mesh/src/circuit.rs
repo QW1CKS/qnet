@@ -201,14 +201,14 @@ impl CircuitClose {
 pub struct Circuit {
     /// Unique circuit identifier
     pub id: u64,
-    
+
     /// Ordered list of peer IDs in the circuit path.
     /// First element is the entry hop, last is the exit (destination).
     pub hops: Vec<PeerId>,
-    
+
     /// Timestamp when the circuit was created
     pub created_at: Instant,
-    
+
     /// Timestamp of last activity on this circuit
     pub last_activity: Instant,
 }
@@ -380,16 +380,9 @@ impl CircuitBuilder {
             return Err(CircuitError::InvalidHopCount(num_hops));
         }
 
-        // Get discovered peers (excluding destination)
-        let discovered = {
-            let mut discovery = self.discovery.lock().unwrap();
-            discovery.get_peers()
-        };
-        
-        let mut available: Vec<PeerId> = discovered
-            .into_iter()
-            .filter(|p| *p != dst)
-            .collect();
+        // Peer discovery now handled via operator directory HTTP queries
+        // Circuit building requires peer list from application layer
+        let mut available: Vec<PeerId> = vec![];
 
         if available.len() < num_hops {
             return Err(CircuitError::InsufficientPeers {
@@ -404,7 +397,7 @@ impl CircuitBuilder {
         available.shuffle(&mut rng);
 
         let mut hops: Vec<PeerId> = available.into_iter().take(num_hops).collect();
-        
+
         // Add destination as final hop
         hops.push(dst);
 

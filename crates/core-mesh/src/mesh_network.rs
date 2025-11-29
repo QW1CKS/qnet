@@ -14,7 +14,7 @@
 //! let mut mesh = MeshNetwork::new(keypair).await?;
 //! mesh.start_discovery().await?;
 //! println!("Mesh started, peer_id: {}", mesh.peer_id());
-//! println!("Discovered {} peers", mesh.peer_count());
+//! // Peer discovery now via operator directory HTTP queries
 //! # Ok(())
 //! # }
 //! ```
@@ -32,10 +32,10 @@ use crate::relay::{RelayBehavior, RoutingTable};
 pub enum MeshError {
     #[error("discovery error: {0}")]
     Discovery(#[from] crate::discovery::DiscoveryError),
-    
+
     #[error("relay error: {0}")]
     Relay(#[from] crate::relay::RelayError),
-    
+
     #[error("mesh not started")]
     NotStarted,
 }
@@ -71,7 +71,7 @@ impl MeshNetwork {
     pub async fn new(keypair: identity::Keypair) -> Result<Self, MeshError> {
         let peer_id = PeerId::from(keypair.public());
         let routing_table = Arc::new(Mutex::new(RoutingTable::new()));
-        
+
         Ok(Self {
             _keypair: keypair,
             peer_id,
@@ -102,23 +102,24 @@ impl MeshNetwork {
     pub async fn start_discovery(&mut self) -> Result<(), MeshError> {
         // Load bootstrap nodes (catalog-first, seeds as fallback)
         let bootstrap_nodes = Self::load_bootstrap_nodes();
-        
+
         // Create discovery behavior (returns relay_transport + behavior)
-        let (_relay_transport, discovery) = DiscoveryBehavior::new(self.peer_id, bootstrap_nodes).await?;
+        let (_relay_transport, discovery) =
+            DiscoveryBehavior::new(self.peer_id, bootstrap_nodes).await?;
         let discovery_arc = Arc::new(Mutex::new(discovery));
-        
+
         // Create relay behavior
         let routing_clone = (*self.routing_table.lock().unwrap()).clone();
         let relay = RelayBehavior::new(self.peer_id, routing_clone);
-        
+
         // Create circuit builder with discovery reference
         let circuit_builder = CircuitBuilder::new(Arc::clone(&discovery_arc));
-        
+
         // Store components
         self.discovery = Some(discovery_arc);
         self.relay = Some(relay);
         self.circuit_builder = Some(circuit_builder);
-        
+
         Ok(())
     }
 
@@ -128,13 +129,10 @@ impl MeshNetwork {
     }
 
     /// Get the number of discovered peers.
+    /// Note: Peer discovery now handled via operator directory at application layer.
+    /// This method returns 0 as DHT-based peer tracking was removed.
     pub fn peer_count(&self) -> usize {
-        self.discovery
-            .as_ref()
-            .and_then(|arc| {
-                arc.lock().ok().map(|mut d| d.peer_count())
-            })
-            .unwrap_or(0)
+        0
     }
 
     /// Get the number of active circuits.

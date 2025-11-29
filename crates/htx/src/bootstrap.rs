@@ -28,7 +28,9 @@ pub struct SignedSeeds {
 
 fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
     let s = s.trim();
-    if s.len() % 2 != 0 { return Err("hex len".into()); }
+    if s.len() % 2 != 0 {
+        return Err("hex len".into());
+    }
     let mut out = Vec::with_capacity(s.len() / 2);
     let bytes = s.as_bytes();
     for i in (0..bytes.len()).step_by(2) {
@@ -56,10 +58,18 @@ pub fn load_from_env() -> Option<SeedCatalog> {
             return verify_signed_catalog(&pk_hex, &signed).ok();
         }
     }
-    if std::env::var("STEALTH_BOOTSTRAP_ALLOW_UNSIGNED").ok().as_deref() == Some("1") {
+    if std::env::var("STEALTH_BOOTSTRAP_ALLOW_UNSIGNED")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
         #[derive(Deserialize)]
-        struct Unsigned { catalog: SeedCatalog }
-        if let Ok(u) = serde_json::from_str::<Unsigned>(&json) { return Some(u.catalog); }
+        struct Unsigned {
+            catalog: SeedCatalog,
+        }
+        if let Ok(u) = serde_json::from_str::<Unsigned>(&json) {
+            return Some(u.catalog);
+        }
     }
     None
 }
@@ -74,7 +84,12 @@ pub struct BackoffPlan {
 
 impl Default for BackoffPlan {
     fn default() -> Self {
-        Self { base_ms: 500, factor: 2.0, max_ms: 8_000, jitter_frac: 0.1 }
+        Self {
+            base_ms: 500,
+            factor: 2.0,
+            max_ms: 8_000,
+            jitter_frac: 0.1,
+        }
     }
 }
 
@@ -86,14 +101,22 @@ pub struct BackoffIter {
 
 impl BackoffIter {
     pub fn new(plan: BackoffPlan, seed: Option<u64>) -> Self {
-        Self { plan, cur_ms: 0, rng: StdRng::seed_from_u64(seed.unwrap_or(0xB005_7B00)) }
+        Self {
+            plan,
+            cur_ms: 0,
+            rng: StdRng::seed_from_u64(seed.unwrap_or(0xB005_7B00)),
+        }
     }
 }
 
 impl Iterator for BackoffIter {
     type Item = Duration;
     fn next(&mut self) -> Option<Self::Item> {
-        let next = if self.cur_ms == 0 { self.plan.base_ms } else { ((self.cur_ms as f32) * self.plan.factor) as u64 };
+        let next = if self.cur_ms == 0 {
+            self.plan.base_ms
+        } else {
+            ((self.cur_ms as f32) * self.plan.factor) as u64
+        };
         self.cur_ms = next.min(self.plan.max_ms);
         // apply jitter ±jitter_frac
         let frac = self.plan.jitter_frac.max(0.0).min(1.0);
@@ -105,35 +128,61 @@ impl Iterator for BackoffIter {
 }
 
 #[derive(Debug, Clone)]
-pub struct SeedCacheEntry { pub url: String, pub expires: Instant }
+pub struct SeedCacheEntry {
+    pub url: String,
+    pub expires: Instant,
+}
 
 #[derive(Debug, Default)]
-pub struct SeedCache { entries: Vec<SeedCacheEntry>, ttl: Duration }
+pub struct SeedCache {
+    entries: Vec<SeedCacheEntry>,
+    ttl: Duration,
+}
 
 impl SeedCache {
-    pub fn new(ttl: Duration) -> Self { Self { entries: Vec::new(), ttl } }
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            entries: Vec::new(),
+            ttl,
+        }
+    }
     pub fn put(&mut self, url: String) {
         let exp = Instant::now() + self.ttl;
         // replace if exists
-        if let Some(e) = self.entries.iter_mut().find(|e| e.url == url) { e.expires = exp; return; }
+        if let Some(e) = self.entries.iter_mut().find(|e| e.url == url) {
+            e.expires = exp;
+            return;
+        }
         self.entries.push(SeedCacheEntry { url, expires: exp });
     }
     pub fn get_valid(&self) -> Vec<String> {
         let now = Instant::now();
-        self.entries.iter().filter(|e| e.expires > now).map(|e| e.url.clone()).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.expires > now)
+            .map(|e| e.url.clone())
+            .collect()
     }
 }
 
 pub fn weighted_pick<'a>(entries: &'a [SeedEntry], idx: usize) -> Option<&'a SeedEntry> {
-    if entries.is_empty() { return None; }
-    let total: usize = entries.iter().map(|e| if e.weight == 0 { 1 } else { e.weight as usize }).sum();
+    if entries.is_empty() {
+        return None;
+    }
+    let total: usize = entries
+        .iter()
+        .map(|e| if e.weight == 0 { 1 } else { e.weight as usize })
+        .sum();
     let modulo = total.max(1);
     let mut acc = 0usize;
     let mut chosen = &entries[0];
     let i = idx % modulo;
     for e in entries {
         let w = if e.weight == 0 { 1 } else { e.weight as usize };
-        if i < acc + w { chosen = e; break; }
+        if i < acc + w {
+            chosen = e;
+            break;
+        }
         acc += w;
     }
     Some(chosen)
@@ -157,12 +206,16 @@ where
     let start = Instant::now();
     // Try cached first
     for url in cache.get_valid() {
-        if probe(&url).is_ok() { return Ok(url); }
+        if probe(&url).is_ok() {
+            return Ok(url);
+        }
     }
     let mut idx = 0usize;
     let mut bo = BackoffIter::new(backoff, Some(123));
     loop {
-        if start.elapsed() >= timeout { return Err(()); }
+        if start.elapsed() >= timeout {
+            return Err(());
+        }
         if let Some(entry) = weighted_pick(&seeds.entries, idx) {
             if probe(&entry.url).is_ok() {
                 cache.put(entry.url.clone());
@@ -172,7 +225,9 @@ where
         }
         let d = bo.next().unwrap_or(Duration::from_millis(0));
         // Ensure we don't overshoot timeout in tests
-        if start.elapsed() + d > timeout { break; }
+        if start.elapsed() + d > timeout {
+            break;
+        }
         sleep_fn(d);
     }
     Err(())
@@ -181,14 +236,20 @@ where
 /// Check seed health by performing a simple HTTP GET to /health (or the provided path if non-root).
 pub fn check_health(seed_url: &str, timeout: Duration) -> Result<(), ()> {
     let mut url = Url::parse(seed_url).map_err(|_| ())?;
-    if url.path() == "/" { url.set_path("/health"); }
+    if url.path() == "/" {
+        url.set_path("/health");
+    }
     let client = reqwest::blocking::Client::builder()
         .use_rustls_tls()
         .timeout(timeout)
         .build()
         .map_err(|_| ())?;
     let resp = client.get(url).send().map_err(|_| ())?;
-    if resp.status().is_success() { Ok(()) } else { Err(()) }
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err(())
+    }
 }
 
 /// Load seeds from env and attempt to find a healthy one within `timeout`.
@@ -198,7 +259,15 @@ pub fn connect_seed_from_env(timeout: Duration) -> Option<String> {
     let mut cache = SeedCache::new(Duration::from_secs(24 * 60 * 60));
     let probe = |u: &str| check_health(u, Duration::from_secs(3));
     let sleep_fn = |d: Duration| std::thread::sleep(d);
-    try_connect_loop(&seeds, &mut cache, timeout, BackoffPlan::default(), probe, sleep_fn).ok()
+    try_connect_loop(
+        &seeds,
+        &mut cache,
+        timeout,
+        BackoffPlan::default(),
+        probe,
+        sleep_fn,
+    )
+    .ok()
 }
 
 #[cfg(test)]
@@ -211,14 +280,20 @@ mod tests {
         let catalog = SeedCatalog {
             version: 1,
             updated_at: 1_725_000_000,
-            entries: vec![SeedEntry { url: "https://seed1.example.com".into(), weight: 1 }],
+            entries: vec![SeedEntry {
+                url: "https://seed1.example.com".into(),
+                weight: 1,
+            }],
         };
         let seed = [3u8; 32];
         let kp = Ed25519KeyPair::from_seed_unchecked(&seed).unwrap();
         let pk_hex = hex::encode(kp.public_key().as_ref());
         let det = cbor::to_det_cbor(&catalog).unwrap();
         let sig = crypto::ed25519::sign(&seed, &det);
-        let signed = SignedSeeds { catalog: catalog.clone(), signature_hex: hex::encode(sig) };
+        let signed = SignedSeeds {
+            catalog: catalog.clone(),
+            signature_hex: hex::encode(sig),
+        };
         let verified = verify_signed_catalog(&pk_hex, &signed).expect("verify");
         assert_eq!(verified, catalog);
     }
@@ -229,7 +304,9 @@ mod tests {
         let mut it = BackoffIter::new(plan, Some(1));
         // Simulate 6 consecutive failures then a success
         let mut total = Duration::from_millis(0);
-        for _ in 0..6 { total += it.next().unwrap(); }
+        for _ in 0..6 {
+            total += it.next().unwrap();
+        }
         assert!(total.as_secs_f32() < 30.0);
     }
 
@@ -244,14 +321,25 @@ mod tests {
     #[test]
     fn weighted_pick_respects_weights() {
         let entries = vec![
-            SeedEntry { url: "a".into(), weight: 1 },
-            SeedEntry { url: "b".into(), weight: 3 },
+            SeedEntry {
+                url: "a".into(),
+                weight: 1,
+            },
+            SeedEntry {
+                url: "b".into(),
+                weight: 3,
+            },
         ];
         // sample 8 picks deterministically across indices
-        let mut count_a = 0; let mut count_b = 0;
+        let mut count_a = 0;
+        let mut count_b = 0;
         for i in 0..8 {
             let pick = weighted_pick(&entries, i).unwrap();
-            if pick.url == "a" { count_a += 1 } else { count_b += 1 }
+            if pick.url == "a" {
+                count_a += 1
+            } else {
+                count_b += 1
+            }
         }
         assert!(count_b > count_a);
     }
@@ -262,9 +350,18 @@ mod tests {
             version: 1,
             updated_at: 0,
             entries: vec![
-                SeedEntry { url: "https://bad1".into(), weight: 1 },
-                SeedEntry { url: "https://bad2".into(), weight: 1 },
-                SeedEntry { url: "https://good".into(), weight: 1 },
+                SeedEntry {
+                    url: "https://bad1".into(),
+                    weight: 1,
+                },
+                SeedEntry {
+                    url: "https://bad2".into(),
+                    weight: 1,
+                },
+                SeedEntry {
+                    url: "https://good".into(),
+                    weight: 1,
+                },
             ],
         };
         let mut cache = SeedCache::new(Duration::from_secs(86400));
@@ -272,11 +369,24 @@ mod tests {
         let mut attempts = 0;
         let probe = move |url: &str| -> Result<(), ()> {
             attempts += 1;
-            if url == "https://good" && attempts >= 3 { Ok(()) } else { Err(()) }
+            if url == "https://good" && attempts >= 3 {
+                Ok(())
+            } else {
+                Err(())
+            }
         };
         let mut slept = Duration::from_millis(0);
-        let sleep_fn = |d: Duration| { slept += d; };
-        let res = try_connect_loop(&seeds, &mut cache, Duration::from_secs(29), BackoffPlan::default(), probe, sleep_fn);
+        let sleep_fn = |d: Duration| {
+            slept += d;
+        };
+        let res = try_connect_loop(
+            &seeds,
+            &mut cache,
+            Duration::from_secs(29),
+            BackoffPlan::default(),
+            probe,
+            sleep_fn,
+        );
         assert!(res.is_ok());
     }
 }

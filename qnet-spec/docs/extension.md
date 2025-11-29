@@ -98,6 +98,37 @@ Response example:
 - Edge cases to test:
   - Helper crash/restart handling
   - Catalog switching during active sessions
+
+## Status API Fields (v0.4.0+)
+
+### Core Fields (Always Present)
+- `state`: Connection state ("offline", "calibrating", "connected")
+- `mode`: Operating mode ("masked", "direct", "relay-only")
+- `socks_addr`: SOCKS5 proxy address (default: "127.0.0.1:1088")
+
+### Mesh Network Fields (Operator Directory Model)
+- `mesh_peer_count`: Number of connected mesh peers
+- `peers_online`: Same as mesh_peer_count (backward compatibility)
+
+### Removed Fields (DHT Removal - v0.4.0)
+- ~~`dht_peers`~~ - Removed (no longer using Kademlia DHT)
+- ~~`kademlia_mode`~~ - Removed (no longer using Kademlia DHT)
+
+### Catalog Fields
+- `decoy_count`: Number of decoys in active catalog
+- `catalog_version`: Current catalog version number
+- `catalog_expires_at`: Catalog expiration timestamp (ISO 8601)
+- `catalog_source`: Catalog source type ("signed", "seed", "unsigned-dev")
+- `current_target`: Current target domain (if connected)
+- `current_decoy`: Current decoy domain (if masked)
+
+### Update Fields
+- `last_update.updated`: Boolean - whether update was performed
+- `last_update.from`: Previous version
+- `last_update.version`: New version (if updated)
+- `last_update.error`: Error message (if update failed)
+
+**Extension Compatibility Note**: Extensions should handle missing fields gracefully (optional field pattern). Fields like `mesh_peer_count` may be 0 during startup or unavailable if mesh networking is disabled.
   - Permissions prompts for native messaging manifest on install
 
 ## Notes for extension developers

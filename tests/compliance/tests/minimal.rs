@@ -1,7 +1,7 @@
 use core_framing as framing;
+use core_routing as routing;
 use htx::mux::pair_encrypted;
 use htx::transition::ControlRecord;
-use core_routing as routing;
 
 // MINIMAL profile:
 // - AEAD framing with strict AAD semantics (tamper, aad, nonce tests)
@@ -36,10 +36,13 @@ fn framing_aead_semantics_and_negative() {
         assert!(framing::decode(&bad, keyctx, nonce).is_err());
         // Tamper AAD type
         let mut bad2 = w.to_vec();
-        if bad2.len() >= 4 { bad2[3] ^= 0x01; }
+        if bad2.len() >= 4 {
+            bad2[3] ^= 0x01;
+        }
         assert!(framing::decode(&bad2, keyctx, nonce).is_err());
         // Wrong nonce
-        let mut nonce2 = nonce; nonce2[0] ^= 0x80;
+        let mut nonce2 = nonce;
+        nonce2[0] ^= 0x80;
         assert!(framing::decode(&w, keyctx, nonce2).is_err());
     }
 }
@@ -51,10 +54,18 @@ fn mux_keyupdate_overlap_and_rekey_close_resume() {
 
     // Server thread: accept, echo and count
     let server = std::thread::spawn(move || {
-        let sh = b.accept_stream(std::time::Duration::from_secs(1)).expect("accept");
+        let sh = b
+            .accept_stream(std::time::Duration::from_secs(1))
+            .expect("accept");
         let mut total = 0usize;
-        if let Some(buf) = sh.read() { total += buf.len(); sh.write(&buf); }
-        if let Some(buf) = sh.read() { total += buf.len(); sh.write(&buf); }
+        if let Some(buf) = sh.read() {
+            total += buf.len();
+            sh.write(&buf);
+        }
+        if let Some(buf) = sh.read() {
+            total += buf.len();
+            sh.write(&buf);
+        }
         total
     });
 
@@ -62,7 +73,13 @@ fn mux_keyupdate_overlap_and_rekey_close_resume() {
     let sh = a.open_stream();
     sh.write(&[7u8; 64]);
     // send control to trigger rekey-close
-    let rec = ControlRecord { prev_as: 1, next_as: 2, ts: 1_700_000_000, flow: 7, nonce: vec![0;16] };
+    let rec = ControlRecord {
+        prev_as: 1,
+        next_as: 2,
+        ts: 1_700_000_000,
+        flow: 7,
+        nonce: vec![0; 16],
+    };
     let seed = [3u8; 32];
     let sc = rec.sign_ed25519(&seed);
     a.send_control(&sc);
@@ -84,9 +101,15 @@ fn mux_keyupdate_overlap_and_rekey_close_resume() {
 #[test]
 fn routing_signed_segment_verify_bounds() {
     use routing::{Hop, Segment};
-    let hop = Hop { as_id: 1, if_in: 1, if_out: 2, ts: 1_700_000_000, exp: 120 };
+    let hop = Hop {
+        as_id: 1,
+        if_in: 1,
+        if_out: 2,
+        ts: 1_700_000_000,
+        exp: 120,
+    };
     let seg = Segment::new(1, vec![hop.clone()], vec![]);
-    let signed = seg.sign_ed25519(&[9u8;32]);
+    let signed = seg.sign_ed25519(&[9u8; 32]);
     assert!(signed.verify(1_700_000_050).is_ok());
     assert!(signed.verify(1_699_999_999).is_err());
     assert!(signed.verify(1_700_000_200).is_err());

@@ -1,12 +1,19 @@
 use anyhow::Result;
-use tracing::{info, warn, error};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).with_target(false).compact().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .compact()
+        .init();
     // Config via env: BIND=0.0.0.0:4443, HTX_TLS_CERT, HTX_TLS_KEY
     let bind = std::env::var("BIND").unwrap_or_else(|_| "0.0.0.0:4443".to_string());
     info!(%bind, "edge-gateway starting");
@@ -14,11 +21,14 @@ async fn main() -> Result<()> {
         // Block to accept a single outer TLS connection and establish inner mux
         let conn = match htx::api::accept(&bind) {
             Ok(c) => c,
-            Err(e) => { error!(error=?e, "accept failed"); continue; }
+            Err(e) => {
+                error!(error=?e, "accept failed");
+                continue;
+            }
         };
-    info!("outer TLS accepted; serving inner streams");
-    // Observability: log encryption epoch to validate mux is initialized
-    info!(epoch = conn.encryption_epoch(), "mux ready");
+        info!("outer TLS accepted; serving inner streams");
+        // Observability: log encryption epoch to validate mux is initialized
+        info!(epoch = conn.encryption_epoch(), "mux ready");
         // Handle inner streams until the peer disconnects
         let conn_cloned = conn.clone();
         std::thread::spawn(move || {
@@ -26,7 +36,9 @@ async fn main() -> Result<()> {
                 if let Some(ss) = conn_cloned.accept_stream(5000) {
                     info!("inner stream accepted");
                     std::thread::spawn(move || {
-                        if let Err(e) = handle_inner_stream(ss) { error!(error=?e, "inner stream error"); }
+                        if let Err(e) = handle_inner_stream(ss) {
+                            error!(error=?e, "inner stream error");
+                        }
                     });
                 } else {
                     // timeout; continue waiting
@@ -42,8 +54,12 @@ fn read_connect_prelude_from_secure(ss: &htx::api::SecureStream) -> Result<Strin
     loop {
         if let Some(chunk) = ss.read() {
             buf.extend_from_slice(&chunk);
-            if buf.windows(4).any(|w| w == b"\r\n\r\n") { break; }
-            if buf.len() > 64 * 1024 { anyhow::bail!("CONNECT prelude too large"); }
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+            if buf.len() > 64 * 1024 {
+                anyhow::bail!("CONNECT prelude too large");
+            }
         } else {
             let snippet = String::from_utf8_lossy(&buf);
             warn!(first = %snippet.lines().next().unwrap_or(""), n=buf.len(), "eof before CONNECT; partial prelude");
@@ -51,15 +67,22 @@ fn read_connect_prelude_from_secure(ss: &htx::api::SecureStream) -> Result<Strin
         }
     }
     // Extract the request line (up to first CRLF)
-    let req = match std::str::from_utf8(&buf) { Ok(s) => s, Err(_) => "" };
+    let req = match std::str::from_utf8(&buf) {
+        Ok(s) => s,
+        Err(_) => "",
+    };
     if let Some(line_end) = req.find("\r\n") {
         let line = &req[..line_end];
         // Accept: "CONNECT host:port HTTP/1.1" or "CONNECT host:port"
         let mut parts = line.split_whitespace();
         let method = parts.next().unwrap_or("");
-        if method != "CONNECT" { anyhow::bail!("bad CONNECT method"); }
+        if method != "CONNECT" {
+            anyhow::bail!("bad CONNECT method");
+        }
         let authority = parts.next().unwrap_or("");
-        if authority.is_empty() { anyhow::bail!("missing CONNECT authority"); }
+        if authority.is_empty() {
+            anyhow::bail!("missing CONNECT authority");
+        }
         // Optional version part is ignored
         info!(first_line=%line, %authority, "CONNECT prelude parsed");
         return Ok(authority.to_string());
@@ -100,13 +123,17 @@ async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -
                 progressed = true;
             }
             if let Some(buf) = ss.try_read() {
-                if to_tcp_tx.blocking_send(buf).is_err() { break; }
+                if to_tcp_tx.blocking_send(buf).is_err() {
+                    break;
+                }
                 progressed = true;
             }
             if !progressed {
                 idle = idle.saturating_add(1);
                 std::thread::sleep(Duration::from_millis(2.min(idle as u64)));
-            } else { idle = 0; }
+            } else {
+                idle = 0;
+            }
         }
     });
 

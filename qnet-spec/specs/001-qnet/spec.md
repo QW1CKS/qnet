@@ -43,7 +43,7 @@ The foundation of QNet's censorship resistance.
 
 ### 3.2 L3: Overlay Mesh
 The routing layer that bypasses IP blocks.
-- **Discovery**: Nodes find each other via DHT or Rendezvous points (bootstrapped via signed catalogs).
+- **Discovery**: Nodes find each other via operator directory HTTP queries or mDNS (bootstrapped via signed catalogs).
 - **Routing**:
     - **Fast Mode (1-Hop)**: User -> Peer -> Destination.
     - **Private Mode (3-Hop)**: User -> Peer -> Peer -> Peer -> Destination.
@@ -54,25 +54,23 @@ The routing layer that bypasses IP blocks.
 
 QNet uses a hybrid bootstrap approach that eliminates central points of failure:
 
-#### Primary: Public libp2p DHT
-- Leverages the global IPFS/libp2p distributed hash table (free infrastructure)
-- No QNet-specific servers required for peer discovery
-- Used by thousands of IPFS nodes worldwide (battle-tested reliability)
-- Provides initial peer list to join the mesh
+#### Primary: Operator Directory
+- HTTP-based peer registry maintained by operator nodes
+- Relay nodes register via heartbeat (POST /api/relay/register every 30s)
+- Client nodes query directory on startup (GET /api/relays/by-country)
+- Lightweight JSON API (no blockchain/DHT complexity)
 
-#### Secondary: Operator Seed Nodes
-- Small DigitalOcean droplets ($4-6/month per region) run by network operator
-- Serve dual purpose:
-  1. **Backup bootstrap** if public DHT unavailable
-  2. **Primary exit nodes** (see 3.4)
-- Recommended: 2-3 droplets globally (Americas, Europe, Asia)
+#### Fallback: Hardcoded Operators
+- 6 hardcoded operator bootstrap nodes (DigitalOcean droplets across regions)
+- Used if directory query fails or returns no peers
+- Always available for initial mesh entry
 
 #### Catalog-Based Updates
 - Bootstrap node list can be updated via signed catalogs
 - Allows community to add volunteer seed nodes
 - Enables smooth migration without hardcoded changes
 
-**Result**: Zero single point of failure - network remains accessible even if operator's droplets go offline.
+**Result**: Zero single point of failure - network remains accessible with fallback mechanisms.
 
 ### 3.4 Exit Node Architecture
 **Professional Exit Nodes for User Safety**

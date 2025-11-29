@@ -4,7 +4,7 @@ use core_crypto as crypto;
 // STANDARD profile placeholder extensions beyond MINIMAL
 // - BN-Ticket header derivation placeholder check (ctx binding)
 
-fn derive_tok(salt: &[u8], exporter_secret: &[u8], ctx: &[u8]) -> [u8;32] {
+fn derive_tok(salt: &[u8], exporter_secret: &[u8], ctx: &[u8]) -> [u8; 32] {
     let prk = crypto::hkdf::extract(salt, exporter_secret);
     let mut info = Vec::new();
     info.extend_from_slice(b"BN-Ticket v1");

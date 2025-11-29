@@ -152,6 +152,53 @@ If failure:
 
 Avoid `--allow-unsigned-decoy` in production: unsigned catalogs bypass signature & expiry verification.
 
+## Peer Discovery and Registration
+
+### Relay-Only Mode (Default for Relay Nodes)
+
+When Helper runs in relay-only mode (`--relay-only` or `helper_mode: RelayOnly`):
+
+1. **Startup**: Query operator node at `http://<operator-ip>:8088/api/relays/by-country`
+2. **Heartbeat**: POST to `http://<operator-ip>:8088/api/relay/register` every 30 seconds
+3. **Payload Example**:
+   ```json
+   {
+     "peer_id": "12D3KooW...",
+     "addrs": ["/ip4/192.168.1.100/tcp/4001"],
+     "country": "US",
+     "capabilities": ["relay"],
+     "last_seen": 1732900000,
+     "first_seen": 1732900000
+   }
+   ```
+4. **Pruning**: If no heartbeat received for 2 minutes, peer is removed from directory
+
+### Bootstrap Mode (Operator Nodes Only)
+
+When Helper runs in bootstrap mode (`--bootstrap` or `helper_mode: Bootstrap`):
+
+1. **Directory Service**: Host HTTP endpoints:
+   - `POST /api/relay/register` - Accept relay registrations
+   - `GET /api/relays/by-country` - Return peer list grouped by country
+2. **Storage**: In-memory `HashMap<PeerId, RelayInfo>` with last_seen timestamps
+3. **Pruning**: Background task removes stale peers (no heartbeat for 2+ minutes) every 60 seconds
+4. **Response Format**:
+   ```json
+   {
+     "US": [{"peer_id": "...", "addrs": [...], "capabilities": [...]}],
+     "FR": [{"peer_id": "...", "addrs": [...], "capabilities": [...]}]
+   }
+   ```
+
+### Client Mode (Default for Users)
+
+When Helper runs in client mode (default, no flags):
+
+1. **Startup**: Query operator directory for relay peer list
+2. **Dial**: Attempt connection to relay peers from directory
+3. **Fallback**: If directory query fails, dial hardcoded operator nodes directly
+4. **No Registration**: Client nodes do not register with directory (privacy)
+
 ## Logging
 
 - Helper writes logs to the repo `logs/` directory when run from source; packaged installers should place logs in OS-appropriate log directories.

@@ -102,6 +102,32 @@ cat qnet-spec/specs/001-qnet/tasks.md | grep -A 5 "T[0-9]"
 - **[Testing Rules](../qnet-spec/memory/testing-rules.md)**: Testing requirements
 - **[Specification](qnet-spec/specs/001-qnet/spec.md)**: Technical requirements
 
+## 🔄 Recent Architectural Changes
+
+### DHT Removal (November 2025)
+
+QNet migrated from libp2p Kademlia DHT to operator peer directory for peer discovery:
+
+**Reason**: DHT bootstrap timeouts on Windows/NAT environments blocked user adoption. With 6 operator nodes already running for exits, DHT infrastructure became redundant.
+
+**Migration**: Flag day deployment (all nodes updated within 1 week window)
+
+**Benefits**:
+- ✅ **18x faster connections** (<5s vs 90s DHT timeout)
+- ✅ **Predictable performance** (no NAT/firewall bootstrap issues)
+- ✅ **Geographic routing** (smart relay selection by country)
+- ✅ **Simpler codebase** (removed ~450 lines of DHT code)
+
+**Discovery Model**:
+- **Centralized Discovery**: 6 operator nodes maintain HTTP peer directory
+- **Decentralized Operation**: Relay peers forward encrypted packets (P2P)
+- **Registration**: Relay nodes POST heartbeat every 30s to `/api/relay/register`
+- **Query**: Clients GET peer list from `/api/relays/by-country` on startup
+
+**Implementation Details**: See `research/dht-removal/COMPREHENSIVE_DHT_REMOVAL_RESEARCH.md`
+
+**Precedent**: Tor (9 directory authorities), Bitcoin (DNS seeds), IPFS (Protocol Labs bootnodes) all use operator infrastructure for discovery while maintaining decentralized operation.
+
 ### 3. Follow TDD Workflow
 
 QNet uses **Test-Driven Development (TDD)**:

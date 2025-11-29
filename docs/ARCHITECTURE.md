@@ -53,11 +53,11 @@ Frame Format:
 **Purpose**: Peer-to-peer connectivity and service discovery
 **Components**:
 - **libp2p Integration**: Decentralized peer discovery
-- **DHT Bootstrap**: Distributed hash table for node discovery
+- **Operator Directory**: HTTP-based peer registry
 - **Gossip Protocol**: Epidemic message dissemination
 
 **Features**:
-- Kademlia DHT for peer discovery
+- Operator directory for relay peer registry
 - GossipSub for pub/sub messaging
 - Circuit relay for NAT traversal
 - Connection multiplexing
@@ -282,8 +282,8 @@ HopEntry = {Interface: u64, MAC: [u8; 6]}
 
 **Discovery Mechanisms**:
 - mDNS for local peer discovery
-- DHT-based global discovery
-- Rendezvous servers for bootstrap
+- Operator directory HTTP queries
+- Heartbeat registration for relay nodes
 - Peer exchange protocols
 
 ### Privacy Layer

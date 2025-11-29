@@ -2,22 +2,26 @@ use criterion::{criterion_group, criterion_main};
 
 #[cfg(feature = "with-libp2p")]
 mod bench_impl {
-    use criterion::{async_executor::AsyncStdExecutor, BenchmarkId};
-    use futures::{StreamExt, FutureExt};
-    use libp2p::{
-    core::{upgrade},
-        identity,
-        request_response::{self, ProtocolSupport, Message as RrMessage, Event as RrEvent, Codec as RrCodec},
-        swarm::{Config as SwarmConfig, NetworkBehaviour, SwarmEvent},
-    tcp, yamux, Multiaddr, StreamProtocol, Swarm, Transport,
-    };
-    use futures::{AsyncReadExt, AsyncWriteExt};
-    use std::io;
     use async_std::task::sleep;
-    use std::time::Duration;
+    use criterion::{async_executor::AsyncStdExecutor, BenchmarkId};
+    use futures::{AsyncReadExt, AsyncWriteExt};
+    use futures::{FutureExt, StreamExt};
+    use libp2p::{
+        core::upgrade,
+        identity,
+        request_response::{
+            self, Codec as RrCodec, Event as RrEvent, Message as RrMessage, ProtocolSupport,
+        },
+        swarm::{Config as SwarmConfig, NetworkBehaviour, SwarmEvent},
+        tcp, yamux, Multiaddr, StreamProtocol, Swarm, Transport,
+    };
     use rand::Rng;
+    use std::io;
+    use std::time::Duration;
 
-    fn protocol() -> StreamProtocol { StreamProtocol::new("/qnet/echo/1.0.0") }
+    fn protocol() -> StreamProtocol {
+        StreamProtocol::new("/qnet/echo/1.0.0")
+    }
 
     #[derive(Clone, Default)]
     struct EchoCodec;
@@ -29,7 +33,13 @@ mod bench_impl {
             &'life0 mut self,
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
-        ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Self::Request, io::Error>> + Send + 'async_trait>>
+        ) -> std::pin::Pin<
+            Box<
+                dyn futures::Future<Output = Result<Self::Request, io::Error>>
+                    + Send
+                    + 'async_trait,
+            >,
+        >
         where
             T: futures::io::AsyncRead + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -50,7 +60,13 @@ mod bench_impl {
             &'life0 mut self,
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
-        ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<Self::Response, io::Error>> + Send + 'async_trait>>
+        ) -> std::pin::Pin<
+            Box<
+                dyn futures::Future<Output = Result<Self::Response, io::Error>>
+                    + Send
+                    + 'async_trait,
+            >,
+        >
         where
             T: futures::io::AsyncRead + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -72,7 +88,9 @@ mod bench_impl {
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
             req: Self::Request,
-        ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>>
+        ) -> std::pin::Pin<
+            Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>,
+        >
         where
             T: futures::io::AsyncWrite + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -92,7 +110,9 @@ mod bench_impl {
             _p: &'life1 Self::Protocol,
             io: &'life2 mut T,
             resp: Self::Response,
-        ) -> std::pin::Pin<Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>>
+        ) -> std::pin::Pin<
+            Box<dyn futures::Future<Output = Result<(), io::Error>> + Send + 'async_trait>,
+        >
         where
             T: futures::io::AsyncWrite + Unpin + Send + 'async_trait,
             Self: 'async_trait,
@@ -110,7 +130,9 @@ mod bench_impl {
     }
 
     #[derive(NetworkBehaviour)]
-    struct EchoBehaviour { request_response: request_response::Behaviour<EchoCodec> }
+    struct EchoBehaviour {
+        request_response: request_response::Behaviour<EchoCodec>,
+    }
 
     fn mk_rr_behaviour() -> EchoBehaviour {
         let cfg = request_response::Config::default();
@@ -118,14 +140,22 @@ mod bench_impl {
             std::iter::once((protocol(), ProtocolSupport::Full)),
             cfg,
         );
-        EchoBehaviour { request_response: rr }
+        EchoBehaviour {
+            request_response: rr,
+        }
     }
 
     #[derive(Clone, Copy, Debug)]
-    struct SimCfg { rtt_ms: u64, loss_pct: f32 }
+    struct SimCfg {
+        rtt_ms: u64,
+        loss_pct: f32,
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum Mode { Quick, Full }
+    enum Mode {
+        Quick,
+        Full,
+    }
 
     fn bench_mode() -> Mode {
         match std::env::var("MESH_BENCH_MODE").ok().as_deref() {
@@ -138,7 +168,7 @@ mod bench_impl {
         // Server setup
         let server_keys = identity::Keypair::generate_ed25519();
         let server_peer = server_keys.public().to_peer_id();
-    let server_transport = if tcp {
+        let server_transport = if tcp {
             tcp::async_io::Transport::new(tcp::Config::default().nodelay(true))
                 .upgrade(upgrade::Version::V1Lazy)
                 .authenticate(libp2p::noise::Config::new(&server_keys).expect("noise"))
@@ -147,15 +177,24 @@ mod bench_impl {
         } else {
             #[cfg(feature = "quic")]
             {
-        libp2p::quic::async_std::Transport::new(libp2p::quic::Config::new(&server_keys))
-            .map(|(peer, conn), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(conn)))
-            .boxed()
+                libp2p::quic::async_std::Transport::new(libp2p::quic::Config::new(&server_keys))
+                    .map(|(peer, conn), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(conn)))
+                    .boxed()
             }
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut server = Swarm::new(server_transport, mk_rr_behaviour(), server_peer, SwarmConfig::with_async_std_executor());
-        let listen: Multiaddr = if tcp { "/ip4/127.0.0.1/tcp/0".parse().unwrap() } else { "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap() };
+        let mut server = Swarm::new(
+            server_transport,
+            mk_rr_behaviour(),
+            server_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
+        let listen: Multiaddr = if tcp {
+            "/ip4/127.0.0.1/tcp/0".parse().unwrap()
+        } else {
+            "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap()
+        };
         Swarm::listen_on(&mut server, listen).unwrap();
         let server_addr = match async_std::future::timeout(Duration::from_secs(2), async {
             loop {
@@ -163,7 +202,9 @@ mod bench_impl {
                     break address;
                 }
             }
-        }).await {
+        })
+        .await
+        {
             Ok(addr) => addr,
             Err(_) => return, // timeout acquiring listen address; abort this iteration
         };
@@ -171,7 +212,7 @@ mod bench_impl {
         // Client setup
         let client_keys = identity::Keypair::generate_ed25519();
         let client_peer = client_keys.public().to_peer_id();
-    let client_transport = if tcp {
+        let client_transport = if tcp {
             tcp::async_io::Transport::new(tcp::Config::default().nodelay(true))
                 .upgrade(upgrade::Version::V1Lazy)
                 .authenticate(libp2p::noise::Config::new(&client_keys).expect("noise"))
@@ -180,24 +221,32 @@ mod bench_impl {
         } else {
             #[cfg(feature = "quic")]
             {
-        libp2p::quic::async_std::Transport::new(libp2p::quic::Config::new(&client_keys))
-            .map(|(peer, conn), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(conn)))
-            .boxed()
+                libp2p::quic::async_std::Transport::new(libp2p::quic::Config::new(&client_keys))
+                    .map(|(peer, conn), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(conn)))
+                    .boxed()
             }
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut client = Swarm::new(client_transport, mk_rr_behaviour(), client_peer, SwarmConfig::with_async_std_executor());
+        let mut client = Swarm::new(
+            client_transport,
+            mk_rr_behaviour(),
+            client_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
         let mut dial = server_addr.clone();
         dial.push(libp2p::multiaddr::Protocol::P2p(server_peer.into()));
-    Swarm::dial(&mut client, dial).unwrap();
+        Swarm::dial(&mut client, dial).unwrap();
 
-    let mut sent = false;
-    let mut got_resp = false;
+        let mut sent = false;
+        let mut got_resp = false;
         let start = std::time::Instant::now();
-        let budget = match bench_mode() { Mode::Quick => Duration::from_secs(1), Mode::Full => Duration::from_secs(30) };
-    // Drive until a single request/response completes or budget elapses
-    while !got_resp && start.elapsed() < budget {
+        let budget = match bench_mode() {
+            Mode::Quick => Duration::from_secs(1),
+            Mode::Full => Duration::from_secs(30),
+        };
+        // Drive until a single request/response completes or budget elapses
+        while !got_resp && start.elapsed() < budget {
             futures::select! {
                 ev = server.select_next_some().fuse() => {
                     if let SwarmEvent::Behaviour(EchoBehaviourEvent::RequestResponse(RrEvent::Message { message, .. })) = ev {
@@ -245,8 +294,17 @@ mod bench_impl {
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut server = Swarm::new(server_transport, mk_rr_behaviour(), server_peer, SwarmConfig::with_async_std_executor());
-        let listen: Multiaddr = if tcp { "/ip4/127.0.0.1/tcp/0".parse().unwrap() } else { "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap() };
+        let mut server = Swarm::new(
+            server_transport,
+            mk_rr_behaviour(),
+            server_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
+        let listen: Multiaddr = if tcp {
+            "/ip4/127.0.0.1/tcp/0".parse().unwrap()
+        } else {
+            "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap()
+        };
         Swarm::listen_on(&mut server, listen).unwrap();
         let server_addr = match async_std::future::timeout(Duration::from_secs(2), async {
             loop {
@@ -254,7 +312,9 @@ mod bench_impl {
                     break address;
                 }
             }
-        }).await {
+        })
+        .await
+        {
             Ok(addr) => addr,
             Err(_) => return,
         };
@@ -278,18 +338,26 @@ mod bench_impl {
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut client = Swarm::new(client_transport, mk_rr_behaviour(), client_peer, SwarmConfig::with_async_std_executor());
+        let mut client = Swarm::new(
+            client_transport,
+            mk_rr_behaviour(),
+            client_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
         let mut dial = server_addr.clone();
         dial.push(libp2p::multiaddr::Protocol::P2p(server_peer.into()));
         Swarm::dial(&mut client, dial).unwrap();
 
-    let mut sent: usize = 0;
-    let mut received: usize = 0;
+        let mut sent: usize = 0;
+        let mut received: usize = 0;
         let start = std::time::Instant::now();
-        let budget = match bench_mode() { Mode::Quick => Duration::from_secs(2), Mode::Full => Duration::from_secs(30) };
+        let budget = match bench_mode() {
+            Mode::Quick => Duration::from_secs(2),
+            Mode::Full => Duration::from_secs(30),
+        };
         let mut rng = rand::thread_rng();
 
-    while received < n && start.elapsed() < budget {
+        while received < n && start.elapsed() < budget {
             futures::select! {
                 ev = server.select_next_some().fuse() => {
                     if let SwarmEvent::Behaviour(EchoBehaviourEvent::RequestResponse(RrEvent::Message { message, .. })) = ev {
@@ -336,7 +404,12 @@ mod bench_impl {
         }
     }
 
-    async fn rr_roundtrip_persistent_inproc_concurrent(tcp: bool, n: usize, sim: Option<SimCfg>, inflight: usize) {
+    async fn rr_roundtrip_persistent_inproc_concurrent(
+        tcp: bool,
+        n: usize,
+        sim: Option<SimCfg>,
+        inflight: usize,
+    ) {
         // Server setup
         let server_keys = identity::Keypair::generate_ed25519();
         let server_peer = server_keys.public().to_peer_id();
@@ -356,8 +429,17 @@ mod bench_impl {
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut server = Swarm::new(server_transport, mk_rr_behaviour(), server_peer, SwarmConfig::with_async_std_executor());
-        let listen: Multiaddr = if tcp { "/ip4/127.0.0.1/tcp/0".parse().unwrap() } else { "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap() };
+        let mut server = Swarm::new(
+            server_transport,
+            mk_rr_behaviour(),
+            server_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
+        let listen: Multiaddr = if tcp {
+            "/ip4/127.0.0.1/tcp/0".parse().unwrap()
+        } else {
+            "/ip4/127.0.0.1/udp/0/quic-v1".parse().unwrap()
+        };
         Swarm::listen_on(&mut server, listen).unwrap();
         let server_addr = match async_std::future::timeout(Duration::from_secs(2), async {
             loop {
@@ -365,7 +447,9 @@ mod bench_impl {
                     break address;
                 }
             }
-        }).await {
+        })
+        .await
+        {
             Ok(addr) => addr,
             Err(_) => return,
         };
@@ -389,18 +473,26 @@ mod bench_impl {
             #[cfg(not(feature = "quic"))]
             panic!("quic feature not enabled");
         };
-        let mut client = Swarm::new(client_transport, mk_rr_behaviour(), client_peer, SwarmConfig::with_async_std_executor());
+        let mut client = Swarm::new(
+            client_transport,
+            mk_rr_behaviour(),
+            client_peer,
+            SwarmConfig::with_async_std_executor(),
+        );
         let mut dial = server_addr.clone();
         dial.push(libp2p::multiaddr::Protocol::P2p(server_peer.into()));
         Swarm::dial(&mut client, dial).unwrap();
 
-    let mut sent: usize = 0;
-    let mut received: usize = 0;
-    let start = std::time::Instant::now();
-    let budget = match bench_mode() { Mode::Quick => Duration::from_secs(2), Mode::Full => Duration::from_secs(30) };
+        let mut sent: usize = 0;
+        let mut received: usize = 0;
+        let start = std::time::Instant::now();
+        let budget = match bench_mode() {
+            Mode::Quick => Duration::from_secs(2),
+            Mode::Full => Duration::from_secs(30),
+        };
         let mut rng = rand::thread_rng();
 
-    while received < n && start.elapsed() < budget {
+        while received < n && start.elapsed() < budget {
             futures::select! {
                 ev = server.select_next_some().fuse() => {
                     if let SwarmEvent::Behaviour(EchoBehaviourEvent::RequestResponse(RrEvent::Message { message, .. })) = ev {
@@ -449,16 +541,16 @@ mod bench_impl {
     }
 
     pub fn bench_mesh(c: &mut criterion::Criterion) {
-    let mut group = c.benchmark_group("mesh_echo");
-    if bench_mode() == Mode::Quick {
-        group.sample_size(10);
-        group.warm_up_time(Duration::from_millis(50));
-        group.measurement_time(Duration::from_millis(800));
-    } else {
-        group.sample_size(20);
-        group.warm_up_time(Duration::from_millis(200));
-        group.measurement_time(Duration::from_millis(5000));
-    }
+        let mut group = c.benchmark_group("mesh_echo");
+        if bench_mode() == Mode::Quick {
+            group.sample_size(10);
+            group.warm_up_time(Duration::from_millis(50));
+            group.measurement_time(Duration::from_millis(800));
+        } else {
+            group.sample_size(20);
+            group.warm_up_time(Duration::from_millis(200));
+            group.measurement_time(Duration::from_millis(5000));
+        }
         // Single round-trip (includes connect)
         group.bench_function(BenchmarkId::new("tcp", 1024), |b| {
             b.to_async(AsyncStdExecutor).iter(|| async {
@@ -466,21 +558,38 @@ mod bench_impl {
             })
         });
         // Persistent connection N=100 round-trips
-    group.bench_function(BenchmarkId::new("tcp_pconn", 20), |b| {
+        group.bench_function(BenchmarkId::new("tcp_pconn", 20), |b| {
             b.to_async(AsyncStdExecutor).iter(|| async {
-        rr_roundtrip_persistent_inproc(true, 20, None).await;
+                rr_roundtrip_persistent_inproc(true, 20, None).await;
             })
         });
         // Simulated 20ms RTT, 1% loss, persistent N=100
-    group.bench_function(BenchmarkId::new("tcp_sim_20ms_1pct", 20), |b| {
+        group.bench_function(BenchmarkId::new("tcp_sim_20ms_1pct", 20), |b| {
             b.to_async(AsyncStdExecutor).iter(|| async {
-        rr_roundtrip_persistent_inproc(true, 20, Some(SimCfg { rtt_ms: 20, loss_pct: 0.01 })).await;
+                rr_roundtrip_persistent_inproc(
+                    true,
+                    20,
+                    Some(SimCfg {
+                        rtt_ms: 20,
+                        loss_pct: 0.01,
+                    }),
+                )
+                .await;
             })
         });
         // Concurrent inflight=8 under simulated 20ms/1% loss
-    group.bench_function(BenchmarkId::new("tcp_pconn_c8_sim_20ms_1pct", 20), |b| {
+        group.bench_function(BenchmarkId::new("tcp_pconn_c8_sim_20ms_1pct", 20), |b| {
             b.to_async(AsyncStdExecutor).iter(|| async {
-        rr_roundtrip_persistent_inproc_concurrent(true, 20, Some(SimCfg { rtt_ms: 20, loss_pct: 0.01 }), 8).await;
+                rr_roundtrip_persistent_inproc_concurrent(
+                    true,
+                    20,
+                    Some(SimCfg {
+                        rtt_ms: 20,
+                        loss_pct: 0.01,
+                    }),
+                    8,
+                )
+                .await;
             })
         });
 
@@ -491,19 +600,36 @@ mod bench_impl {
                     rr_roundtrip_inproc(false).await;
                 })
             });
-        group.bench_function(BenchmarkId::new("quic_pconn", 20), |b| {
+            group.bench_function(BenchmarkId::new("quic_pconn", 20), |b| {
                 b.to_async(AsyncStdExecutor).iter(|| async {
-            rr_roundtrip_persistent_inproc(false, 20, None).await;
+                    rr_roundtrip_persistent_inproc(false, 20, None).await;
                 })
             });
-        group.bench_function(BenchmarkId::new("quic_sim_20ms_1pct", 20), |b| {
+            group.bench_function(BenchmarkId::new("quic_sim_20ms_1pct", 20), |b| {
                 b.to_async(AsyncStdExecutor).iter(|| async {
-            rr_roundtrip_persistent_inproc(false, 20, Some(SimCfg { rtt_ms: 20, loss_pct: 0.01 })).await;
+                    rr_roundtrip_persistent_inproc(
+                        false,
+                        20,
+                        Some(SimCfg {
+                            rtt_ms: 20,
+                            loss_pct: 0.01,
+                        }),
+                    )
+                    .await;
                 })
             });
-        group.bench_function(BenchmarkId::new("quic_pconn_c8_sim_20ms_1pct", 20), |b| {
+            group.bench_function(BenchmarkId::new("quic_pconn_c8_sim_20ms_1pct", 20), |b| {
                 b.to_async(AsyncStdExecutor).iter(|| async {
-            rr_roundtrip_persistent_inproc_concurrent(false, 20, Some(SimCfg { rtt_ms: 20, loss_pct: 0.01 }), 8).await;
+                    rr_roundtrip_persistent_inproc_concurrent(
+                        false,
+                        20,
+                        Some(SimCfg {
+                            rtt_ms: 20,
+                            loss_pct: 0.01,
+                        }),
+                        8,
+                    )
+                    .await;
                 })
             });
         }

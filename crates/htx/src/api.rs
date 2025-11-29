@@ -1,4 +1,6 @@
-use crate::inner::{open_inner, open_inner_with_compat, open_inner_ekm_only, Caps, Exporter, TlsStream};
+use crate::inner::{
+    open_inner, open_inner_ekm_only, open_inner_with_compat, Caps, Exporter, TlsStream,
+};
 use crate::mux::{self, Mux, StreamHandle};
 use crate::tls_mirror::Template;
 use crate::Handshake;
@@ -262,9 +264,9 @@ fn spawn_tls_pump<S: Read + Write + Send + 'static>(
 
 #[cfg(feature = "rustls-config")]
 pub fn dial(origin: &str) -> Result<Conn, ApiError> {
+    use crate::bootstrap;
     use crate::inner::Caps;
     use crate::tls_mirror::{build_client_hello, choose_template_rotating, Config as TlsCfg};
-    use crate::bootstrap;
     use std::time::Duration;
     use url::Url;
 
@@ -281,7 +283,12 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     // but only when seeds are not globally disabled.
     if !seeds_disabled && std::env::var("STEALTH_BOOTSTRAP_CATALOG_JSON").is_ok() {
         let ok = bootstrap::connect_seed_from_env(Duration::from_secs(29)).is_some();
-        if !ok { return Err(ApiError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, "bootstrap timeout"))); }
+        if !ok {
+            return Err(ApiError::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "bootstrap timeout",
+            )));
+        }
     }
 
     // Calibrate and build client config
@@ -293,7 +300,7 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     tracing::info!(target: "htx::dial", host=%host, port=%port, "connecting");
     #[cfg(feature = "tracing")]
     tracing::info!(target: "htx::dial", host=%host, port=%port, "connecting");
-    
+
     // Choose template via allow-list rotation; removed: ALPN override from catalog
     let tcfg = TlsCfg::default();
     let (_tid, tpl) = choose_template_rotating(&format!("https://{}:{}", host, port), Some(&tcfg))
@@ -334,12 +341,10 @@ pub fn dial(origin: &str) -> Result<Conn, ApiError> {
     let mut ekm = [0u8; 32];
     let no_ctx = std::env::var("HTX_EKM_EXPORTER_NO_CTX").ok().as_deref() == Some("1");
     if no_ctx {
-        conn
-            .export_keying_material(&mut ekm, b"qnet inner", None)
+        conn.export_keying_material(&mut ekm, b"qnet inner", None)
             .map_err(|_| ApiError::Tls)?;
     } else {
-        conn
-            .export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
+        conn.export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
             .map_err(|_| ApiError::Tls)?;
     }
     // Build exporter wrapper that returns fixed EKM
@@ -405,10 +410,13 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
         .map(rustls::Certificate)
         .collect::<Vec<_>>();
     let key = {
-        let mut pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &key_pem[..])
-            .map_err(|_| ApiError::Tls)?;
-        if let Some(k) = pkcs8.pop() { rustls::PrivateKey(k) } else {
-            let mut rsa = rustls_pemfile::rsa_private_keys(&mut &key_pem[..]).map_err(|_| ApiError::Tls)?;
+        let mut pkcs8 =
+            rustls_pemfile::pkcs8_private_keys(&mut &key_pem[..]).map_err(|_| ApiError::Tls)?;
+        if let Some(k) = pkcs8.pop() {
+            rustls::PrivateKey(k)
+        } else {
+            let mut rsa =
+                rustls_pemfile::rsa_private_keys(&mut &key_pem[..]).map_err(|_| ApiError::Tls)?;
             rustls::PrivateKey(rsa.pop().ok_or(ApiError::Tls)?)
         }
     };
@@ -428,7 +436,9 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
             Ok(c) => break c,
             Err(e) => {
                 // When in blocking mode, accept should block; but to be safe, back off on transient errors
-                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::Interrupted {
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::Interrupted
+                {
                     std::thread::sleep(Duration::from_millis(5));
                     continue;
                 }
@@ -441,13 +451,16 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
     let _ = tcp.set_nodelay(true);
 
     // Drive rustls handshake
-    let mut conn = rustls::ServerConnection::new(std::sync::Arc::new(scfg)).map_err(|_| ApiError::Tls)?;
+    let mut conn =
+        rustls::ServerConnection::new(std::sync::Arc::new(scfg)).map_err(|_| ApiError::Tls)?;
     while conn.is_handshaking() {
         match conn.complete_io(&mut tcp) {
             Ok(_) => {}
             Err(e) => {
                 // Map WouldBlock/Interrupted to a short backoff; otherwise, propagate
-                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::Interrupted {
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::Interrupted
+                {
                     std::thread::sleep(Duration::from_millis(2));
                     continue;
                 }
@@ -457,28 +470,46 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
     }
 
     // Exporter wrapper over rustls server
-    struct RustlsExporterS { ekm: [u8; 32] }
+    struct RustlsExporterS {
+        ekm: [u8; 32],
+    }
     impl Exporter for RustlsExporterS {
-        fn export(&self, _label: &[u8], _context: &[u8], len: usize) -> Result<Vec<u8>, crate::inner::Error> {
+        fn export(
+            &self,
+            _label: &[u8],
+            _context: &[u8],
+            len: usize,
+        ) -> Result<Vec<u8>, crate::inner::Error> {
             Ok(self.ekm[..len.min(32)].to_vec())
         }
     }
     // Use a conservative default template; ALPN negotiated is already reflected by outer TLS
-    let tpl = Template { alpn: vec!["h2".into(), "http/1.1".into()], sig_algs: vec!["rsa_pss_rsae_sha256".into()], groups: vec!["x25519".into()], extensions: vec![0,11,10,35,16,23,43,51] };
+    let tpl = Template {
+        alpn: vec!["h2".into(), "http/1.1".into()],
+        sig_algs: vec!["rsa_pss_rsae_sha256".into()],
+        groups: vec!["x25519".into()],
+        extensions: vec![0, 11, 10, 35, 16, 23, 43, 51],
+    };
     let caps = Caps::default();
     let tid = crate::tls_mirror::compute_template_id(&tpl);
     #[derive(serde::Serialize)]
-    struct Bind<'a> { #[serde(with = "serde_bytes")] template_id: &'a [u8], caps: &'a Caps }
-    let ctx = core_cbor::to_det_cbor(&Bind { template_id: &tid.0, caps: &caps }).map_err(|_| ApiError::Tls)?;
+    struct Bind<'a> {
+        #[serde(with = "serde_bytes")]
+        template_id: &'a [u8],
+        caps: &'a Caps,
+    }
+    let ctx = core_cbor::to_det_cbor(&Bind {
+        template_id: &tid.0,
+        caps: &caps,
+    })
+    .map_err(|_| ApiError::Tls)?;
     let mut ekm = [0u8; 32];
     let no_ctx = std::env::var("HTX_EKM_EXPORTER_NO_CTX").ok().as_deref() == Some("1");
     if no_ctx {
-        conn
-            .export_keying_material(&mut ekm, b"qnet inner", None)
+        conn.export_keying_material(&mut ekm, b"qnet inner", None)
             .map_err(|_| ApiError::Tls)?;
     } else {
-        conn
-            .export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
+        conn.export_keying_material(&mut ekm, b"qnet inner", Some(&ctx))
             .map_err(|_| ApiError::Tls)?;
     }
     let tls = TlsStream::new(RustlsExporterS { ekm });
@@ -502,7 +533,11 @@ pub fn accept(bind: &str) -> Result<Conn, ApiError> {
     } else {
         Mux::new_encrypted(to_net_tx, from_net_rx, inner.tx_key, inner.rx_key)
     };
-    Ok(Conn { mux, tx_key: inner.tx_key, rx_key: inner.rx_key })
+    Ok(Conn {
+        mux,
+        tx_key: inner.tx_key,
+        rx_key: inner.rx_key,
+    })
 }
 #[cfg(not(feature = "rustls-config"))]
 pub fn accept(_bind: &str) -> Result<(), ApiError> {

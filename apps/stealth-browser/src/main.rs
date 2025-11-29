@@ -1,22 +1,22 @@
 use anyhow::{anyhow, bail, Context, Result};
-use tracing::{debug, info, warn};
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::EnvFilter;
+use std::io::Write as _;
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration as StdDuration, Instant as StdInstant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
+use tracing::{debug, info, warn};
 use tracing_appender::rolling;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration as StdDuration, Instant as StdInstant};
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
-use std::io::Write as _;
+use tracing_subscriber::EnvFilter;
 
-
+mod directory;
 
 // Instrumentation for status server diagnostics
 static STATUS_CONN_ACTIVE: AtomicUsize = AtomicUsize::new(0);
-static STATUS_CONN_TOTAL: AtomicUsize  = AtomicUsize::new(0);
+static STATUS_CONN_TOTAL: AtomicUsize = AtomicUsize::new(0);
 // Removed unused counters from legacy async implementation to reduce warnings.
 // Keep a minimal set actually referenced by blocking status server.
 #[allow(dead_code)] // retained for potential future diagnostics toggle
@@ -44,7 +44,11 @@ fn ensure_single_instance() -> Result<()> {
     let lock_path = lock_dir.join("instance.lock");
     let pid = std::process::id();
     // Fast path: attempt create_new; if succeeds we are the only instance.
-    match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+    {
         Ok(mut f) => {
             let now = chrono::Utc::now().to_rfc3339();
             let _ = writeln!(f, "pid={pid}\nstarted_at={now}");
@@ -61,7 +65,11 @@ fn ensure_single_instance() -> Result<()> {
     if let Ok(text) = std::fs::read_to_string(&lock_path) {
         let mut existing_pid: Option<u32> = None;
         for line in text.lines() {
-            if let Some(rest) = line.strip_prefix("pid=") { if let Ok(p) = rest.trim().parse::<u32>() { existing_pid = Some(p); } }
+            if let Some(rest) = line.strip_prefix("pid=") {
+                if let Ok(p) = rest.trim().parse::<u32>() {
+                    existing_pid = Some(p);
+                }
+            }
         }
         if let Some(ep) = existing_pid {
             if ep != pid {
@@ -70,7 +78,11 @@ fn ensure_single_instance() -> Result<()> {
                 sys.refresh_processes();
                 let alive = sys.process(sysinfo::Pid::from_u32(ep)).is_some();
                 if alive {
-                    if std::env::var("STEALTH_SINGLE_INSTANCE_OVERRIDE").ok().as_deref() != Some("1") {
+                    if std::env::var("STEALTH_SINGLE_INSTANCE_OVERRIDE")
+                        .ok()
+                        .as_deref()
+                        != Some("1")
+                    {
                         return Err(anyhow!("another instance already running (pid={ep}); set STEALTH_SINGLE_INSTANCE_OVERRIDE=1 to override"));
                     } else {
                         eprintln!("single-instance:override replacing live pid={ep}");
@@ -82,14 +94,21 @@ fn ensure_single_instance() -> Result<()> {
         }
     }
     // Stale or unparsable -> overwrite
-    match std::fs::OpenOptions::new().write(true).truncate(true).open(&lock_path) {
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&lock_path)
+    {
         Ok(mut f) => {
             let now = chrono::Utc::now().to_rfc3339();
             let _ = writeln!(f, "pid={pid}\nreplaced_at={now}");
-            eprintln!("single-instance:replaced-stale path={}", lock_path.display());
+            eprintln!(
+                "single-instance:replaced-stale path={}",
+                lock_path.display()
+            );
             Ok(())
         }
-        Err(e) => Err(anyhow!("single-instance overwrite: {e}"))
+        Err(e) => Err(anyhow!("single-instance overwrite: {e}")),
     }
 }
 
@@ -100,18 +119,17 @@ async fn main() -> Result<()> {
         eprintln!("panic: {info}");
     }));
     // Minimal, safe stub to unblock workspace builds; UI/Tauri will be added next.
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     // Rotating file logger (daily)
     let _ = std::fs::create_dir_all("logs");
     let file_appender = rolling::daily("logs", "stealth-browser.log");
     let (_nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
-    
+
     // Output to BOTH stdout and file for visibility
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
-        .with_writer(std::io::stdout)  // Changed: write to console / Changed from nb_writer to stdout
+        .with_writer(std::io::stdout) // Changed: write to console / Changed from nb_writer to stdout
         .compact()
         .init();
 
@@ -124,16 +142,46 @@ async fn main() -> Result<()> {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--mode" => {
-                    if let Some(v) = args.next() { apply_mode(&mut cfg, &v); }
+                    if let Some(v) = args.next() {
+                        apply_mode(&mut cfg, &v);
+                    }
                 }
                 s if s.starts_with("--mode=") => {
-                    let v = s.split_once('=').map(|(_,v)| v).unwrap_or("");
+                    let v = s.split_once('=').map(|(_, v)| v).unwrap_or("");
                     apply_mode(&mut cfg, v);
                 }
-                "--socks-port" => { if let Some(v)=args.next() { if let Ok(p)=v.parse() { cfg.socks_port=p; eprintln!("cli-override: socks_port={}", p); } } }
-                s if s.starts_with("--socks-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.socks_port=p; eprintln!("cli-override: socks_port={}", p); } } }
-                "--status-port" => { if let Some(v)=args.next() { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
-                s if s.starts_with("--status-port=") => { if let Some(v)=s.split_once('=').map(|(_,v)| v) { if let Ok(p)=v.parse() { cfg.status_port=p; eprintln!("cli-override: status_port={}", p); } } }
+                "--socks-port" => {
+                    if let Some(v) = args.next() {
+                        if let Ok(p) = v.parse() {
+                            cfg.socks_port = p;
+                            eprintln!("cli-override: socks_port={}", p);
+                        }
+                    }
+                }
+                s if s.starts_with("--socks-port=") => {
+                    if let Some(v) = s.split_once('=').map(|(_, v)| v) {
+                        if let Ok(p) = v.parse() {
+                            cfg.socks_port = p;
+                            eprintln!("cli-override: socks_port={}", p);
+                        }
+                    }
+                }
+                "--status-port" => {
+                    if let Some(v) = args.next() {
+                        if let Ok(p) = v.parse() {
+                            cfg.status_port = p;
+                            eprintln!("cli-override: status_port={}", p);
+                        }
+                    }
+                }
+                s if s.starts_with("--status-port=") => {
+                    if let Some(v) = s.split_once('=').map(|(_, v)| v) {
+                        if let Ok(p) = v.parse() {
+                            cfg.status_port = p;
+                            eprintln!("cli-override: status_port={}", p);
+                        }
+                    }
+                }
                 "--relay-only" => {
                     cfg.helper_mode = HelperMode::RelayOnly;
                     eprintln!("cli-override: helper_mode=relay-only (safe, no exit liability)");
@@ -141,7 +189,9 @@ async fn main() -> Result<()> {
                 "--exit-node" => {
                     cfg.helper_mode = HelperMode::ExitNode;
                     eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
-                    eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
+                    eprintln!(
+                        "⚠️  You will make web requests for other users. Legal liability applies!"
+                    );
                 }
                 "--bootstrap" => {
                     cfg.helper_mode = HelperMode::Bootstrap;
@@ -190,7 +240,7 @@ async fn main() -> Result<()> {
     // Shared app state for status reporting
     let (app_state, mesh_rx) = AppState::new(cfg.clone());
     let app_state = Arc::new(app_state);
-    
+
     // Background connectivity monitor (bootstrap gate)
     if cfg.bootstrap && !cfg.disable_bootstrap {
         spawn_connectivity_monitor(app_state.clone());
@@ -202,21 +252,30 @@ async fn main() -> Result<()> {
     // Start a tiny local status server (headless-friendly)
     // Bind address controlled by QNET_STATUS_BIND env var (default: 127.0.0.1)
     // Set to "0.0.0.0" or "0.0.0.0:8088" on droplets for remote monitoring
-    let status_bind_full = std::env::var("QNET_STATUS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let status_bind_full =
+        std::env::var("QNET_STATUS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
     let (status_bind_ip, status_port_override) = if status_bind_full.contains(':') {
         // Full address like "0.0.0.0:8088"
         let parts: Vec<&str> = status_bind_full.splitn(2, ':').collect();
-        let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(cfg.status_port);
+        let port = parts
+            .get(1)
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(cfg.status_port);
         (parts[0].to_string(), Some(port))
     } else {
         // Just IP like "0.0.0.0" or "127.0.0.1"
         (status_bind_full.clone(), None)
     };
     let status_port_to_use = status_port_override.unwrap_or(cfg.status_port);
-    
-    if let Some(status_addr) = start_status_server(&status_bind_ip, status_port_to_use, app_state.clone())? {
+
+    if let Some(status_addr) =
+        start_status_server(&status_bind_ip, status_port_to_use, app_state.clone())?
+    {
         info!(%status_addr, bind=%status_bind_ip, "status server listening (GET /status)");
-        eprintln!("status-server:bound addr={} (bind={})", status_addr, status_bind_full);
+        eprintln!(
+            "status-server:bound addr={} (bind={})",
+            status_addr, status_bind_full
+        );
         cfg.status_port = status_addr.port();
     }
 
@@ -276,20 +335,24 @@ async fn main() -> Result<()> {
     #[cfg(feature = "with-tauri")]
     {
         let app_state_for_socks = app_state.clone();
-        let _server = tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await });
+        let _server = tokio::spawn(async move {
+            run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await
+        });
     }
 
     #[cfg(not(feature = "with-tauri"))]
     let server = {
         let app_state_for_socks = app_state.clone();
-        tokio::spawn(async move { run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await })
+        tokio::spawn(async move {
+            run_socks5(&addr, cfg.mode, htx_client, Some(app_state_for_socks)).await
+        })
     };
 
     // Optional: start a tiny Tauri window when built with `--features with-tauri`.
     // IMPORTANT: the Tauri/tao event loop must be created on the main thread.
     #[cfg(feature = "with-tauri")]
     {
-        use tauri::{Builder, generate_context};
+        use tauri::{generate_context, Builder};
         // Share app_state into Tauri commands
         let app_state2 = app_state.clone();
         let tauri_builder = Builder::default()
@@ -331,7 +394,9 @@ async fn main() -> Result<()> {
 
 #[cfg(feature = "with-tauri")]
 #[derive(Clone)]
-struct AppHandleState { state: Arc<AppState> }
+struct AppHandleState {
+    state: Arc<AppState>,
+}
 
 #[cfg(feature = "with-tauri")]
 #[tauri::command]
@@ -343,13 +408,15 @@ async fn get_status(state: tauri::State<'_, AppHandleState>) -> Result<StatusSna
     let ms_ago = since_opt.map(|t| t.elapsed().as_millis() as u64);
     let mut out = snap;
     out.last_checked_ms_ago = ms_ago;
-    Ok(out)
-        .map_err(|e: anyhow::Error| e.to_string())
+    Ok(out).map_err(|e: anyhow::Error| e.to_string())
 }
 
 #[cfg(feature = "with-tauri")]
 #[tauri::command]
-async fn navigate_url(url: String, state: tauri::State<'_, AppHandleState>) -> Result<String, String> {
+async fn navigate_url(
+    url: String,
+    state: tauri::State<'_, AppHandleState>,
+) -> Result<String, String> {
     // Build a reqwest client that routes via the local SOCKS proxy
     let socks = format!("socks5h://127.0.0.1:{}", state.state.cfg.socks_port);
     let proxy = reqwest::Proxy::all(&socks).map_err(|e| e.to_string())?;
@@ -366,8 +433,13 @@ async fn navigate_url(url: String, state: tauri::State<'_, AppHandleState>) -> R
     let resp = client.get(&url2).send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     let body = resp.text().await.unwrap_or_default();
-    let preview = if body.len() > 1024 { &body[..1024] } else { &body };
-    Ok(format!("GET {} -> HTTP {}\n\n{}", url2, status, preview)).map_err(|e: anyhow::Error| e.to_string())
+    let preview = if body.len() > 1024 {
+        &body[..1024]
+    } else {
+        &body
+    };
+    Ok(format!("GET {} -> HTTP {}\n\n{}", url2, status, preview))
+        .map_err(|e: anyhow::Error| e.to_string())
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -411,32 +483,32 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-    // Defaults aligned with docs:
-    //  - SOCKS proxy: 127.0.0.1:1088
-    //  - Status API: 127.0.0.1:8088
-    //  - Helper mode: relay-only (safe by default, no exit liability)
-    //  - Mesh: enabled (peer discovery and relay)
-    // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE, QNET_MESH_ENABLED).
-    Self { 
-        socks_port: 1088, 
-        mode: Mode::Direct, 
-        bootstrap: false, 
-        status_port: 8088, 
-        disable_bootstrap: true, 
-        helper_mode: HelperMode::RelayOnly,  // Phase 2.5.3: safe by default
-        mesh_enabled: true,  // Phase 2.4: mesh network enabled
-        mesh_max_circuits: 10,  // Phase 2.4.4: circuit limit
-        mesh_build_circuits: true,  // Phase 2.4.4: enable circuit building
-        expected_peer_ip: None,  // No expected peer by default
-    }
+        // Defaults aligned with docs:
+        //  - SOCKS proxy: 127.0.0.1:1088
+        //  - Status API: 127.0.0.1:8088
+        //  - Helper mode: relay-only (safe by default, no exit liability)
+        //  - Mesh: enabled (peer discovery and relay)
+        // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE, QNET_MESH_ENABLED).
+        Self {
+            socks_port: 1088,
+            mode: Mode::Direct,
+            bootstrap: false,
+            status_port: 8088,
+            disable_bootstrap: true,
+            helper_mode: HelperMode::RelayOnly, // Phase 2.5.3: safe by default
+            mesh_enabled: true,                 // Phase 2.4: mesh network enabled
+            mesh_max_circuits: 10,              // Phase 2.4.4: circuit limit
+            mesh_build_circuits: true,          // Phase 2.4.4: enable circuit building
+            expected_peer_ip: None,             // No expected peer by default
+        }
     }
 }
 
 impl Config {
     fn load_default() -> Result<Self> {
-    // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP, QNET_MODE
+        // Env overrides: STEALTH_SOCKS_PORT, STEALTH_MODE, STEALTH_BOOTSTRAP, STEALTH_DISABLE_BOOTSTRAP, QNET_MODE
         let mut cfg = Self::default();
-        
+
         // Load config.toml if it exists (Phase 2.4.4)
         if let Ok(toml_str) = std::fs::read_to_string("config.toml") {
             if let Ok(toml_cfg) = toml::from_str::<toml::Value>(&toml_str) {
@@ -445,43 +517,60 @@ impl Config {
                     if let Some(enabled) = mesh.get("enabled").and_then(|v| v.as_bool()) {
                         cfg.mesh_enabled = enabled;
                     }
-                    if let Some(max_circuits) = mesh.get("max_circuits").and_then(|v| v.as_integer()) {
+                    if let Some(max_circuits) =
+                        mesh.get("max_circuits").and_then(|v| v.as_integer())
+                    {
                         cfg.mesh_max_circuits = max_circuits as usize;
                     }
-                    if let Some(build_circuits) = mesh.get("build_circuits").and_then(|v| v.as_bool()) {
+                    if let Some(build_circuits) =
+                        mesh.get("build_circuits").and_then(|v| v.as_bool())
+                    {
                         cfg.mesh_build_circuits = build_circuits;
                     }
                 }
             }
         }
-        
+
         if let Ok(p) = std::env::var("STEALTH_SOCKS_PORT") {
-            if let Ok(n) = p.parse::<u16>() { cfg.socks_port = n; }
+            if let Ok(n) = p.parse::<u16>() {
+                cfg.socks_port = n;
+            }
         }
         if let Ok(m) = std::env::var("STEALTH_MODE") {
             cfg.mode = match m.to_ascii_lowercase().as_str() {
                 "direct" => Mode::Direct,
                 "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
                 "masked" | "qnet" | "stealth" => Mode::Masked,
-                other => { warn!(%other, "unknown STEALTH_MODE; defaulting to direct"); Mode::Direct }
+                other => {
+                    warn!(%other, "unknown STEALTH_MODE; defaulting to direct");
+                    Mode::Direct
+                }
             };
         }
-        if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") { cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true"); }
+        if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") {
+            cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true");
+        }
         // Global kill switch (defaults to disabled seeds). To ENABLE seeds, set to 0/false/off explicitly.
         if let Ok(v) = std::env::var("STEALTH_DISABLE_BOOTSTRAP") {
             let v = v.to_ascii_lowercase();
             cfg.disable_bootstrap = !(v == "0" || v == "false" || v == "off");
         }
         if let Ok(p) = std::env::var("STEALTH_STATUS_PORT") {
-            if let Ok(n) = p.parse::<u16>() { cfg.status_port = n; }
+            if let Ok(n) = p.parse::<u16>() {
+                cfg.status_port = n;
+            }
         }
         // Phase 2.5.3: Helper mode (relay-only, exit-node, bootstrap)
         if let Ok(mode_str) = std::env::var("QNET_MODE") {
             cfg.helper_mode = match mode_str.to_ascii_lowercase().as_str() {
                 "relay" | "relay-only" => HelperMode::RelayOnly,
                 "exit" | "exit-node" => {
-                    eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
-                    eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
+                    eprintln!(
+                        "⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!"
+                    );
+                    eprintln!(
+                        "⚠️  Legal liability: Your IP will be visible to destination websites."
+                    );
                     HelperMode::ExitNode
                 }
                 "bootstrap" => {
@@ -602,10 +691,15 @@ enum MeshCommand {
     OpenStream {
         peer_id: libp2p::PeerId,
         // Returns channels for bidirectional communication
-        response: tokio::sync::oneshot::Sender<Result<(
-            tokio::sync::mpsc::UnboundedSender<Vec<u8>>,    // Send data to peer
-            tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,  // Receive data from peer
-        ), String>>,
+        response: tokio::sync::oneshot::Sender<
+            Result<
+                (
+                    tokio::sync::mpsc::UnboundedSender<Vec<u8>>, // Send data to peer
+                    tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>, // Receive data from peer
+                ),
+                String,
+            >,
+        >,
     },
 }
 
@@ -620,7 +714,11 @@ struct MaskedStats {
 impl AppState {
     fn new(cfg: Config) -> (Self, tokio::sync::mpsc::UnboundedReceiver<MeshCommand>) {
         let snap = StatusSnapshot {
-            state: if cfg.bootstrap { ConnState::Calibrating } else { ConnState::Offline },
+            state: if cfg.bootstrap {
+                ConnState::Calibrating
+            } else {
+                ConnState::Offline
+            },
             last_seed: None,
             last_checked_ms_ago: None,
             last_target: None,
@@ -633,10 +731,10 @@ impl AppState {
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
-        
+
         // Create mesh command channel (Phase 2.4.2)
         let (mesh_tx, mesh_rx) = tokio::sync::mpsc::unbounded_channel();
-        
+
         let state = Self {
             cfg,
             status: Mutex::new((snap, None)),
@@ -650,7 +748,7 @@ impl AppState {
             relay_route_count: Arc::new(AtomicU32::new(0)),
             mesh_commands: mesh_tx,
         };
-        
+
         (state, mesh_rx)
     }
 }
@@ -666,7 +764,8 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
             let recent_masked = {
                 // Drop lock quickly on separate mutex
                 let lm = state.last_masked_connect.lock().unwrap();
-                lm.map(|t| t.elapsed() < StdDuration::from_secs(20)).unwrap_or(false)
+                lm.map(|t| t.elapsed() < StdDuration::from_secs(20))
+                    .unwrap_or(false)
             };
             match res {
                 Some(url) => {
@@ -678,7 +777,11 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
                 None => {
                     if !recent_masked {
                         // If we were never connected, we are still calibrating; else offline
-                        guard.0.state = if matches!(guard.0.state, ConnState::Connected) { ConnState::Offline } else { ConnState::Calibrating };
+                        guard.0.state = if matches!(guard.0.state, ConnState::Connected) {
+                            ConnState::Offline
+                        } else {
+                            ConnState::Calibrating
+                        };
                     }
                     guard.1 = Some(now);
                     guard.0.last_checked_ms_ago = Some(0);
@@ -708,33 +811,31 @@ fn spawn_connectivity_monitor(state: Arc<AppState>) {
 /// ```bash
 /// # On droplet, generate once:
 /// cargo run --release --bin stealth-browser -- --generate-keypair /root/.qnet/keypair.pb
-/// 
+///
 /// # Then configure systemd/startup to set:
 /// export QNET_KEYPAIR_PATH=/root/.qnet/keypair.pb
 /// ```
 fn load_or_generate_keypair() -> libp2p::identity::Keypair {
     use libp2p::identity::Keypair;
-    
+
     if let Ok(path) = std::env::var("QNET_KEYPAIR_PATH") {
         match std::fs::read(&path) {
-            Ok(bytes) => {
-                match Keypair::from_protobuf_encoding(&bytes) {
-                    Ok(keypair) => {
-                        let peer_id = libp2p::PeerId::from(keypair.public());
-                        info!(path=%path, peer_id=%peer_id, "mesh: Loaded persistent keypair from file");
-                        return keypair;
-                    }
-                    Err(e) => {
-                        warn!(path=%path, error=%e, "mesh: Failed to decode keypair file, generating new random keypair");
-                    }
+            Ok(bytes) => match Keypair::from_protobuf_encoding(&bytes) {
+                Ok(keypair) => {
+                    let peer_id = libp2p::PeerId::from(keypair.public());
+                    info!(path=%path, peer_id=%peer_id, "mesh: Loaded persistent keypair from file");
+                    return keypair;
                 }
-            }
+                Err(e) => {
+                    warn!(path=%path, error=%e, "mesh: Failed to decode keypair file, generating new random keypair");
+                }
+            },
             Err(e) => {
                 warn!(path=%path, error=%e, "mesh: Failed to read keypair file, generating new random keypair");
             }
         }
     }
-    
+
     // No persistent keypair configured or load failed -> generate random
     let keypair = Keypair::generate_ed25519();
     let peer_id = libp2p::PeerId::from(keypair.public());
@@ -749,43 +850,195 @@ fn load_or_generate_keypair() -> libp2p::identity::Keypair {
 fn generate_keypair_file(path: &str) -> Result<()> {
     use libp2p::identity::Keypair;
     use std::io::Write;
-    
+
     let keypair = Keypair::generate_ed25519();
     let peer_id = libp2p::PeerId::from(keypair.public());
-    
-    let encoded = keypair.to_protobuf_encoding()
+
+    let encoded = keypair
+        .to_protobuf_encoding()
         .map_err(|e| anyhow!("Failed to encode keypair: {:?}", e))?;
-    
+
     // Create parent directory if needed
     if let Some(parent) = std::path::Path::new(path).parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
     }
-    
+
     let mut file = std::fs::File::create(path)
         .with_context(|| format!("Failed to create keypair file: {}", path))?;
-    
+
     file.write_all(&encoded)
         .with_context(|| format!("Failed to write keypair to: {}", path))?;
-    
+
     file.sync_all()
         .with_context(|| format!("Failed to sync keypair file: {}", path))?;
-    
+
     println!("✅ Generated new keypair:");
     println!("   Peer ID: {}", peer_id);
     println!("   File: {}", path);
     println!();
     println!("Next steps:");
     println!("1. Update crates/core-mesh/src/discovery.rs with this peer ID");
-    println!("2. Set environment variable before starting: export QNET_KEYPAIR_PATH={}", path);
+    println!(
+        "2. Set environment variable before starting: export QNET_KEYPAIR_PATH={}",
+        path
+    );
     println!("3. Rebuild all nodes: cargo build --release --bin stealth-browser");
     println!("4. Deploy and restart");
-    
+
     Ok(())
 }
 
+/// Query operator directory for available relay peers.
+///
+/// Returns list of (peer_id, addresses, country) for relay peers.
+/// Falls back through 3 tiers: directory → disk cache → hardcoded operators.
+async fn query_operator_directory() -> Vec<(libp2p::PeerId, Vec<libp2p::Multiaddr>, String)> {
+    // Tier 1: Try operator directory HTTP endpoint
+    let operator_nodes = core_mesh::discovery::load_bootstrap_nodes();
+
+    for node in operator_nodes.iter().take(3) {
+        // Extract IP from multiaddr
+        let url = match extract_http_url_from_multiaddr(&node.multiaddr) {
+            Some(url) => url,
+            None => continue,
+        };
+
+        let endpoint = format!("{}/api/relays/by-country", url);
+        info!("directory: Querying operator node {}", endpoint);
+
+        match reqwest::get(&endpoint).await {
+            Ok(response) => match response.text().await {
+                Ok(body) => {
+                    match serde_json::from_str::<
+                        std::collections::HashMap<String, Vec<directory::RelayInfo>>,
+                    >(&body)
+                    {
+                        Ok(by_country) => {
+                            let mut peers = Vec::new();
+                            for (_country, infos) in by_country {
+                                for info in infos {
+                                    if let Ok(peer_id) = info.peer_id.parse::<libp2p::PeerId>() {
+                                        let addrs: Vec<libp2p::Multiaddr> = info
+                                            .addrs
+                                            .iter()
+                                            .filter_map(|s| s.parse().ok())
+                                            .collect();
+                                        peers.push((peer_id, addrs, info.country.clone()));
+                                    }
+                                }
+                            }
+
+                            if !peers.is_empty() {
+                                info!(
+                                    "directory: Retrieved {} peers from operator directory",
+                                    peers.len()
+                                );
+                                return peers;
+                            }
+                        }
+                        Err(e) => warn!("directory: Failed to parse JSON: {}", e),
+                    }
+                }
+                Err(e) => warn!("directory: Failed to read response body: {}", e),
+            },
+            Err(e) => warn!("directory: Query failed for {}: {}", endpoint, e),
+        }
+    }
+
+    // Tier 2: Load from disk cache (24hr TTL)
+    // TODO: Implement disk cache in Task 7
+
+    // Tier 3: Fallback to hardcoded operator nodes
+    info!("directory: No peers from directory, using hardcoded operator nodes");
+    operator_nodes
+        .iter()
+        .map(|node| {
+            (
+                node.peer_id,
+                vec![node.multiaddr.clone()],
+                "operator".to_string(),
+            )
+        })
+        .collect()
+}
+
+/// Extract HTTP URL from libp2p multiaddr (e.g., /ip4/1.2.3.4/tcp/8088 → http://1.2.3.4:8088)
+fn extract_http_url_from_multiaddr(addr: &libp2p::Multiaddr) -> Option<String> {
+    let mut ip = None;
+    let mut port = 8088u16; // Default operator directory port
+
+    for proto in addr.iter() {
+        match proto {
+            libp2p::multiaddr::Protocol::Ip4(addr) => ip = Some(format!("{}", addr)),
+            libp2p::multiaddr::Protocol::Tcp(p) => port = p,
+            _ => {}
+        }
+    }
+
+    ip.map(|ip_str| format!("http://{}:{}", ip_str, port))
+}
+
+/// Spawn heartbeat loop for relay-only mode.
+///
+/// Registers this peer with operator directory every 30 seconds.
+/// Only runs if helper_mode is RelayOnly.
+fn spawn_heartbeat_loop(
+    peer_id: libp2p::PeerId,
+    local_addrs: Vec<libp2p::Multiaddr>,
+    helper_mode: HelperMode,
+) {
+    if !matches!(helper_mode, HelperMode::RelayOnly) {
+        info!("heartbeat: Skipping registration (not relay-only mode)");
+        return;
+    }
+
+    tokio::spawn(async move {
+        let operator_nodes = core_mesh::discovery::load_bootstrap_nodes();
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+        let client = reqwest::Client::new();
+
+        loop {
+            interval.tick().await;
+
+            // Build registration payload
+            let registration = directory::RelayInfo::new(
+                peer_id,
+                local_addrs.clone(),
+                "US".to_string(), // TODO: Add GeoIP lookup in Task 7
+                vec!["relay".to_string()],
+            );
+
+            // Try each operator node until one succeeds
+            for node in operator_nodes.iter().take(3) {
+                let url = match extract_http_url_from_multiaddr(&node.multiaddr) {
+                    Some(url) => url,
+                    None => continue,
+                };
+
+                let endpoint = format!("{}/api/relay/register", url);
+
+                match client.post(&endpoint).json(&registration).send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            info!("heartbeat: Registered with {}", endpoint);
+                            break;
+                        } else {
+                            warn!(
+                                "heartbeat: Registration failed with status {}",
+                                response.status()
+                            );
+                        }
+                    }
+                    Err(e) => warn!("heartbeat: Failed to POST to {}: {}", endpoint, e),
+                }
+            }
+        }
+    });
+}
+
 /// Spawn mesh peer discovery thread (task 2.1.6, Phase 2.4.2)
-/// 
+///
 /// Runs libp2p Swarm event loop in a dedicated async-std thread.
 /// Processes mDNS discoveries, DHT queries, connection events, and mesh commands.
 /// Updates mesh_peer_count atomic for status API consumption.
@@ -796,24 +1049,24 @@ fn spawn_mesh_discovery(
     let peer_count_ref = state.mesh_peer_count.clone();
     let _circuits_ref = state.active_circuits.clone();
     let cfg = state.cfg.clone();
-    
+
     std::thread::spawn(move || {
         info!("mesh: Starting mesh network discovery thread");
         info!("mesh: Helper mode = {:?}", cfg.helper_mode);
         info!("mesh: Mesh enabled = {}", cfg.mesh_enabled);
-        
+
         if !cfg.mesh_enabled {
             info!("mesh: Discovery disabled via configuration");
             return;
         }
-        
+
         // Run async-std runtime in this thread
         async_std::task::block_on(async {
             // Load or generate local peer identity
             let keypair = load_or_generate_keypair();
             let peer_id = libp2p::PeerId::from(keypair.public());
             info!(peer_id=%peer_id, "mesh: Loaded local peer ID");
-            
+
             // Load hardcoded bootstrap nodes
             let bootstrap_nodes = core_mesh::discovery::load_bootstrap_nodes();
             if bootstrap_nodes.is_empty() {
@@ -827,9 +1080,14 @@ fn spawn_mesh_discovery(
                     info!("  ... and {} more", bootstrap_nodes.len() - 3);
                 }
             }
-            
+
             // Initialize discovery behavior (returns relay transport + behavior)
-            let (relay_transport, discovery) = match core_mesh::discovery::DiscoveryBehavior::new(peer_id, bootstrap_nodes).await {
+            let (relay_transport, discovery) = match core_mesh::discovery::DiscoveryBehavior::new(
+                peer_id,
+                bootstrap_nodes,
+            )
+            .await
+            {
                 Ok((transport, behavior)) => {
                     info!("mesh: Discovery behavior initialized successfully");
                     (transport, behavior)
@@ -839,13 +1097,13 @@ fn spawn_mesh_discovery(
                     return;
                 }
             };
-            
+
             // Create TCP transport with noise encryption and yamux multiplexing
-            use libp2p::{tcp, noise, yamux, Transport};
             use libp2p::core::upgrade::Version;
-            
+            use libp2p::{noise, tcp, yamux, Transport};
+
             let tcp_transport = tcp::async_io::Transport::new(tcp::Config::default().nodelay(true));
-            
+
             let noise_config = match noise::Config::new(&keypair) {
                 Ok(cfg) => cfg,
                 Err(e) => {
@@ -853,23 +1111,23 @@ fn spawn_mesh_discovery(
                     return;
                 }
             };
-            
+
             // CRITICAL: Compose relay transport with TCP transport
             // This allows connections via relay when direct TCP fails (NAT traversal)
             let transport = relay_transport
-                .or_transport(tcp_transport)  // Try relay first, fallback to direct TCP
+                .or_transport(tcp_transport) // Try relay first, fallback to direct TCP
                 .upgrade(Version::V1)
                 .authenticate(noise_config)
                 .multiplex(yamux::Config::default())
                 .boxed();
-            
+
             // Create Swarm
             use libp2p::swarm::Swarm;
-            
+
             let swarm_config = libp2p::swarm::Config::with_async_std_executor()
                 .with_idle_connection_timeout(std::time::Duration::from_secs(60));
             let mut swarm = Swarm::new(transport, discovery, peer_id, swarm_config);
-            
+
             // Listen on all interfaces with fixed port 4001 for direct peering
             // Changed from tcp/0 (dynamic) to tcp/4001 (fixed) for reliable bootstrap
             let listen_addr = "/ip4/0.0.0.0/tcp/4001".parse().unwrap();
@@ -880,13 +1138,36 @@ fn spawn_mesh_discovery(
                     return;
                 }
             }
-            
+
+            // Query operator directory for relay peers
+            info!("mesh: Querying operator directory for relay peers");
+            let directory_peers = query_operator_directory().await;
+            info!("mesh: Directory returned {} peers", directory_peers.len());
+
+            // Dial discovered relay peers
+            for (peer_id, addrs, country) in directory_peers {
+                info!("mesh: Discovered relay peer {} from {}", peer_id, country);
+                for addr in addrs {
+                    match swarm.dial(addr.clone()) {
+                        Ok(_) => info!("mesh:   → Dialing {}", addr),
+                        Err(e) => warn!("mesh:   → Dial failed for {}: {:?}", addr, e),
+                    }
+                }
+            }
+
+            // Get local listen addresses for heartbeat registration
+            let local_addrs: Vec<libp2p::Multiaddr> = swarm.listeners().cloned().collect();
+
+            // Spawn heartbeat loop (relay-only mode)
+            spawn_heartbeat_loop(peer_id, local_addrs, cfg.helper_mode.clone());
+
             // Track bootstrap peers separately from QNet peers
-            let bootstrap_peer_ids: std::collections::HashSet<_> = core_mesh::discovery::load_bootstrap_nodes()
-                .into_iter()
-                .map(|n| n.peer_id)
-                .collect();
-            
+            let bootstrap_peer_ids: std::collections::HashSet<_> =
+                core_mesh::discovery::load_bootstrap_nodes()
+                    .into_iter()
+                    .map(|n| n.peer_id)
+                    .collect();
+
             // CRITICAL FIX: Explicitly dial operator seeds BEFORE starting event loop
             // Issue: Bootstrap only auto-dials DNS seeds (/dnsaddr/...), not IP seeds (/ip4/...)
             // This ensures operator seeds are dialed immediately for reliable bootstrap
@@ -894,11 +1175,17 @@ fn spawn_mesh_discovery(
                 .into_iter()
                 .filter(|n| n.multiaddr.to_string().contains("/ip4/"))
                 .collect::<Vec<_>>();
-            
+
             if !operator_seeds.is_empty() {
-                info!("mesh: Explicitly dialing {} operator seed(s)", operator_seeds.len());
+                info!(
+                    "mesh: Explicitly dialing {} operator seed(s)",
+                    operator_seeds.len()
+                );
                 for seed in operator_seeds {
-                    info!("mesh:   → Dialing operator seed {} at {}", seed.peer_id, seed.multiaddr);
+                    info!(
+                        "mesh:   → Dialing operator seed {} at {}",
+                        seed.peer_id, seed.multiaddr
+                    );
                     match swarm.dial(seed.multiaddr.clone()) {
                         Ok(_) => {
                             info!("mesh:     ✅ Dial initiated successfully");
@@ -908,30 +1195,28 @@ fn spawn_mesh_discovery(
                         }
                     }
                 }
-                
+
                 // Brief delay to allow operator seed connections to establish
                 info!("mesh: Waiting 2s for operator seed connections...");
                 async_std::task::sleep(std::time::Duration::from_secs(2)).await;
             }
-            
+
             let mut last_total_count = 0usize;
-            use futures::StreamExt as FuturesStreamExt;  // For .fuse()
-            let mut interval = async_std::stream::interval(std::time::Duration::from_secs(5)).fuse();
-            
-            // Periodic DHT bootstrap to maintain routing table and keep connections alive
-            let mut bootstrap_interval = async_std::stream::interval(std::time::Duration::from_secs(300)).fuse(); // 5 minutes
-            
+            use futures::StreamExt as FuturesStreamExt; // For .fuse()
+            let mut interval =
+                async_std::stream::interval(std::time::Duration::from_secs(5)).fuse();
+
             info!("mesh: Swarm event loop starting");
-            
+
             // Main event loop
             loop {
                 use futures::StreamExt;
-                
+
                 // Poll mesh commands with short timeout
-                if let Ok(Some(cmd)) = async_std::future::timeout(
-                    std::time::Duration::from_millis(50),
-                    mesh_rx.recv()
-                ).await {
+                if let Ok(Some(cmd)) =
+                    async_std::future::timeout(std::time::Duration::from_millis(50), mesh_rx.recv())
+                        .await
+                {
                     match cmd {
                         MeshCommand::DialPeer { peer_id, response } => {
                             info!("mesh: Dial command for peer {}", peer_id);
@@ -953,7 +1238,7 @@ fn spawn_mesh_discovery(
                         }
                         MeshCommand::OpenStream { peer_id, response } => {
                             info!("mesh: OpenStream command for peer {}", peer_id);
-                            
+
                             // Ensure peer is connected
                             if !swarm.is_connected(&peer_id) {
                                 info!("mesh: Peer {} not connected, dialing first", peer_id);
@@ -965,19 +1250,21 @@ fn spawn_mesh_discovery(
                                 // Wait briefly for connection
                                 async_std::task::sleep(std::time::Duration::from_secs(2)).await;
                             }
-                            
+
                             // Create bidirectional channels
-                            let (to_peer_tx, mut to_peer_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-                            let (_from_peer_tx, from_peer_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-                            
+                            let (to_peer_tx, mut to_peer_rx) =
+                                tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                            let (_from_peer_tx, from_peer_rx) =
+                                tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
                             // Open libp2p stream using request_response pattern
                             // For simplicity, we'll use a direct stream approach via dial
                             // This creates a new connection/stream to the peer
                             info!("mesh: Creating stream to peer {}", peer_id);
-                            
+
                             // Clone for async task
                             let peer_id_clone = peer_id;
-                            
+
                             // Spawn task to handle stream I/O
                             async_std::task::spawn(async move {
                                 // In a full implementation, we would:
@@ -987,35 +1274,39 @@ fn spawn_mesh_discovery(
                                 //
                                 // For now, simulate with a minimal placeholder that logs
                                 // Actual implementation requires connection handler integration
-                                
+
                                 info!("mesh: Stream task started for peer {}", peer_id_clone);
-                                
+
                                 // Read from to_peer_rx and "send" to peer
                                 while let Some(data) = to_peer_rx.recv().await {
-                                    debug!("mesh: Would send {} bytes to peer {}", data.len(), peer_id_clone);
+                                    debug!(
+                                        "mesh: Would send {} bytes to peer {}",
+                                        data.len(),
+                                        peer_id_clone
+                                    );
                                     // TODO: Write to actual libp2p stream
                                 }
-                                
+
                                 info!("mesh: Stream task ended for peer {}", peer_id_clone);
                             });
-                            
+
                             // Return channels to SOCKS5 handler
                             let _ = response.send(Ok((to_peer_tx, from_peer_rx)));
                         }
                     }
                 }
-                
+
                 futures::select! {
                     event = swarm.select_next_some() => {
                         use libp2p::swarm::SwarmEvent;
-                        
+
                         match event {
                             SwarmEvent::NewListenAddr { address, .. } => {
                                 info!("mesh: Listening on {}", address);
                             }
                             SwarmEvent::Behaviour(discovery_event) => {
                                 use core_mesh::discovery::DiscoveryBehaviorEvent;
-                                
+
                                 match discovery_event {
                                     DiscoveryBehaviorEvent::Mdns(mdns_event) => {
                                         use libp2p::mdns;
@@ -1038,102 +1329,13 @@ fn spawn_mesh_discovery(
                                             }
                                         }
                                     }
-                                    DiscoveryBehaviorEvent::Kademlia(kad_event) => {
-                                        use libp2p::kad;
-                                        match kad_event {
-                                            kad::Event::RoutingUpdated { peer, .. } => {
-                                                debug!("mesh: Kademlia routing updated for peer {}", peer);
-                                            }
-                                            kad::Event::OutboundQueryProgressed { id, result, .. } => {
-                                                match result {
-                                                    kad::QueryResult::Bootstrap(Ok(kad::BootstrapOk { peer: _, .. })) => {
-                                                        info!("mesh: ✅ DHT bootstrap complete, routing table populated (query_id: {:?})", id);
-                                                        
-                                                        // After successful bootstrap, start provider operations
-                                                        // Research finding: Use deterministic key for DHT discovery
-                                                        // Using fixed namespace identifier for QNet peer discovery
-                                                        
-                                                        let key_bytes = b"/qnet/peer/v1".to_vec();
-                                                        let key = libp2p::kad::RecordKey::new(&key_bytes);
-                                                        
-                                                        // Publish this node as a QNet peer provider immediately after bootstrap
-                                                        // Research: Provider records propagate over 3-10 seconds
-                                                        match swarm.behaviour_mut().kademlia.start_providing(key.clone()) {
-                                                            Ok(query_id) => {
-                                                                info!("mesh: Publishing as QNet provider (query_id: {:?})", query_id);
-                                                            }
-                                                            Err(e) => {
-                                                                warn!("mesh: Failed to start providing: {:?}", e);
-                                                            }
-                                                        }
-                                                        
-                                                        // Query for other QNet peers using same key
-                                                        // Note: Query may return no results initially if records haven't propagated yet
-                                                        // Periodic re-querying happens via bootstrap interval
-                                                        let query_id = swarm.behaviour_mut().kademlia.get_providers(key.clone());
-                                                        info!("mesh: Querying for QNet providers (query_id: {:?})", query_id);
-                                                    }
-                                                    kad::QueryResult::Bootstrap(Err(e)) => {
-                                                        warn!("mesh: DHT bootstrap failed: {:?}", e);
-                                                    }
-                                                    kad::QueryResult::StartProviding(Ok(kad::AddProviderOk { key })) => {
-                                                        info!("mesh: ✅ SUCCESS - Published as provider! Key: {:?}", String::from_utf8_lossy(key.as_ref()));
-                                                        info!("mesh: Provider record should propagate to DHT nodes over next 3-10 seconds");
-                                                    }
-                                                    kad::QueryResult::StartProviding(Err(e)) => {
-                                                        warn!("mesh: ✗ Failed to publish provider record: {:?}", e);
-                                                    }
-                                                    kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FoundProviders { key, providers, .. })) => {
-                                                        info!("mesh: 🎯 DISCOVERY SUCCESS - Found {} providers for key: {:?}", providers.len(), String::from_utf8_lossy(key.as_ref()));
-                                                        
-                                                        for provider_id in providers {
-                                                            if provider_id == *swarm.local_peer_id() {
-                                                                debug!("mesh: Skipping self as provider");
-                                                                continue;
-                                                            }
-                                                            
-                                                            // Get addresses for this provider from Kademlia k-buckets
-                                                            // In libp2p 0.53, we need to check the routing table via kbuckets
-                                                            info!("mesh: 🔍 Discovered QNet provider peer: {}", provider_id);
-                                                            
-                                                            // Attempt to dial - libp2p will use Identify protocol to learn addresses
-                                                            match swarm.dial(provider_id) {
-                                                                Ok(_) => info!("mesh: 📞 Dialing discovered provider peer {}", provider_id),
-                                                                Err(e) => debug!("mesh: Dial attempt for provider {}: {:?}", provider_id, e),
-                                                            }
-                                                        }
-                                                    }
-                                                    kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. })) => {
-                                                        info!("mesh: ℹ️  Provider query complete - no QNet providers found yet");
-                                                        info!("mesh: This is normal if: 1) Other node hasn't published yet, 2) Records haven't propagated (wait 10-30s), 3) Not sharing DHT peers");
-                                                    }
-                                                    kad::QueryResult::GetProviders(Err(e)) => {
-                                                        debug!("mesh: Provider query failed: {:?}", e);
-                                                    }
-                                                    _ => {
-                                                        debug!("mesh: Kademlia query result: {:?}", result);
-                                                    }
-                                                }
-                                            }
-                                            _ => {
-                                                debug!("mesh: Kademlia event: {:?}", kad_event);
-                                            }
-                                        }
-                                    }
                                     DiscoveryBehaviorEvent::Identify(identify_event) => {
                                         use libp2p::identify;
                                         match identify_event {
                                             identify::Event::Received { peer_id, info } => {
-                                                info!("mesh: Identified peer {} with {} addresses and protocols: {:?}", 
+                                                info!("mesh: Identified peer {} with {} addresses and protocols: {:?}",
                                                     peer_id, info.listen_addrs.len(), info.protocols);
-                                                
-                                                // CRITICAL: Wire Identify addresses into Kademlia routing table
-                                                // This is THE KEY fix - without this, we have peer_ids but no addresses to dial
-                                                for addr in &info.listen_addrs {
-                                                    swarm.behaviour_mut().kademlia.add_address(&peer_id, addr.clone());
-                                                }
-                                                info!("mesh: Added {} addresses to Kademlia for peer {}", info.listen_addrs.len(), peer_id);
-                                                
+
                                                 // Inform AutoNAT about discovered peer addresses for NAT probing
                                                 for addr in &info.listen_addrs {
                                                     swarm.behaviour_mut().autonat.add_server(peer_id, Some(addr.clone()));
@@ -1192,7 +1394,7 @@ fn spawn_mesh_discovery(
                             SwarmEvent::ConnectionEstablished { peer_id, endpoint, connection_id, .. } => {
                                 let is_bootstrap = bootstrap_peer_ids.contains(&peer_id);
                                 let remote_addr = endpoint.get_remote_address();
-                                
+
                                 // Check if this matches the expected peer IP for testing
                                 let is_expected_peer = if let Some(expected_ip) = cfg.expected_peer_ip {
                                     if let Some(ip_addr) = remote_addr.iter().find_map(|proto| match proto {
@@ -1207,7 +1409,7 @@ fn spawn_mesh_discovery(
                                 } else {
                                     false
                                 };
-                                
+
                                 if is_expected_peer {
                                     // PROMINENT: Expected peer connected (e.g., your droplet)
                                     warn!("╔════════════════════════════════════════════════════════════════╗");
@@ -1251,21 +1453,21 @@ fn spawn_mesh_discovery(
                     _ = interval.next() => {
                         // Periodic peer count update
                         let total_count = swarm.connected_peers().count();
-                        
+
                         if total_count != last_total_count {
                             let bootstrap_count = swarm.connected_peers()
                                 .filter(|pid| bootstrap_peer_ids.contains(pid))
                                 .count();
                             let dht_peer_count = total_count - bootstrap_count;
-                            
+
                             peer_count_ref.store(total_count as u32, Ordering::Relaxed);
-                            
+
                             // Note: "DHT peers" includes both QNet nodes and random IPFS nodes
                             // To distinguish, we need libp2p Identify protocol (future enhancement)
-                            info!("mesh: Peer count update: {} total ({} bootstrap + {} DHT peers)", 
+                            info!("mesh: Peer count update: {} total ({} bootstrap + {} DHT peers)",
                                   total_count, bootstrap_count, dht_peer_count);
                             last_total_count = total_count;
-                            
+
                             // Update state to "connected" when mesh peers discovered (Phase 2.1.6)
                             // Note: This triggers on ANY peer connection (bootstrap or DHT)
                             if total_count > 0 {
@@ -1277,13 +1479,6 @@ fn spawn_mesh_discovery(
                             }
                         }
                     }
-                    _ = bootstrap_interval.next() => {
-                        // Periodic DHT bootstrap to maintain routing table and connections
-                        info!("mesh: Running periodic DHT bootstrap");
-                        if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
-                            warn!("mesh: Bootstrap error: {:?}", e);
-                        }
-                    }
                 }
             }
         });
@@ -1291,7 +1486,11 @@ fn spawn_mesh_discovery(
 }
 
 // Start a minimal blocking status server (separate thread) to avoid starvation of the async runtime.
-fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<Option<std::net::SocketAddr>> {
+fn start_status_server(
+    bind_ip: &str,
+    port: u16,
+    app: Arc<AppState>,
+) -> Result<Option<std::net::SocketAddr>> {
     use std::net::TcpListener as StdListener;
     let bind = format!("{}:{}", bind_ip, port);
     let listener = match StdListener::bind(&bind) {
@@ -1305,14 +1504,16 @@ fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<O
     let local_addr = listener.local_addr().ok();
     let app_clone = app.clone();
     std::thread::spawn(move || {
-        eprintln!("status-server:thread-start addr={}" , bind);
+        eprintln!("status-server:thread-start addr={}", bind);
         let mut last_hb = StdInstant::now();
         loop {
             match listener.accept() {
                 Ok((stream, peer)) => {
                     let app2 = app_clone.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = handle_status_blocking(stream, app2, peer) { eprintln!("status-server:serve-error: {e}"); }
+                        if let Err(e) = handle_status_blocking(stream, app2, peer) {
+                            eprintln!("status-server:serve-error: {e}");
+                        }
                     });
                 }
                 Err(e) => {
@@ -1332,7 +1533,10 @@ fn start_status_server(bind_ip: &str, port: u16, app: Arc<AppState>) -> Result<O
 // Unified status JSON builder (used by /status, /, and /status.txt) to avoid drift.
 fn build_status_json(app: &AppState) -> serde_json::Value {
     let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
-    let (snap, since_opt) = { let g = app.status.lock().unwrap(); (g.0.clone(), g.1) };
+    let (snap, since_opt) = {
+        let g = app.status.lock().unwrap();
+        (g.0.clone(), g.1)
+    };
     let masked_stats = app.masked_stats.lock().ok().map(|g| g.clone());
     let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
     let decoy_ip = app.last_decoy_ip.lock().ok().and_then(|g| g.clone());
@@ -1343,32 +1547,55 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
         "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
     });
-    if matches!(app.cfg.mode, Mode::Masked) { json["masked"] = serde_json::json!(true); }
-    if let Some(url) = snap.last_seed { json["seed_url"] = serde_json::json!(url); }
-    if let Some(t) = snap.last_target { json["last_target"] = serde_json::json!(t.clone()); json["current_target"] = serde_json::json!(t); }
-    if let Some(d) = snap.last_decoy { json["last_decoy"] = serde_json::json!(d.clone()); json["current_decoy"] = serde_json::json!(d); }
-    if let Some(ip) = target_ip { json["current_target_ip"] = serde_json::json!(ip); }
-    if let Some(ip) = decoy_ip { json["current_decoy_ip"] = serde_json::json!(ip); }
+    if matches!(app.cfg.mode, Mode::Masked) {
+        json["masked"] = serde_json::json!(true);
+    }
+    if let Some(url) = snap.last_seed {
+        json["seed_url"] = serde_json::json!(url);
+    }
+    if let Some(t) = snap.last_target {
+        json["last_target"] = serde_json::json!(t.clone());
+        json["current_target"] = serde_json::json!(t);
+    }
+    if let Some(d) = snap.last_decoy {
+        json["last_decoy"] = serde_json::json!(d.clone());
+        json["current_decoy"] = serde_json::json!(d);
+    }
+    if let Some(ip) = target_ip {
+        json["current_target_ip"] = serde_json::json!(ip);
+    }
+    if let Some(ip) = decoy_ip {
+        json["current_decoy_ip"] = serde_json::json!(ip);
+    }
     // Derive host-only (no port) versions for UI clarity
     if let Some(ct) = json.get("current_target").and_then(|v| v.as_str()) {
-        if let Some((host,_)) = ct.rsplit_once(':') { // rsplit_once keeps left part possibly with colons (IPv6); domain:port typical
+        if let Some((host, _)) = ct.rsplit_once(':') {
+            // rsplit_once keeps left part possibly with colons (IPv6); domain:port typical
             // Only set if host contains alphabetic char (avoid overriding numeric-only IP target)
-            if host.chars().any(|c| c.is_ascii_alphabetic()) { json["current_target_host"] = serde_json::json!(host); }
+            if host.chars().any(|c| c.is_ascii_alphabetic()) {
+                json["current_target_host"] = serde_json::json!(host);
+            }
         }
     }
     if let Some(cd) = json.get("current_decoy").and_then(|v| v.as_str()) {
-        if let Some((host,_)) = cd.rsplit_once(':') {
-            if host.chars().any(|c| c.is_ascii_alphabetic()) { json["current_decoy_host"] = serde_json::json!(host); }
+        if let Some((host, _)) = cd.rsplit_once(':') {
+            if host.chars().any(|c| c.is_ascii_alphabetic()) {
+                json["current_decoy_host"] = serde_json::json!(host);
+            }
         }
     }
     if let Some(ms) = masked_stats.as_ref() {
         json["masked_attempts"] = serde_json::json!(ms.attempts);
         json["masked_successes"] = serde_json::json!(ms.successes);
         json["masked_failures"] = serde_json::json!(ms.failures);
-        if let Some(le) = &ms.last_error { json["last_masked_error"] = serde_json::json!(le); }
+        if let Some(le) = &ms.last_error {
+            json["last_masked_error"] = serde_json::json!(le);
+        }
     }
     // Removed: catalog_version, catalog_expires_at, catalog_source (catalog system removed)
-    if let Some(n) = snap.decoy_count { json["decoy_count"] = serde_json::json!(n); }
+    if let Some(n) = snap.decoy_count {
+        json["decoy_count"] = serde_json::json!(n);
+    }
     // Prefer live mesh peer count over snapshot value (task 2.1.6)
     json["peers_online"] = serde_json::json!(mesh_peers);
     // Active circuits count (task 2.4.3)
@@ -1379,46 +1606,57 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     let relay_routes = app.relay_route_count.load(Ordering::Relaxed);
     json["relay_packets_relayed"] = serde_json::json!(relay_packets);
     json["relay_route_count"] = serde_json::json!(relay_routes);
-    if let Some(p) = snap.checkup_phase { json["checkup_phase"] = serde_json::json!(p); }
-    if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) { json["last_checked_ms_ago"] = serde_json::json!(ms); }
+    if let Some(p) = snap.checkup_phase {
+        json["checkup_phase"] = serde_json::json!(p);
+    }
+    if let Some(ms) = since_opt.map(|t| t.elapsed().as_millis() as u64) {
+        json["last_checked_ms_ago"] = serde_json::json!(ms);
+    }
     json["config_mode"] = json["mode"].clone(); // backward compat
-    
+
     // Phase 2.4: Mesh network status
-    json["helper_mode"] = serde_json::json!(
-        match app.cfg.helper_mode {
-            HelperMode::RelayOnly => "relay-only",
-            HelperMode::ExitNode => "exit-node",
-            HelperMode::Bootstrap => "bootstrap",
-        }
-    );
+    json["helper_mode"] = serde_json::json!(match app.cfg.helper_mode {
+        HelperMode::RelayOnly => "relay-only",
+        HelperMode::ExitNode => "exit-node",
+        HelperMode::Bootstrap => "bootstrap",
+    });
     json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
-    
+
     // Distinguish bootstrap peers (IPFS) from QNet mesh peers
     // Currently all discovered peers include 6 public IPFS bootstrap nodes
     // When another QNet Helper joins, it will be peers_online = 7 (6 IPFS + 1 QNet)
     let bootstrap_count = 6; // Public IPFS DHT bootstrap nodes
     let qnet_peers = if mesh_peers > bootstrap_count {
         mesh_peers - bootstrap_count
-    }  else {
+    } else {
         0
     };
     json["bootstrap_peers"] = serde_json::json!(bootstrap_count);
     json["qnet_peers"] = serde_json::json!(qnet_peers);
     json["peers_total"] = serde_json::json!(mesh_peers);
     json["mesh_peer_count"] = serde_json::json!(mesh_peers); // Task 2.1.6 - field name for operator guide
-    
+
     // Removed: last catalog update info (catalog system removed)
     json
 }
 
-fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: std::net::SocketAddr) -> Result<()> {
+fn handle_status_blocking(
+    mut s: std::net::TcpStream,
+    app: Arc<AppState>,
+    peer: std::net::SocketAddr,
+) -> Result<()> {
     use std::io::{Read, Write};
-    s.set_read_timeout(Some(std::time::Duration::from_millis(900))).ok();
-    s.set_write_timeout(Some(std::time::Duration::from_secs(2))).ok();
+    s.set_read_timeout(Some(std::time::Duration::from_millis(900)))
+        .ok();
+    s.set_write_timeout(Some(std::time::Duration::from_secs(2)))
+        .ok();
     let pid = std::process::id();
     let active_now = STATUS_CONN_ACTIVE.fetch_add(1, Ordering::Relaxed) + 1;
     STATUS_CONN_TOTAL.fetch_add(1, Ordering::Relaxed);
-    eprintln!("status-conn:open pid={} active={} peer={}", pid, active_now, peer);
+    eprintln!(
+        "status-conn:open pid={} active={} peer={}",
+        pid, active_now, peer
+    );
     let mut buf = [0u8; 1024];
     let mut used = 0usize;
     match s.read(&mut buf) {
@@ -1426,11 +1664,18 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         Ok(n) => used = n,
         Err(_) => { /* ignore */ }
     }
-    let allow_synth = std::env::var("STEALTH_STATUS_SYNTHETIC").ok().map(|v| v != "0").unwrap_or(true);
-    let line = if used == 0 && allow_synth { "GET /status HTTP/1.1".to_string() } else {
+    let allow_synth = std::env::var("STEALTH_STATUS_SYNTHETIC")
+        .ok()
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    let line = if used == 0 && allow_synth {
+        "GET /status HTTP/1.1".to_string()
+    } else {
         let slice = &buf[..used];
         let mut first = String::from_utf8_lossy(slice).to_string();
-        if let Some(pos) = first.find('\n') { first.truncate(pos); }
+        if let Some(pos) = first.find('\n') {
+            first.truncate(pos);
+        }
         first.trim().to_string()
     };
     let path_token_raw = line.split_whitespace().nth(1).unwrap_or("/");
@@ -1444,7 +1689,14 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         STATUS_PATH_METRICS.fetch_add(1, Ordering::Relaxed);
         let active = STATUS_CONN_ACTIVE.load(Ordering::Relaxed);
         let total = STATUS_CONN_TOTAL.load(Ordering::Relaxed);
-        (format!("{{\"status_conn_active\":{},\"status_conn_total\":{}}}", active, total), "application/json", true)
+        (
+            format!(
+                "{{\"status_conn_active\":{},\"status_conn_total\":{}}}",
+                active, total
+            ),
+            "application/json",
+            true,
+        )
     } else if path_token == "/terminate" {
         // Terminate helper process after short delay so response can flush.
         std::thread::spawn(|| {
@@ -1452,10 +1704,21 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
             eprintln!("terminate-endpoint: exiting process");
             std::process::exit(0);
         });
-        ("{\"terminating\":true}".to_string(), "application/json", true)
+        (
+            "{\"terminating\":true}".to_string(),
+            "application/json",
+            true,
+        )
     } else if path_token == "/ping" {
-        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
-        (format!("{{\"ok\":true,\"ts\":{}}}", now_ms), "application/json", true)
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        (
+            format!("{{\"ok\":true,\"ts\":{}}}", now_ms),
+            "application/json",
+            true,
+        )
     } else if path_token == "/config" {
         let cfg = &app.cfg;
         let cfg_json = serde_json::json!({
@@ -1470,51 +1733,110 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
         let js = build_status_json(&app);
         let mut lines: Vec<String> = Vec::new();
         let get = |k: &str| js.get(k);
-        if let Some(v) = get("state") { lines.push(format!("State: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("mode") { lines.push(format!("Mode: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("current_target_host").or_else(|| get("current_target").or_else(|| get("last_target"))) { lines.push(format!("Current Target: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("current_target_ip") { lines.push(format!("Current Target IP: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("current_decoy_host").or_else(|| get("current_decoy").or_else(|| get("last_decoy"))) { lines.push(format!("Current Decoy: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("current_decoy_ip") { lines.push(format!("Current Decoy IP: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("decoy_count") { lines.push(format!("Decoy count: {}", v)); }
+        if let Some(v) = get("state") {
+            lines.push(format!("State: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("mode") {
+            lines.push(format!("Mode: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("current_target_host")
+            .or_else(|| get("current_target").or_else(|| get("last_target")))
+        {
+            lines.push(format!("Current Target: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("current_target_ip") {
+            lines.push(format!("Current Target IP: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) =
+            get("current_decoy_host").or_else(|| get("current_decoy").or_else(|| get("last_decoy")))
+        {
+            lines.push(format!("Current Decoy: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("current_decoy_ip") {
+            lines.push(format!("Current Decoy IP: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("decoy_count") {
+            lines.push(format!("Decoy count: {}", v));
+        }
         // Removed: catalog_version (catalog system removed)
-        if let Some(v) = get("peers_online") { lines.push(format!("Peers online: {}", v)); }
-        if let Some(v) = get("last_masked_error") { lines.push(format!("Last masked error: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = get("last_checked_ms_ago") { lines.push(format!("Last checked ms ago: {}", v)); }
+        if let Some(v) = get("peers_online") {
+            lines.push(format!("Peers online: {}", v));
+        }
+        if let Some(v) = get("last_masked_error") {
+            lines.push(format!("Last masked error: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = get("last_checked_ms_ago") {
+            lines.push(format!("Last checked ms ago: {}", v));
+        }
         let txt = lines.join("\n");
         (txt, "text/plain; charset=utf-8", true)
     } else if path_token == "/status" {
         STATUS_PATH_STATUS.fetch_add(1, Ordering::Relaxed);
-        (build_status_json(&app).to_string(), "application/json", true)
+        (
+            build_status_json(&app).to_string(),
+            "application/json",
+            true,
+        )
     } else if path_token == "/" {
         STATUS_PATH_ROOT.fetch_add(1, Ordering::Relaxed);
         let js = build_status_json(&app);
-        let state_cls = js.get("state").and_then(|v| v.as_str()).unwrap_or("offline");
+        let state_cls = js
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("offline");
         let mut pre_hdr_lines = Vec::new();
-        if let Some(v) = js.get("state").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("State: {}", v)); }
-        if let Some(v) = js.get("mode").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("Mode: {}", v)); }
-        if let Some(v) = js.get("decoy_count") { pre_hdr_lines.push(format!("Decoy count: {}", v)); }
-        if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) { pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?"))); }
-        if let Some(v) = js.get("current_decoy").or_else(|| js.get("last_decoy")) { pre_hdr_lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?"))); }
+        if let Some(v) = js.get("state").and_then(|v| v.as_str()) {
+            pre_hdr_lines.push(format!("State: {}", v));
+        }
+        if let Some(v) = js.get("mode").and_then(|v| v.as_str()) {
+            pre_hdr_lines.push(format!("Mode: {}", v));
+        }
+        if let Some(v) = js.get("decoy_count") {
+            pre_hdr_lines.push(format!("Decoy count: {}", v));
+        }
+        if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) {
+            pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?")));
+        }
+        if let Some(v) = js.get("current_decoy").or_else(|| js.get("last_decoy")) {
+            pre_hdr_lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?")));
+        }
         // Removed: catalog_version (catalog system removed)
-        if let Some(v) = js.get("peers_online") { pre_hdr_lines.push(format!("Peers online: {}", v)); }
-        if let Some(v) = js.get("last_masked_error").and_then(|v| v.as_str()) { pre_hdr_lines.push(format!("Last masked error: {}", v)); }
+        if let Some(v) = js.get("peers_online") {
+            pre_hdr_lines.push(format!("Peers online: {}", v));
+        }
+        if let Some(v) = js.get("last_masked_error").and_then(|v| v.as_str()) {
+            pre_hdr_lines.push(format!("Last masked error: {}", v));
+        }
         let pre_hdr = pre_hdr_lines.join("\n");
         let init_json = js.to_string();
         let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
-    let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;const decHost=j.current_decoy_host;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(decHost)h+='\\nCurrent Decoy: '+decHost;else if(j.current_decoy)h+='\\nCurrent Decoy: '+j.current_decoy;if(decIp)h+='\\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\\nDecoy count: '+j.decoy_count;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
-        let html = html_template.replace("__STATE_CLASS__", state_cls)
+        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;const decHost=j.current_decoy_host;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(decHost)h+='\\nCurrent Decoy: '+decHost;else if(j.current_decoy)h+='\\nCurrent Decoy: '+j.current_decoy;if(decIp)h+='\\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\\nDecoy count: '+j.decoy_count;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
+        let html = html_template
+            .replace("__STATE_CLASS__", state_cls)
             .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
             .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
             .replace("__SOCKS_ADDR__", &socks_addr);
         (html, "text/html; charset=utf-8", true)
     } else {
         STATUS_PATH_OTHER.fetch_add(1, Ordering::Relaxed);
-        (serde_json::json!({"error":"not found"}).to_string(), "application/json", false)
+        (
+            serde_json::json!({"error":"not found"}).to_string(),
+            "application/json",
+            false,
+        )
     };
     let status_line = if ok { "200 OK" } else { "404 Not Found" };
-    if had_query { eprintln!("serve-status:pid={} path='{}' (raw='{}') ok={} status_line='{}'", pid, path_token, path_token_raw, ok, status_line); }
-    else { eprintln!("serve-status:pid={} path='{}' ok={} status_line='{}'", pid, path_token, ok, status_line); }
+    if had_query {
+        eprintln!(
+            "serve-status:pid={} path='{}' (raw='{}') ok={} status_line='{}'",
+            pid, path_token, path_token_raw, ok, status_line
+        );
+    } else {
+        eprintln!(
+            "serve-status:pid={} path='{}' ok={} status_line='{}'",
+            pid, path_token, ok, status_line
+        );
+    }
     let resp = format!("HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}", status=status_line, ct=ct, len=body.len(), body=body);
     let _ = s.write_all(resp.as_bytes());
     let remaining = STATUS_CONN_ACTIVE.fetch_sub(1, Ordering::Relaxed) - 1;
@@ -1525,8 +1847,14 @@ fn handle_status_blocking(mut s: std::net::TcpStream, app: Arc<AppState>, peer: 
 // (Removed legacy async status server remnants.)
 
 // Minimal SOCKS5 (RFC 1928) — supports CONNECT, ATYP IPv4 & DOMAIN, no auth
-async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, app_state: Option<Arc<AppState>>) -> Result<()> {
-    let listener = TcpListener::bind(bind).await
+async fn run_socks5(
+    bind: &str,
+    mode: Mode,
+    htx_client: Option<htx::api::Conn>,
+    app_state: Option<Arc<AppState>>,
+) -> Result<()> {
+    let listener = TcpListener::bind(bind)
+        .await
         .with_context(|| format!("bind {}", bind))?;
     loop {
         let (mut inbound, peer) = listener.accept().await?;
@@ -1538,7 +1866,11 @@ async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, 
                 // Suppress noisy backtrace for common early EOF / client disconnects
                 let es = format!("{e:?}");
                 if es.contains("UnexpectedEof") || es.contains("early eof") {
-                    eprintln!("socks client {} disconnect: {}", peer, es.lines().next().unwrap_or("EOF"));
+                    eprintln!(
+                        "socks client {} disconnect: {}",
+                        peer,
+                        es.lines().next().unwrap_or("EOF")
+                    );
                 } else {
                     eprintln!("socks client {} error: {e:?}", peer);
                 }
@@ -1547,10 +1879,17 @@ async fn run_socks5(bind: &str, mode: Mode, htx_client: Option<htx::api::Conn>, 
     }
 }
 
-async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<htx::api::Conn>, app_state: Option<Arc<AppState>>) -> Result<()> {
+async fn handle_client(
+    stream: &mut TcpStream,
+    mode: Mode,
+    htx_client: Option<htx::api::Conn>,
+    app_state: Option<Arc<AppState>>,
+) -> Result<()> {
     // Handshake: VER, NMETHODS, METHODS...
     let ver = read_u8(stream).await?;
-    if ver != 0x05 { bail!("unsupported ver {ver}"); }
+    if ver != 0x05 {
+        bail!("unsupported ver {ver}");
+    }
     let nmethods = read_u8(stream).await? as usize;
     let mut methods = vec![0u8; nmethods];
     stream.read_exact(&mut methods).await?;
@@ -1559,24 +1898,32 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
 
     // Request: VER, CMD, RSV, ATYP, DST.ADDR, DST.PORT
     let ver2 = read_u8(stream).await?;
-    if ver2 != 0x05 { bail!("bad req ver {ver2}"); }
+    if ver2 != 0x05 {
+        bail!("bad req ver {ver2}");
+    }
     let cmd = read_u8(stream).await?;
     let _rsv = read_u8(stream).await?; // reserved
     let atyp = read_u8(stream).await?;
 
-    if cmd != 0x01 { // CONNECT
+    if cmd != 0x01 {
+        // CONNECT
         send_reply(stream, 0x07 /* Command not supported */).await?;
         bail!("unsupported cmd {cmd}");
     }
 
     let (target, _target_meta) = match atyp {
-        0x01 => { // IPv4
-            let mut ip = [0u8;4];
+        0x01 => {
+            // IPv4
+            let mut ip = [0u8; 4];
             stream.read_exact(&mut ip).await?;
             let port = read_u16(stream).await?;
-            (format!("{}.{}.{}.{}:{}", ip[0],ip[1],ip[2],ip[3],port), TargetMeta::Ip)
+            (
+                format!("{}.{}.{}.{}:{}", ip[0], ip[1], ip[2], ip[3], port),
+                TargetMeta::Ip,
+            )
         }
-        0x03 => { // DOMAIN
+        0x03 => {
+            // DOMAIN
             let len = read_u8(stream).await? as usize;
             let mut name = vec![0u8; len];
             stream.read_exact(&mut name).await?;
@@ -1584,8 +1931,9 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             let port = read_u16(stream).await?;
             (format!("{}:{}", name, port), TargetMeta::Domain)
         }
-        0x04 => { // IPv6 (optional)
-            let mut ip6 = [0u8;16];
+        0x04 => {
+            // IPv6 (optional)
+            let mut ip6 = [0u8; 16];
             stream.read_exact(&mut ip6).await?;
             let port = read_u16(stream).await?;
             let addr = std::net::Ipv6Addr::from(ip6);
@@ -1602,17 +1950,19 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
     if let Some(app) = &app_state {
         if target.contains(".qnet") {
             info!(target=%target, "detected QNet peer destination");
-            
+
             // Phase 2.2: Parse PeerId from target (format: peer-<base58>.qnet or <base58>.qnet)
             let peer_id_str = if target.starts_with("peer-") {
                 // Extract base58 from peer-<base58>.qnet:port or peer-<base58>.qnet
-                target.split("peer-").nth(1)
+                target
+                    .split("peer-")
+                    .nth(1)
                     .and_then(|s| s.split('.').next())
             } else {
                 // Extract base58 from <base58>.qnet:port or <base58>.qnet
                 target.split('.').next()
             };
-            
+
             let peer_id = match peer_id_str {
                 Some(id_str) => {
                     match id_str.parse::<libp2p::PeerId>() {
@@ -1630,9 +1980,9 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                     bail!("malformed .qnet address");
                 }
             };
-            
+
             info!(peer_id=%peer_id, "parsed PeerId from .qnet address");
-            
+
             // Phase 2.3: Request stream to peer via mesh
             let (response_tx, response_rx) = tokio::sync::oneshot::channel();
             if let Err(e) = app.mesh_commands.send(MeshCommand::OpenStream {
@@ -1643,25 +1993,25 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                 send_reply(stream, 0x01).await?; // General SOCKS server failure
                 bail!("mesh command channel closed");
             }
-            
+
             // Wait for stream response
             match tokio::time::timeout(std::time::Duration::from_secs(10), response_rx).await {
                 Ok(Ok(Ok((to_peer, mut from_peer)))) => {
                     info!(peer_id=%peer_id, "mesh stream established");
                     send_reply(stream, 0x00).await?;
-                    
+
                     // Phase 2.4: Bridge SOCKS5 stream to mesh stream bidirectionally
                     // Split the stream into read and write halves
                     let (mut read_half, mut write_half) = stream.split();
-                    
+
                     // Increment circuit count
                     app.active_circuits.fetch_add(1, Ordering::Relaxed);
-                    
+
                     // Clone for move into tasks
                     let peer_id_str = peer_id.to_string();
                     let peer_id_str2 = peer_id_str.clone();
                     let circuits_ref = app.active_circuits.clone();
-                    
+
                     // Task: SOCKS5 client -> mesh peer
                     let mut buf = vec![0u8; 8192];
                     let client_to_mesh = async move {
@@ -1687,7 +2037,7 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                         }
                         debug!(peer=%peer_id_str, "client->mesh task ended");
                     };
-                    
+
                     // Task: mesh peer -> SOCKS5 client
                     let mesh_to_client = async move {
                         while let Some(data) = from_peer.recv().await {
@@ -1701,13 +2051,13 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                         circuits_ref.fetch_sub(1, Ordering::Relaxed);
                         info!(peer=%peer_id_str2, "mesh->client task ended, circuit closed");
                     };
-                    
+
                     // Run both tasks concurrently until either completes
                     tokio::select! {
                         _ = client_to_mesh => {},
                         _ = mesh_to_client => {},
                     }
-                    
+
                     info!(peer_id=%peer_id, "bidirectional stream bridge completed");
                     return Ok(());
                 }
@@ -1733,14 +2083,17 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
     match mode {
         Mode::Direct => {
             // Connect out directly
-            let mut outbound = TcpStream::connect(&target).await
+            let mut outbound = TcpStream::connect(&target)
+                .await
                 .with_context(|| format!("connect {target}"))?;
             // Success reply
             send_reply(stream, 0x00).await?;
             // Mark app as connected (online) on first successful CONNECT
             if let Some(app) = &app_state {
                 let mut guard = app.status.lock().unwrap();
-                if !matches!(guard.0.state, ConnState::Connected) { info!(target=%target, "connected (seedless) via SOCKS CONNECT"); }
+                if !matches!(guard.0.state, ConnState::Connected) {
+                    info!(target=%target, "connected (seedless) via SOCKS CONNECT");
+                }
                 guard.0.state = ConnState::Connected;
                 guard.1 = Some(StdInstant::now());
                 guard.0.last_checked_ms_ago = Some(0);
@@ -1772,22 +2125,38 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             // Parse target into host:port
             let (host, port) = parse_host_port(&target)?;
             // Build origin URL for dial (scheme decides default ports and ALPN templates)
-            let origin = if port == 443 { format!("https://{}", host) } else { format!("https://{}:{}", host, port) };
+            let origin = if port == 443 {
+                format!("https://{}", host)
+            } else {
+                format!("https://{}:{}", host, port)
+            };
             // Decoy resolution removed (catalog system removed)
             let decoy_str: Option<String> = None;
-            
+
             // Attempt dial (htx will consult decoy env if present)
-            if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.attempts = ms.attempts.saturating_add(1); } }
+            if let Some(app) = &app_state {
+                if let Ok(mut ms) = app.masked_stats.lock() {
+                    ms.attempts = ms.attempts.saturating_add(1);
+                }
+            }
             let conn = match htx::api::dial(&origin) {
                 Ok(c) => c,
                 Err(e) => {
-                    if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.failures = ms.failures.saturating_add(1); ms.last_error = Some(format!("dial: {e:?}")); } }
+                    if let Some(app) = &app_state {
+                        if let Ok(mut ms) = app.masked_stats.lock() {
+                            ms.failures = ms.failures.saturating_add(1);
+                            ms.last_error = Some(format!("dial: {e:?}"));
+                        }
+                    }
                     bail!("htx dial failed: {e:?}");
                 }
             };
             // Open inner stream and perform a CONNECT prelude to instruct the edge gateway
             let ss = conn.open_stream();
-            let prelude = format!("CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n", host, port, host, port);
+            let prelude = format!(
+                "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n\r\n",
+                host, port, host, port
+            );
             tracing::debug!(first_line=%prelude.lines().next().unwrap_or(""), "sending CONNECT prelude to edge");
             ss.write(prelude.as_bytes());
             // Wait for a 200 response before acknowledging SOCKS
@@ -1817,7 +2186,15 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
             if !ok {
                 let preview = String::from_utf8_lossy(&accum);
                 tracing::warn!(first_line=%preview.lines().next().unwrap_or(""), total=accum.len(), "no 200 from edge within timeout");
-                if let Some(app) = &app_state { if let Ok(mut ms) = app.masked_stats.lock() { ms.failures = ms.failures.saturating_add(1); ms.last_error = Some(format!("no 200 (got '{}')", preview.lines().next().unwrap_or(""))); } }
+                if let Some(app) = &app_state {
+                    if let Ok(mut ms) = app.masked_stats.lock() {
+                        ms.failures = ms.failures.saturating_add(1);
+                        ms.last_error = Some(format!(
+                            "no 200 (got '{}')",
+                            preview.lines().next().unwrap_or("")
+                        ));
+                    }
+                }
                 bail!("edge did not accept CONNECT prelude");
             }
             // Success reply to SOCKS client after edge accepted CONNECT
@@ -1834,15 +2211,33 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                     guard.0.last_target = Some(format!("{}:{}", host, port));
                     guard.0.last_decoy = decoy_str.clone();
                     // Update last_masked_connect while we still hold status lock so monitor can't observe new state without timestamp
-                    if let Ok(mut lm) = app.last_masked_connect.lock() { *lm = Some(now); }
+                    if let Ok(mut lm) = app.last_masked_connect.lock() {
+                        *lm = Some(now);
+                    }
                     // Resolve host & decoy to IPs (best effort, do not block long)
                     if let Ok(mut tip) = app.last_target_ip.lock() {
-                        if let Ok(mut iter) = (|| std::net::ToSocketAddrs::to_socket_addrs(&(format!("{}:{}", host, port))))() { if let Some(addr) = iter.find(|a| a.is_ipv4()) { *tip = Some(addr.ip().to_string()); } }
+                        if let Ok(mut iter) = (|| {
+                            std::net::ToSocketAddrs::to_socket_addrs(
+                                &(format!("{}:{}", host, port)),
+                            )
+                        })() {
+                            if let Some(addr) = iter.find(|a| a.is_ipv4()) {
+                                *tip = Some(addr.ip().to_string());
+                            }
+                        }
                     }
                     if let Some(decoy_hostport) = &decoy_str {
                         if let Some((dh, dp)) = decoy_hostport.split_once(':') {
                             if let Ok(mut dip) = app.last_decoy_ip.lock() {
-                                if let Ok(mut iter) = (|| std::net::ToSocketAddrs::to_socket_addrs(&(format!("{}:{}", dh, dp))))() { if let Some(addr) = iter.find(|a| a.is_ipv4()) { *dip = Some(addr.ip().to_string()); } }
+                                if let Ok(mut iter) = (|| {
+                                    std::net::ToSocketAddrs::to_socket_addrs(
+                                        &(format!("{}:{}", dh, dp)),
+                                    )
+                                })() {
+                                    if let Some(addr) = iter.find(|a| a.is_ipv4()) {
+                                        *dip = Some(addr.ip().to_string());
+                                    }
+                                }
                             }
                         }
                     }
@@ -1853,7 +2248,9 @@ async fn handle_client(stream: &mut TcpStream, mode: Mode, htx_client: Option<ht
                     port,
                     decoy_str.clone().unwrap_or_else(|| "(none)".into())
                 );
-                if let Ok(mut ms) = app.masked_stats.lock() { ms.successes = ms.successes.saturating_add(1); }
+                if let Ok(mut ms) = app.masked_stats.lock() {
+                    ms.successes = ms.successes.saturating_add(1);
+                }
             }
             // Emit a concise log line for operator visibility
             if let Some(d) = &decoy_str {
@@ -1903,7 +2300,9 @@ async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -
             // Read from HTX -> TCP
             if let Some(buf) = ss.try_read() {
                 // If receiver gone, exit
-                if to_tcp_tx.blocking_send(buf).is_err() { break; }
+                if to_tcp_tx.blocking_send(buf).is_err() {
+                    break;
+                }
                 progressed = true;
             }
 
@@ -1948,19 +2347,20 @@ async fn bridge_tcp_secure(stream: &mut TcpStream, ss: htx::api::SecureStream) -
 }
 
 async fn read_u8(s: &mut TcpStream) -> Result<u8> {
-    let mut b = [0u8;1];
+    let mut b = [0u8; 1];
     s.read_exact(&mut b).await?;
     Ok(b[0])
 }
 async fn read_u16(s: &mut TcpStream) -> Result<u16> {
-    let mut b = [0u8;2];
+    let mut b = [0u8; 2];
     s.read_exact(&mut b).await?;
     Ok(u16::from_be_bytes(b))
 }
 
 async fn send_reply(s: &mut TcpStream, rep: u8) -> Result<()> {
     // VER=5, REP=rep, RSV=0, ATYP=1 (IPv4), BND.ADDR=0.0.0.0, BND.PORT=0
-    s.write_all(&[0x05, rep, 0x00, 0x01, 0,0,0,0, 0,0]).await?;
+    s.write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
     Ok(())
 }
 
@@ -1969,7 +2369,11 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
     if let Some(pos) = target.rfind(':') {
         let (h, p) = target.split_at(pos);
         let port: u16 = p[1..].parse().map_err(|_| anyhow!("bad port"))?;
-        let host = if h.starts_with('[') && h.ends_with(']') { h[1..h.len()-1].to_string() } else { h.to_string() };
+        let host = if h.starts_with('[') && h.ends_with(']') {
+            h[1..h.len() - 1].to_string()
+        } else {
+            h.to_string()
+        };
         Ok((host, port))
     } else {
         // Default to 443 if port missing (shouldn't happen for valid SOCKS)

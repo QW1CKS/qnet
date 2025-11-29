@@ -8,7 +8,11 @@ pub mod sizing {
     use rand::{rngs::StdRng, Rng, SeedableRng};
 
     #[derive(Debug, Clone, Copy)]
-    pub enum Profile { Small, Webby, Bursty }
+    pub enum Profile {
+        Small,
+        Webby,
+        Bursty,
+    }
 
     pub struct Sizer {
         rng: StdRng,
@@ -29,9 +33,11 @@ pub mod sizing {
                 }
                 Profile::Webby => {
                     let bucket = self.rng.gen_range(0..100);
-                    let extra = if bucket < 70 { // 70% in 1-8KiB
+                    let extra = if bucket < 70 {
+                        // 70% in 1-8KiB
                         self.rng.gen_range(1024..=8 * 1024)
-                    } else { // tail up to 32KiB
+                    } else {
+                        // tail up to 32KiB
                         self.rng.gen_range(8 * 1024..=32 * 1024)
                     };
                     (cap + extra).min(64 * 1024)
@@ -47,11 +53,14 @@ pub mod sizing {
 
 #[cfg(feature = "stealth-mode")]
 pub mod jitter {
-    use std::time::Duration;
     use rand::{rngs::StdRng, Rng, SeedableRng};
+    use std::time::Duration;
 
     #[derive(Debug, Clone, Copy)]
-    pub enum Profile { Small, Webby }
+    pub enum Profile {
+        Small,
+        Webby,
+    }
 
     pub struct Jitter {
         rng: StdRng,
@@ -370,11 +379,20 @@ mod stealth_tests {
         let mut large = 0usize;
         for _ in 0..2000 {
             let len = s.choose_len(1500);
-            if len <= 10 * 1024 { small_or_mid += 1; } else { large += 1; }
+            if len <= 10 * 1024 {
+                small_or_mid += 1;
+            } else {
+                large += 1;
+            }
             assert!(len <= 64 * 1024);
         }
         // Expect at least 60% of samples to be <= 10KiB
-        assert!(small_or_mid as f32 / 2000.0 >= 0.60, "small_or_mid={} large={}", small_or_mid, large);
+        assert!(
+            small_or_mid as f32 / 2000.0 >= 0.60,
+            "small_or_mid={} large={}",
+            small_or_mid,
+            large
+        );
     }
 
     #[test]

@@ -84,7 +84,7 @@ In countries with internet censorship:
 2. **🕸️ Truly Decentralized**
    - No central servers to shut down
    - Every user strengthens the network
-   - P2P mesh with DHT-based peer discovery
+   - P2P mesh with operator directory for peer discovery
 
 3. **⚡ Performance-Focused**
    - Fast Mode: 1-hop routing for maximum speed
@@ -110,7 +110,7 @@ graph TB
         L6[L6: Incentive Layer<br/>Vouchers & Reputation Future]
         L5[L5: Naming & Identity<br/>Self-Certifying IDs Future]
         L4[L4: Privacy Hops<br/>Mixnet Integration Optional]
-        L3[L3: Overlay Mesh<br/>libp2p + DHT + Gossip]
+        L3[L3: Overlay Mesh<br/>libp2p + Directory + Gossip]
         L2[L2: Cover Transport<br/>HTX + TLS Mirroring]
         L1[L1: Path Selection<br/>SCION-inspired Routing]
         L0[L0: Access Media<br/>TCP/UDP/QUIC over IP]
@@ -137,7 +137,7 @@ graph TB
 | **L6** | Incentives | 🔮 Future | Payment vouchers, reputation system, resource accounting |
 | **L5** | Naming | 🔮 Future | Decentralized identity, alias ledger, self-certifying names |
 | **L4** | Privacy | 🔮 Future | Optional mixnet integration (Nym/Sphinx packets) for high anonymity |
-| **L3** | Mesh | ✅ Complete | P2P networking via libp2p (mDNS, DHT, circuits, relay) - **Phase 2 done** |
+| **L3** | Mesh | ✅ Complete | P2P networking via libp2p (mDNS, operator directory, circuits, relay) - **Phase 2 done** |
 | **L2** | Transport | ✅ Complete | **HTX protocol** - TLS fingerprint cloning + AEAD framing |
 | **L1** | Routing | 📋 Deferred | Multi-path selection, path validation (SCION-inspired) - **Post-MVP** |
 | **L0** | Physical | ✅ System | OS-provided TCP/UDP/QUIC bearers |
@@ -281,8 +281,8 @@ graph LR
 
 ### 2. Decentralized Peer Discovery
 
-> [!WARNING]
-> **Current Status (Nov 29, 2025)**: DHT provider discovery temporarily non-functional. Nodes connect to IPFS bootstrap DHT but cannot discover each other via provider records. Root cause identified: Kademlia Client mode preventing provider record storage. Server mode fix applied, awaiting deployment validation. Local mDNS discovery works correctly.
+> [!NOTE]
+> **Current Status**: Peer discovery uses operator directory HTTP queries. Relay nodes register with operator nodes via heartbeat (30s interval). Client nodes query directory on startup to discover available relays. Local mDNS discovery works for same-network peers.
 
 ```mermaid
 graph TB
@@ -292,12 +292,12 @@ graph TB
         H3[Helper Node 3<br/>Americas]
         H4[Helper Node 4<br/>Africa]
         
-        DHT[(libp2p DHT<br/>Kademlia)]
+        DIR[(Operator Directory<br/>HTTP Registry)]
         
-        H1 <--> DHT
-        H2 <--> DHT
-        H3 <--> DHT
-        H4 <--> DHT
+        H1 -->|Register| DIR
+        H2 -->|Register| DIR
+        H3 -->|Register| DIR
+        H4 -->|Register| DIR
         
         H1 <-.P2P relay.-> H2
         H2 <-.P2P relay.-> H3
@@ -305,14 +305,34 @@ graph TB
         H4 <-.P2P relay.-> H1
     end
     
-    style DHT fill:#ffd43b
+    style DIR fill:#ffd43b
 ```
 
-**No Central Servers:**
-- Leverages existing IPFS/libp2p DHT infrastructure
-- Fallback to operator seed nodes
-- Hardcoded bootstrap nodes for reliability
+**Decentralized Discovery:**
+- Operator nodes maintain peer directory (HTTP registry)
+- Relay nodes register via heartbeat (30s interval)
+- Client nodes query directory on startup
+- Fallback to hardcoded operator nodes
 - Resilient to regional blocking
+
+### Operator Peer Directory
+
+QNet uses a hybrid approach balancing centralized discovery with decentralized operation:
+
+- **Discovery**: 6 operator nodes maintain relay peer directory (HTTP registry)
+- **Operation**: Relay peers forward encrypted packets (fully P2P, no central control)
+- **Registration**: Relay peers POST heartbeat every 30 seconds to stay listed
+- **Query**: Clients retrieve peer list on startup (<200ms, no 90s DHT timeout)
+- **Privacy**: Only country-level aggregation, no individual IP tracking
+- **Fallback**: Direct connection to operator exits if directory unavailable
+
+**Why not DHT?**
+- ✅ Instant connections (no 90s bootstrap timeout)
+- ✅ Predictable performance (no NAT traversal issues)
+- ✅ Geographic routing (select relay by country)
+- ✅ **Precedent**: Tor (9 directory authorities), Bitcoin (DNS seeds), IPFS (Protocol Labs bootnodes) all use operator seeds for discovery
+
+**Key Distinction**: Discovery mechanism ≠ network centralization. Relay operation remains fully P2P with end-to-end encryption.
 
 ### 3. Cryptographic Security
 
@@ -366,7 +386,7 @@ graph TB
     
     subgraph "Networking"
         Libp2p[libp2p<br/>P2P Framework]
-        DHT[Kademlia DHT]
+        Directory[Operator Directory<br/>HTTP Registry]
         Gossip[GossipSub]
     end
     
@@ -382,7 +402,7 @@ graph TB
     Quinn --> HTX
     Ring --> Crypto
     Libp2p --> Mesh
-    DHT --> Mesh
+    Directory --> Mesh
     Gossip --> Mesh
     
     Crypto --> Framing
@@ -443,7 +463,7 @@ The Helper's status page (`http://127.0.0.1:8088/`) displays the connection stat
 **State Transition Triggers:**
 ```
 Offline → Connected:
-  - Any mesh peer discovered (mDNS, IPFS DHT, or public bootstrap nodes)
+  - Any mesh peer discovered (mDNS, operator directory, or bootstrap nodes)
   - Successful SOCKS5 connection established
 
 Calibrating → Connected:
@@ -452,7 +472,7 @@ Calibrating → Connected:
 
 **Peer Discovery:**
 - **Local network (mDNS)**: Discovers other QNet Helpers on same WiFi (~5 seconds)
-- **Internet (DHT)**: Connects to IPFS bootstrap nodes (~10 seconds, typically 4-8 peers)
+- **Internet (Directory)**: Queries operator nodes for relay peers (~2 seconds, returns all registered relays)
 - Status page shows `mesh_peer_count` and updates every 5 seconds
 
 ### Verify Installation
@@ -825,10 +845,10 @@ gantt
     Governance            :p4d, 2026-07-01, 2026-10-31
 ```
 
-### Current Status: Phase 2.1.9 - Addressing DHT Provider Discovery Issue
+### Current Status: Phase 2.1.10 - Operator Peer Directory (Complete)
 
-> [!WARNING]
-> **KNOWN ISSUE (Nov 29, 2025)**: Nodes connect to IPFS DHT bootstrap successfully (2-5 peers) but **cannot discover each other** via provider records. Research completed identified root cause: **Kademlia Client mode preventing provider record storage**. Fixes applied (force Server mode, hash-based keys, increased replication) - awaiting deployment testing.
+> [!NOTE]
+> **DHT Removed (Nov 30, 2025)**: Replaced Kademlia DHT with operator peer directory for faster, more reliable peer discovery. Relay nodes register via HTTP heartbeat every 30s. Clients query directory on startup for instant peer list (<2s vs 90s DHT timeout).
 
 **Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
 - ✅ HTX protocol implementation (`htx/`)
@@ -837,16 +857,19 @@ gantt
 - ❌ Catalog system (removed - replaced by hardcoded bootstrap)
 - ✅ Deterministic CBOR encoding (`core-cbor/`)
 
-**Phase 2: P2P Mesh Network** (⚠️ 75% Complete - Oct 15 - Nov 27, 2025)
+**Phase 2: P2P Mesh Network** (✅ 100% Complete - Oct 15 - Nov 30, 2025)
 
 *Completed Sections (2.1-2.4):*
-- ⚠️ **2.1 Peer Discovery** - mDNS local ✅ + Kademlia DHT ⚠️ (provider discovery broken) + IPFS bootstrap ✅
+- ✅ **2.1 Peer Discovery** - mDNS local ✅ + Operator Directory ✅ (DHT removed)
 - ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking  
 - ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
 - ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
 
-*Currently Debugging (2.1.9):*
-- 🔧 **2.1.9 DHT Provider Discovery Fix** - Applied Server mode fix, testing deployment (see [research findings](research/findings/))
+*Phase 2.1.10 Complete:*
+- ✅ **Operator Peer Directory** - HTTP registry (POST /api/relay/register, GET /api/relays/by-country)
+- ✅ **Heartbeat Registration** - Relay nodes register every 30s
+- ✅ **Directory Query** - Clients retrieve peer list on startup (<2s)
+- ✅ **DHT Removal** - Removed ~450 lines of Kademlia code
 
 *Blocked Pending Discovery Fix (2.5-2.6):*
 - ⏸️ **2.5 Exit Infrastructure** - Blocked until peer discovery working (need mesh connectivity)

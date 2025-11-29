@@ -128,7 +128,7 @@ pub fn open_inner_ekm_only(
 ) -> Result<InnerConn, Error> {
     let ctx = exporter_context(template, caps);
     let ekm = tls.export(b"qnet inner", &ctx, 32)?; // 32B exporter secret
-    // prk = HKDF-Extract(salt=ekm, ikm="ekm-only")
+                                                    // prk = HKDF-Extract(salt=ekm, ikm="ekm-only")
     let prk = crypto::hkdf::extract(&ekm, b"ekm-only");
     // Derive directional keys deterministically
     let c2s: [u8; 32] = crypto::hkdf::expand(&prk, b"c2s|key");

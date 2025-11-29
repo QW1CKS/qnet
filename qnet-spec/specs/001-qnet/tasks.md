@@ -4,7 +4,80 @@
 
 ---
 
-## 🔥 URGENT: Phase 2.1.9 - Fix DHT Provider Discovery (Active - Nov 29, 2025)
+## ⚠️ ARCHIVED: Phase 2.1.9 - DHT Provider Discovery (Superseded Jan 2025)
+
+> **STATUS**: This task was superseded by Task 2.1.10 (Operator Directory). DHT-based peer discovery has been removed in favor of a simpler operator directory HTTP registry model. See Task 2.1.10 below for current implementation.
+
+**Historical Context**: Attempted to fix DHT provider discovery but determined DHT complexity exceeded project needs. Removed ~450 lines of Kademlia code, replaced with ~480 lines of operator directory implementation.
+
+---
+
+## 🚀 ACTIVE: Phase 2.1.10 - Operator Directory Peer Discovery (Jan 2025)
+
+**Context**: Replaced Kademlia DHT with lightweight HTTP-based peer registry. Relay nodes register via heartbeat, client nodes query on startup.
+
+**Implementation Complete**: All tasks finished, documentation updates in progress.
+
+### 2.1.10 Operator Directory Implementation ✅ COMPLETE
+**Goal**: Replace DHT with operator directory HTTP registry for peer discovery.
+
+#### 2.1.10.1 Remove DHT Code ✅ COMPLETE
+- [x] Remove Kademlia imports from `crates/core-mesh/src/discovery.rs`
+- [x] Remove `kademlia` field from DiscoveryBehavior
+- [x] Remove `public_libp2p_seeds()`, `discover_peers()`, `peer_count()`, `get_peers()` methods
+- [x] Remove "kad" feature from `crates/core-mesh/Cargo.toml`
+- [x] Remove DHT event handling from `apps/stealth-browser/src/main.rs` (~150 lines)
+- [x] Update `test_load_bootstrap_nodes_returns_operator_nodes()` test
+- [x] Simplify `crates/core-mesh/examples/mesh_discovery.rs` (disabled notice)
+
+#### 2.1.10.2 Create Operator Directory Module ✅ COMPLETE
+- [x] Create `apps/stealth-browser/src/directory.rs` module
+- [x] Implement `RelayInfo` struct (peer_id, addrs, country, capabilities, timestamps)
+- [x] Implement `PeerDirectory` struct with HashMap storage
+- [x] Add `register_peer()` method (POST /api/relay/register handler)
+- [x] Add `get_relays_by_country()` method (GET /api/relays/by-country handler)
+- [x] Add `prune_stale_peers()` method (120s TTL)
+- [x] Add unit tests (8 tests covering registration, updates, queries, staleness, pruning)
+
+#### 2.1.10.3 Add Directory Query on Startup ✅ COMPLETE
+- [x] Implement `query_operator_directory()` async function in `main.rs`
+- [x] Add 3-tier fallback: directory → disk cache (TODO) → hardcoded operators
+- [x] Integrate into `spawn_mesh_discovery()` before swarm event loop
+- [x] Dial discovered relay peers from directory response
+- [x] Add `extract_http_url_from_multiaddr()` helper for IP/port extraction
+
+#### 2.1.10.4 Add Heartbeat Loop ✅ COMPLETE
+- [x] Implement `spawn_heartbeat_loop()` function in `main.rs`
+- [x] POST to `/api/relay/register` every 30 seconds
+- [x] Only spawn in relay-only mode (check config)
+- [x] Include local peer_id, addrs, country (GeoIP TODO) in payload
+- [x] Use `reqwest` HTTP client with "json" feature
+
+#### 2.1.10.5 Update Tests ✅ COMPLETE
+- [x] Run `cargo test -p core-mesh --lib` (passing: 1 passed, 0 failed)
+- [x] Verify workspace compiles: `cargo check --workspace --quiet` (success with warnings)
+- [x] Warnings about unused directory methods expected (used by operator nodes)
+
+#### 2.1.10.6 Update Documentation ⏳ IN PROGRESS
+- [x] Update README.md (remove DHT warnings, add operator directory section)
+- [x] Update ARCHITECTURE.md (Layer 3 description)
+- [x] Update qnet-spec/specs/001-qnet/spec.md (Section 3.3 Bootstrap Strategy)
+- [x] Update qnet-spec/specs/001-qnet/tasks.md (archive Task 2.1.9, add Task 2.1.10)
+- [ ] Update qnet-spec/docs/helper.md (peer discovery section)
+- [ ] Update qnet-spec/docs/extension.md (status API fields if changed)
+- [ ] Update research doc with implementation checkmarks
+
+#### 2.1.10.7 Final Testing & Polish 📋 PENDING
+- [ ] Run `cargo fmt` (format all code)
+- [ ] Run `cargo clippy --workspace` (lint checks, expect warnings)
+- [ ] Run `cargo test --workspace` (full test suite)
+- [ ] Run `cargo build --release -p stealth-browser` (verify production build)
+- [ ] Test locally: Helper starts without crashes, logs show directory integration
+- [ ] Commit changes to main branch
+
+---
+
+## 🔥 HISTORICAL: Phase 2.1.9 - Fix DHT Provider Discovery (Archived Nov 29, 2025)
 
 **Context**: Two QNet nodes (Windows + DigitalOcean droplet) connect to public IPFS DHT bootstrap successfully (both see 2-5 DHT peers), but **do NOT discover each other** via provider records. `get_providers()` queries return zero results.
 

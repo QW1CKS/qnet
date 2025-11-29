@@ -1,6 +1,9 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use htx::api::dial_inproc_secure;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 fn bench_mixed(c: &mut Criterion) {
@@ -21,7 +24,9 @@ fn bench_mixed(c: &mut Criterion) {
             while rflag.load(Ordering::Relaxed) {
                 if let Some(s) = server.accept_stream(5) {
                     std::thread::spawn(move || {
-                        while let Some(buf) = s.read() { s.write(&buf); }
+                        while let Some(buf) = s.read() {
+                            s.write(&buf);
+                        }
                     });
                 }
             }
@@ -34,7 +39,12 @@ fn bench_mixed(c: &mut Criterion) {
                 let sh = c1.open_stream();
                 sh.write(&small);
                 let mut got = 0usize;
-                while let Some(buf) = sh.read() { got += buf.len(); if got >= small.len() { break; } }
+                while let Some(buf) = sh.read() {
+                    got += buf.len();
+                    if got >= small.len() {
+                        break;
+                    }
+                }
                 got
             });
             let c2 = client.clone();
@@ -43,7 +53,12 @@ fn bench_mixed(c: &mut Criterion) {
                 sh.write(&large);
                 let mut got = 0usize;
                 let start = std::time::Instant::now();
-                while let Some(buf) = sh.read() { got += buf.len(); if got >= large.len() || start.elapsed() > Duration::from_secs(3) { break; } }
+                while let Some(buf) = sh.read() {
+                    got += buf.len();
+                    if got >= large.len() || start.elapsed() > Duration::from_secs(3) {
+                        break;
+                    }
+                }
                 got
             });
             let small_done = h_small.join().unwrap();

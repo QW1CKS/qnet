@@ -22,10 +22,10 @@ fn main() {
                     0x01, 0x00, // type = icon
                     0x01, 0x00, // count = 1
                     // Directory entry (16 bytes)
-                    0x01,       // width = 1
-                    0x01,       // height = 1
-                    0x00,       // color count
-                    0x00,       // reserved
+                    0x01, // width = 1
+                    0x01, // height = 1
+                    0x00, // color count
+                    0x00, // reserved
                     0x01, 0x00, // planes
                     0x20, 0x00, // bitcount = 32
                     0x30, 0x00, 0x00, 0x00, // bytes in image = 48
