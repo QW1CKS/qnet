@@ -184,9 +184,20 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     //     ),
     // ]
     
-    // For now, return empty - network will bootstrap via public libp2p DHT only
-    log::info!("No operator seeds configured yet; using public libp2p DHT for bootstrap");
-    Vec::new()
+    // Direct peering configuration for testing (Nov 29 2025)
+    // Windows node: 169.224.95.142
+    // Droplet node: 138.197.176.64
+    // Using standard libp2p port 4001
+    vec![
+        BootstrapNode::new(
+            "12D3KooWFVDqDyzVzRzkYyn6oDFJyTSSJ9kmGFstvcGihH7UtRRv".parse().unwrap(), // Windows peer ID
+            "/ip4/169.224.95.142/tcp/4001".parse().unwrap(),
+        ),
+        BootstrapNode::new(
+            "12D3KooWAmMZjcPQEa3wTN4KU9BEXmUdQRXTtpFui4FE7yzCmGAS".parse().unwrap(), // Droplet peer ID
+            "/ip4/138.197.176.64/tcp/4001".parse().unwrap(),
+        ),
+    ]
 }
 
 /// Hardcoded seed nodes for resilience when catalog is unavailable.
@@ -352,8 +363,10 @@ impl DiscoveryBehavior {
         // Re-publish provider records every 30 minutes to handle churn
         kad_config.set_provider_publication_interval(Some(std::time::Duration::from_secs(1800)));
         
-        // Query timeout (default 10s might be too short over internet)
-        kad_config.set_query_timeout(std::time::Duration::from_secs(30));
+        // Query timeout: extended to 90s for bootstrap queries over unstable IPFS DHT connections
+        // Research: Bootstrap needs time to populate k-buckets when connecting to random IPFS peers
+        // 30s was too short when peers frequently disconnect (seen in Nov 29 droplet testing)
+        kad_config.set_query_timeout(std::time::Duration::from_secs(90));
         
         // Increase replication factor for better record propagation (research finding)
         // Default k=20, higher values = more DHT nodes store provider records

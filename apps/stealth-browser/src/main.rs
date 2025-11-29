@@ -772,11 +772,11 @@ fn spawn_mesh_discovery(
             
             let swarm_config = libp2p::swarm::Config::with_async_std_executor()
                 .with_idle_connection_timeout(std::time::Duration::from_secs(60));
-            
             let mut swarm = Swarm::new(transport, discovery, peer_id, swarm_config);
             
-            // Listen on all interfaces
-            let listen_addr = "/ip4/0.0.0.0/tcp/0".parse().unwrap();
+            // Listen on all interfaces with fixed port 4001 for direct peering
+            // Changed from tcp/0 (dynamic) to tcp/4001 (fixed) for reliable bootstrap
+            let listen_addr = "/ip4/0.0.0.0/tcp/4001".parse().unwrap();
             match swarm.listen_on(listen_addr) {
                 Ok(_) => info!("mesh: Starting listeners"),
                 Err(e) => {
