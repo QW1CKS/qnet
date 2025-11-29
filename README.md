@@ -281,7 +281,8 @@ graph LR
 
 ### 2. Decentralized Peer Discovery
 
-> **⚠️ Current Status (Nov 29, 2025)**: DHT provider discovery temporarily non-functional. Nodes connect to IPFS bootstrap DHT but cannot discover each other via provider records. Root cause identified: Kademlia Client mode preventing provider record storage. Server mode fix applied, awaiting deployment validation. Local mDNS discovery works correctly.
+> [!WARNING]
+> **Current Status (Nov 29, 2025)**: DHT provider discovery temporarily non-functional. Nodes connect to IPFS bootstrap DHT but cannot discover each other via provider records. Root cause identified: Kademlia Client mode preventing provider record storage. Server mode fix applied, awaiting deployment validation. Local mDNS discovery works correctly.
 
 ```mermaid
 graph TB
@@ -826,7 +827,8 @@ gantt
 
 ### Current Status: Phase 2.1.9 - Addressing DHT Provider Discovery Issue
 
-> **⚠️ KNOWN ISSUE (Nov 29, 2025)**: Nodes connect to IPFS DHT bootstrap successfully (2-5 peers) but **cannot discover each other** via provider records. Research completed ([Perplexity AI findings](research/findings/#%20Research%20Super-Prompt_%20DHT%20Provider%20Discovery%20Fa.md)) identified root cause: **Kademlia Client mode preventing provider record storage**. Fixes applied (force Server mode, hash-based keys, increased replication) - awaiting deployment testing.
+> [!WARNING]
+> **KNOWN ISSUE (Nov 29, 2025)**: Nodes connect to IPFS DHT bootstrap successfully (2-5 peers) but **cannot discover each other** via provider records. Research completed ([Perplexity AI findings](research/findings/#%20Research%20Super-Prompt_%20DHT%20Provider%20Discovery%20Fa.md)) identified root cause: **Kademlia Client mode preventing provider record storage**. Fixes applied (force Server mode, hash-based keys, increased replication) - awaiting deployment testing.
 
 **Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
 - ✅ HTX protocol implementation (`htx/`)
