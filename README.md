@@ -281,6 +281,8 @@ graph LR
 
 ### 2. Decentralized Peer Discovery
 
+> **⚠️ Current Status (Nov 29, 2025)**: DHT provider discovery temporarily non-functional. Nodes connect to IPFS bootstrap DHT but cannot discover each other via provider records. Root cause identified: Kademlia Client mode preventing provider record storage. Server mode fix applied, awaiting deployment validation. Local mDNS discovery works correctly.
+
 ```mermaid
 graph TB
     subgraph "Global P2P Mesh"
@@ -822,7 +824,9 @@ gantt
     Governance            :p4d, 2026-07-01, 2026-10-31
 ```
 
-### Current Status: Phase 2.4 Complete → Phase 2.5 Exit Infrastructure (Active)
+### Current Status: Phase 2.1.9 - Addressing DHT Provider Discovery Issue
+
+> **⚠️ KNOWN ISSUE (Nov 29, 2025)**: Nodes connect to IPFS DHT bootstrap successfully (2-5 peers) but **cannot discover each other** via provider records. Research completed ([Perplexity AI findings](research/findings/#%20Research%20Super-Prompt_%20DHT%20Provider%20Discovery%20Fa.md)) identified root cause: **Kademlia Client mode preventing provider record storage**. Fixes applied (force Server mode, hash-based keys, increased replication) - awaiting deployment testing.
 
 **Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
 - ✅ HTX protocol implementation (`htx/`)
@@ -831,19 +835,20 @@ gantt
 - ❌ Catalog system (removed - replaced by hardcoded bootstrap)
 - ✅ Deterministic CBOR encoding (`core-cbor/`)
 
-**Phase 2: P2P Mesh Network** (✅ 85% Complete - Oct 15 - Nov 27, 2025)
+**Phase 2: P2P Mesh Network** (⚠️ 75% Complete - Oct 15 - Nov 27, 2025)
 
 *Completed Sections (2.1-2.4):*
-- ✅ **2.1 Peer Discovery** - mDNS local + Kademlia DHT + public IPFS bootstrap
+- ⚠️ **2.1 Peer Discovery** - mDNS local ✅ + Kademlia DHT ⚠️ (provider discovery broken) + IPFS bootstrap ✅
 - ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking  
 - ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
 - ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
 
-*In Progress (2.5):*
-- 🚧 **2.5 Exit Infrastructure** - Exit node deployment scripts, bandwidth policies, operator droplets
+*Currently Debugging (2.1.9):*
+- 🔧 **2.1.9 DHT Provider Discovery Fix** - Applied Server mode fix, testing deployment (see [research findings](research/findings/))
 
-*Pending (2.6):*
-- 📋 **2.6 Production Checkpoint** - Security audit, 24hr stability test, performance validation
+*Blocked Pending Discovery Fix (2.5-2.6):*
+- ⏸️ **2.5 Exit Infrastructure** - Blocked until peer discovery working (need mesh connectivity)
+- ⏸️ **2.6 Production Checkpoint** - Blocked until Phase 2.1 fully operational
 
 **Phase 3: User Experience** (📋 0% - Starting Dec 2025)
 - 📋 Browser extension UI (React/Preact)
