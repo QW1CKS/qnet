@@ -755,6 +755,11 @@ struct AppState {
     directory: directory::PeerDirectory,
     // Helper mode (client/relay/bootstrap/exit/super) (Task 2.1.11.3)
     helper_mode: HelperMode,
+    // Exit node statistics (Task 2.1.11.5)
+    exit_requests_total: Arc<AtomicU64>,
+    exit_requests_success: Arc<AtomicU64>,
+    exit_requests_blocked: Arc<AtomicU64>,
+    exit_bandwidth_bytes: Arc<AtomicU64>,
 }
 
 /// Commands sent from SOCKS5 handler (Tokio) to Swarm event loop (async-std)
@@ -852,6 +857,11 @@ impl AppState {
             mesh_commands: mesh_tx,
             directory: directory::PeerDirectory::new(), // Task 2.1.11.1
             helper_mode: cfg.helper_mode, // Task 2.1.11.3
+            // Exit node statistics (Task 2.1.11.5)
+            exit_requests_total: Arc::new(AtomicU64::new(0)),
+            exit_requests_success: Arc::new(AtomicU64::new(0)),
+            exit_requests_blocked: Arc::new(AtomicU64::new(0)),
+            exit_bandwidth_bytes: Arc::new(AtomicU64::new(0)),
         };
 
         (state, mesh_rx)
@@ -1750,6 +1760,17 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         HelperMode::Exit => "exit",
         HelperMode::Super => "super",
     });
+    
+    // Task 2.1.11.5: Exit node statistics (only included if mode supports exit)
+    if app.helper_mode.supports_exit() {
+        json["exit_stats"] = serde_json::json!({
+            "requests_total": app.exit_requests_total.load(Ordering::Relaxed),
+            "requests_success": app.exit_requests_success.load(Ordering::Relaxed),
+            "requests_blocked": app.exit_requests_blocked.load(Ordering::Relaxed),
+            "bandwidth_bytes": app.exit_bandwidth_bytes.load(Ordering::Relaxed),
+        });
+    }
+    
     json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
 
     // Distinguish bootstrap peers (IPFS) from QNet mesh peers
@@ -2299,6 +2320,55 @@ async fn handle_client(
                     warn!("stream open timeout");
                     send_reply(stream, 0x04).await?; // Host unreachable
                     bail!("peer stream timeout");
+                }
+            }
+        }
+    }
+
+    // Task 2.1.11.5: Exit node handling for non-.qnet destinations
+    // When running in exit/super mode, forward traffic directly to internet
+    if let Some(app) = &app_state {
+        if app.helper_mode.supports_exit() && !target.contains(".qnet") {
+            // Parse host:port for exit validation
+            let (host, port) = parse_host_port(&target)?;
+            
+            // Increment total request counter
+            app.exit_requests_total.fetch_add(1, Ordering::Relaxed);
+            
+            // Validate destination against exit policy (SSRF prevention, port restrictions)
+            let exit_config = exit::ExitConfig::default();
+            if let Err(e) = exit::validate_destination(&host, port, &exit_config) {
+                warn!(target=%target, error=?e, "exit: destination blocked by policy");
+                app.exit_requests_blocked.fetch_add(1, Ordering::Relaxed);
+                send_reply(stream, 0x02).await?; // Connection not allowed
+                bail!("exit blocked: {}", e);
+            }
+            
+            // Connect to destination
+            info!(target=%target, "exit: forwarding to internet");
+            match TcpStream::connect(&target).await {
+                Ok(mut outbound) => {
+                    // Success reply
+                    send_reply(stream, 0x00).await?;
+                    
+                    // Bridge bidirectionally and track bandwidth
+                    match tokio::io::copy_bidirectional(stream, &mut outbound).await {
+                        Ok((to_dest, from_dest)) => {
+                            let total_bytes = to_dest + from_dest;
+                            app.exit_bandwidth_bytes.fetch_add(total_bytes, Ordering::Relaxed);
+                            app.exit_requests_success.fetch_add(1, Ordering::Relaxed);
+                            info!(target=%target, bytes=total_bytes, "exit: connection completed");
+                        }
+                        Err(e) => {
+                            warn!(target=%target, error=?e, "exit: bidirectional copy failed");
+                        }
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!(target=%target, error=?e, "exit: connection failed");
+                    send_reply(stream, 0x04).await?; // Host unreachable
+                    bail!("exit connect failed: {}", e);
                 }
             }
         }

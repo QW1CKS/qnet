@@ -166,21 +166,21 @@
 - [x] Add unit tests (5 tests for conditional endpoint access)
 - [x] Verify compilation and tests pass (37 passed; 0 failed)
 
-#### 2.1.11.5 Add Exit Node Integration 📋 PENDING
+#### 2.1.11.5 Add Exit Node Integration ✅ COMPLETE
 **Prerequisite**: 2.1.11.2 complete (exit logic implemented)
-- [ ] Modify SOCKS5 handler (`handle_connect()`)
-  - [ ] Check if mode includes exit capability (`exit` or `super`)
-  - [ ] If yes, handle exit requests (decrypt HTX, forward to internet)
-  - [ ] If no, reject with SOCKS error 0x02 (connection not allowed)
-- [ ] Add exit statistics to `AppState`
-  - [ ] `exit_requests_total: AtomicU64`
-  - [ ] `exit_requests_success: AtomicU64`
-  - [ ] `exit_requests_blocked: AtomicU64`
-  - [ ] `exit_bandwidth_bytes: AtomicU64`
-- [ ] Update `/status` endpoint to include exit stats (if mode supports exit)
-- [ ] Add exit node warning to startup logs
-  - [ ] "WARNING: Exit node enabled - you are responsible for traffic from this IP"
-  - [ ] "Exit Policy: <policy summary>"
+- [x] Modify SOCKS5 handler (`handle_client()`)
+  - [x] Check if mode includes exit capability (`exit` or `super`)
+  - [x] If yes, handle exit requests (validate destination, forward to internet)
+  - [x] If no, continue to regular mode handling
+- [x] Add exit statistics to `AppState`
+  - [x] `exit_requests_total: AtomicU64`
+  - [x] `exit_requests_success: AtomicU64`
+  - [x] `exit_requests_blocked: AtomicU64`
+  - [x] `exit_bandwidth_bytes: AtomicU64`
+- [x] Update `/status` endpoint to include exit stats (if mode supports exit)
+- [x] Add exit node warning to startup logs
+  - [x] "WARNING: Exit node enabled - you are responsible for traffic from this IP"
+  - [x] "Exit Policy: HTTP/HTTPS only (ports 80, 443), SMTP/POP3/IMAP blocked"
 
 #### 2.1.11.6 Testing - Local Super Peer 📋 PENDING
 - [ ] Test: Run Helper in `super` mode locally

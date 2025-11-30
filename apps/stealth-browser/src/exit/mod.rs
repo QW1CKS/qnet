@@ -32,6 +32,7 @@ mod validator;
 pub use config::ExitConfig;
 pub use errors::{ExitError, Result};
 pub use handler::handle_exit_connection;
+pub use validator::validate_destination;
 
 use std::sync::Arc;
 
