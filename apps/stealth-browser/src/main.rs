@@ -13,6 +13,7 @@ use tracing_appender::rolling;
 use tracing_subscriber::EnvFilter;
 
 mod directory;
+mod exit;
 
 // Instrumentation for status server diagnostics
 static STATUS_CONN_ACTIVE: AtomicUsize = AtomicUsize::new(0);

@@ -6004,6 +6004,7 @@ dependencies = [
  "futures",
  "hex",
  "html-escape",
+ "httparse",
  "htx",
  "libp2p",
  "memchr",

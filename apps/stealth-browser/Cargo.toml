@@ -24,6 +24,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time",
 # HTTP client used by the Tauri command to fetch via SOCKS
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "socks", "json"] }
 
+# HTTP CONNECT parsing for exit node (task 2.1.11.2)
+httparse = "1.8"
+
 # Placeholders for future integration
 htx = { path = "../../crates/htx", features = ["rustls-config", "stealth-mode"] }
 core-framing = { path = "../../crates/core-framing" }
