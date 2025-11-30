@@ -18,7 +18,7 @@
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 - [What is QNet?](#-what-is-qnet)
 - [Why QNet?](#-why-qnet)
 - [Architecture Overview](#-architecture-overview)
@@ -34,23 +34,11 @@
 
 ---
 
-## 🧐 What is QNet?
+## What is QNet?
 
 QNet is a **next-generation decentralized overlay network** engineered to provide censorship-resistant, privacy-preserving internet access from anywhere in the world. Unlike traditional VPNs or proxies, QNet uses advanced traffic masking techniques to make your connections completely indistinguishable from normal HTTPS traffic to popular websites.
 
 ### The Core Problem We Solve
-
-```mermaid
-graph LR
-    A[User] -->|Traditional VPN| B[VPN Server]
-    B -->|Easy to Block| C[Censored Internet]
-    
-    D[User] -->|QNet| E[Disguised as trusted domain]
-    E -->|Unblockable| F[Free Internet]
-    
-    style B fill:#ff6b6b
-    style E fill:#51cf66
-```
 
 In countries with internet censorship:
 - **VPNs are blocked** by detecting encrypted traffic patterns
@@ -61,37 +49,37 @@ In countries with internet censorship:
 
 ---
 
-## 🎯 Why QNet?
+## Why QNet?
 
 ### QNet vs. Traditional Solutions
 
 | Feature | VPN | Tor | Proxy | **QNet** |
 |---------|-----|-----|-------|----------|
-| **Decentralized** | ❌ No | ✅ Yes | ❌ No | ✅ Yes |
-| **Censorship Resistant** | ❌ Easy to block | ⚠️ Can be blocked | ❌ Easy to block | ✅ Unblockable |
-| **Performance** | ✅ Fast | ❌ Slow | ✅ Fast | ✅ Fast |
-| **Traffic Masking** | ❌ Obvious VPN pattern | ⚠️ Detectable | ❌ Detectable | ✅ Perfect disguise |
-| **No Single Point of Failure** | ❌ Central servers | ✅ Distributed | ❌ Central proxy | ✅ P2P mesh |
-| **Privacy** | ⚠️ Trust required | ✅ High | ❌ Low | ✅ High |
+| **Decentralized** | No | Yes | No | **Yes** |
+| **Censorship Resistant** | Easy to block | Can be blocked | Easy to block | **Unblockable** |
+| **Performance** | Fast | Slow | Fast | **Fast** |
+| **Traffic Masking** | Obvious VPN pattern | Detectable | Detectable | **Perfect disguise** |
+| **No Single Point of Failure** | Central servers | Distributed | Central proxy | **P2P mesh** |
+| **Privacy** | Trust required | High | Low | **High** |
 
 ### Key Advantages
 
-1. **🎭 Perfect Traffic Disguise (HTX Protocol)**
+1. **Perfect Traffic Disguise (HTX Protocol)**
    - Clones TLS fingerprints of popular sites (JA3, ALPN, cipher suites)
    - Traffic analysis shows normal HTTPS to trusted domains
    - Impossible to distinguish from legitimate traffic without breaking TLS
 
-2. **🕸️ Truly Decentralized**
+2. **Truly Decentralized**
    - No central servers to shut down
    - Every user strengthens the network
    - P2P mesh with operator directory for peer discovery
 
-3. **⚡ Performance-Focused**
+3. **Performance-Focused**
    - Fast Mode: 1-hop routing for maximum speed
    - Privacy Mode: 3-hop routing for anonymity
    - QUIC support for improved latency
 
-4. **🔒 Defense-in-Depth Security**
+4. **Defense-in-Depth Security**
    - ChaCha20-Poly1305 AEAD encryption
    - Noise XK protocol for forward secrecy
    - Ed25519 signatures for peer identity
@@ -99,30 +87,28 @@ In countries with internet censorship:
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 QNet implements a **7-layer protocol stack** inspired by the OSI model, designed specifically for censorship resistance:
 
 ```mermaid
-graph TB
-    subgraph "QNet 7-Layer Architecture"
-        L7[L7: Application<br/>Browser Extension + SOCKS5]
-        L6[L6: Incentive Layer<br/>Vouchers & Reputation Future]
-        L5[L5: Naming & Identity<br/>Self-Certifying IDs Future]
-        L4[L4: Privacy Hops<br/>Mixnet Integration Optional]
-        L3[L3: Overlay Mesh<br/>libp2p + Directory + Gossip]
-        L2[L2: Cover Transport<br/>HTX + TLS Mirroring]
-        L1[L1: Path Selection<br/>SCION-inspired Routing]
-        L0[L0: Access Media<br/>TCP/UDP/QUIC over IP]
-    end
+graph BT
+    L0["L0: Access Media<br/>━━━━━━━━━━━━━<br/>TCP/UDP/QUIC over IP"]
+    L1["L1: Path Selection<br/>━━━━━━━━━━━━━<br/>SCION-inspired Routing<br/>Deferred"]
+    L2["L2: Cover Transport<br/>━━━━━━━━━━━━━<br/>HTX + TLS Mirroring<br/>Complete"]
+    L3["L3: Overlay Mesh<br/>━━━━━━━━━━━━━<br/>libp2p + Directory + Gossip<br/>Complete"]
+    L4["L4: Privacy Hops<br/>━━━━━━━━━━━━━<br/>Mixnet Integration Optional<br/>Future"]
+    L5["L5: Naming & Identity<br/>━━━━━━━━━━━━━<br/>Self-Certifying IDs<br/>Future"]
+    L6["L6: Incentive Layer<br/>━━━━━━━━━━━━━<br/>Vouchers & Reputation<br/>Future"]
+    L7["L7: Application<br/>━━━━━━━━━━━━━<br/>Browser Extension + SOCKS5<br/>Complete"]
     
-    L7 --> L6
-    L6 --> L5
-    L5 --> L4
-    L4 --> L3
-    L3 --> L2
-    L2 --> L1
-    L1 --> L0
+    L0 --> L1
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L4 --> L5
+    L5 --> L6
+    L6 --> L7
     
     style L2 fill:#ffd43b,stroke:#333,stroke-width:3px
     style L3 fill:#74c0fc,stroke:#333,stroke-width:3px
@@ -133,31 +119,31 @@ graph TB
 
 | Layer | Component | Status | Description |
 |-------|-----------|--------|-------------|
-| **L7** | Application | ✅ Complete | `stealth-browser` Helper (SOCKS5 proxy) + Browser Extension UI |
-| **L6** | Incentives | 🔮 Future | Payment vouchers, reputation system, resource accounting |
-| **L5** | Naming | 🔮 Future | Decentralized identity, alias ledger, self-certifying names |
-| **L4** | Privacy | 🔮 Future | Optional mixnet integration (Nym/Sphinx packets) for high anonymity |
-| **L3** | Mesh | ✅ Complete | P2P networking via libp2p (mDNS, operator directory, circuits, relay) - **Phase 2 done** |
-| **L2** | Transport | ✅ Complete | **HTX protocol** - TLS fingerprint cloning + AEAD framing |
-| **L1** | Routing | 📋 Deferred | Multi-path selection, path validation (SCION-inspired) - **Post-MVP** |
-| **L0** | Physical | ✅ System | OS-provided TCP/UDP/QUIC bearers |
+| **L7** | Application | Complete | `stealth-browser` Helper (SOCKS5 proxy) + Browser Extension UI |
+| **L6** | Incentives | Future | Payment vouchers, reputation system, resource accounting |
+| **L5** | Naming | Future | Decentralized identity, alias ledger, self-certifying names |
+| **L4** | Privacy | Future | Optional mixnet integration (Nym/Sphinx packets) for high anonymity |
+| **L3** | Mesh | Complete | P2P networking via libp2p (mDNS, operator directory, circuits, relay) - **Phase 2 done** |
+| **L2** | Transport | Complete | **HTX protocol** - TLS fingerprint cloning + AEAD framing |
+| **L1** | Routing | Deferred | Multi-path selection, path validation (SCION-inspired) - **Post-MVP** |
+| **L0** | Physical | System | OS-provided TCP/UDP/QUIC bearers |
 
 > **Note on L1 Routing**: SCION-inspired path-aware routing is architecturally fundamental for production (path validation, multi-path redundancy, geographic diversity). Currently deferred post-MVP to prioritize user delivery (Phase 3: Browser Extension). Current implementation relies on libp2p's built-in routing (L3) over standard IP (L0), which works but lacks the cryptographic path validation and explicit multi-path control that L1 will provide. **Planned for Phase 4** after extension deployment.
 
 ---
 
-## 🚀 How It Works
+## How It Works
 
 ### High-Level Flow
 
 ```mermaid
 sequenceDiagram
-    participant User as 🧑 User Browser
-    participant Ext as 📱 Extension
-    participant Helper as 💻 Local Helper
-    participant Mesh as 🕸️ QNet Mesh
-    participant Exit as 🚪 Exit Node
-    participant Target as 🌐 amazon.com
+    participant User as User Browser
+    participant Ext as Extension
+    participant Helper as Local Helper
+    participant Mesh as QNet Mesh
+    participant Exit as Exit Node
+    participant Target as amazon.com
     
     User->>Ext: Browse amazon.com
     Ext->>Helper: SOCKS5 request
@@ -191,8 +177,8 @@ sequenceDiagram
     Client->>QNet: AEAD Frames<br/>(ChaCha20-Poly1305)
     QNet->>Client: AEAD Frames
     
-    Note over Client,Decoy: Observer sees: Normal HTTPS ✅
-    Note over Client,QNet: Reality: Encrypted tunnel 🔒
+    Note over Client,Decoy: Observer sees: Normal HTTPS (Pass)
+    Note over Client,QNet: Reality: Encrypted tunnel (Secure)
 ```
 
 **HTX Security Properties:**
@@ -207,19 +193,23 @@ sequenceDiagram
 ```mermaid
 graph TB
     subgraph "Fast Mode (1-Hop)"
-        U1[User] -->|Direct Tunnel| E1[Exit Node]
+        direction TB
+        U1[User]
+        U1 -->|Direct Tunnel| E1[Exit Node]
         E1 -->|Fetch| T1[Target Site]
     end
     
     subgraph "Privacy Mode (3-Hop)"
-        U2[User] -->|Hop 1| R1[Relay 1]
+        direction TB
+        U2[User]
+        U2 -->|Hop 1| R1[Relay 1]
         R1 -->|Hop 2| R2[Relay 2]
         R2 -->|Hop 3| E2[Exit Node]
         E2 -->|Fetch| T2[Target Site]
     end
 ```
 
-**Fast Mode**: Direct tunnel for maximum performance (default)
+**Fast Mode**: Direct tunnel for maximum performance (default)  
 **Privacy Mode**: Multi-hop relay for stronger anonymity (optional)
 
 #### 4. **Exit Node Architecture**
@@ -250,7 +240,7 @@ graph TB
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 ### 1. Perfect Traffic Disguise
 
@@ -286,34 +276,169 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph "Global P2P Mesh"
-        H1[Helper Node 1<br/>Asia]
-        H2[Helper Node 2<br/>Europe]
-        H3[Helper Node 3<br/>Americas]
-        H4[Helper Node 4<br/>Africa]
+    subgraph "QNet Complete Network Architecture"
+        subgraph "Tier 1: User Nodes (Client Mode)"
+            direction TB
+            UC1["User Client 1<br/>─────────────<br/>• Mode: Client<br/>• SOCKS5: 127.0.0.1:1088<br/>• Status: 127.0.0.1:8088<br/>• Discovery: Query directory<br/>• Visibility: Invisible"]
+            UC2["User Client 2<br/>─────────────<br/>• Mode: Client<br/>• Local peer only<br/>• Max privacy"]
+            UC3["User Client N<br/>─────────────<br/>• Mode: Client<br/>• 99% of network"]
+        end
         
-        DIR[(Operator Directory<br/>HTTP Registry)]
+        subgraph "Tier 2: Community Relays (Optional)"
+            direction TB
+            REL1["Relay Node 1<br/>─────────────<br/>• Mode: Relay<br/>• Registers via heartbeat<br/>• Forwards encrypted packets<br/>• Country: US<br/>• No legal risk"]
+            REL2["Relay Node 2<br/>─────────────<br/>• Mode: Relay<br/>• Community contributor<br/>• Country: EU"]
+        end
         
-        H1 -->|Register| DIR
-        H2 -->|Register| DIR
-        H3 -->|Register| DIR
-        H4 -->|Register| DIR
+        subgraph "Tier 3: Operator Infrastructure (Super Mode)"
+            direction TB
+            DIR["Directory Service<br/>─────────────<br/>POST /api/relay/register<br/>GET /api/relays/by-country<br/>GET /api/relays/prune<br/>─────────────<br/>• Country indexing<br/>• 120s TTL<br/>• 60s pruning"]
+            
+            SUPER1["Super Peer 1 (NYC)<br/>─────────────<br/>• Mode: Super<br/>• Bootstrap: Yes<br/>• Relay: Yes<br/>• Exit: Yes<br/>• IP: 64.23.xxx.xxx"]
+            SUPER2["Super Peer 2 (AMS)<br/>─────────────<br/>• Mode: Super<br/>• All features<br/>• IP: 159.89.xxx.xxx"]
+            SUPER3["Super Peer 3 (SGP)<br/>─────────────<br/>• Mode: Super<br/>• All features<br/>• IP: 178.128.xxx.xxx"]
+            
+            EXIT1["Exit Node 1<br/>─────────────<br/>• Mode: Exit<br/>• HTTP/HTTPS only<br/>• Ports: 80, 443<br/>• SSRF prevention<br/>• Rate limiting"]
+            EXIT2["Exit Node 2<br/>─────────────<br/>• Mode: Exit<br/>• Dedicated gateway<br/>• Country: US"]
+        end
         
-        H1 <-.P2P relay.-> H2
-        H2 <-.P2P relay.-> H3
-        H3 <-.P2P relay.-> H4
-        H4 <-.P2P relay.-> H1
+        subgraph "Discovery Flow"
+            direction LR
+            D1["Step 1: Startup"] --> D2["Step 2: Query directory"]
+            D2 --> D3["Step 3: Get peer list<br/>(country filtered)"]
+            D3 --> D4["Step 4: Dial discovered peers"]
+        end
+        
+        subgraph "Heartbeat Flow"
+            direction LR
+            H1["Relay starts"] --> H2["POST /api/relay/register<br/>(every 30s)"]
+            H2 --> H3["Appears in directory"]
+            H3 --> H4["120s TTL<br/>(auto-prune if missing)"]
+        end
+        
+        subgraph "Data Flow (HTX Cover Transport)"
+            direction LR
+            DF1["User browser"] --> DF2["SOCKS5 proxy"]
+            DF2 --> DF3["HTX tunnel<br/>(looks like HTTPS to trusted domain)"]
+            DF3 --> DF4["P2P mesh routing<br/>(1-3 hops)"]
+            DF4 --> DF5["Exit node decrypts"]
+            DF5 --> DF6["Real HTTP/HTTPS request"]
+        end
     end
     
-    style DIR fill:#ffd43b
+    %% User connections
+    UC1 -.->|"Query directory<br/>(on startup)"| DIR
+    UC2 -.->|"Query directory"| DIR
+    UC3 -.->|"Query directory"| DIR
+    
+    %% Relay registration
+    REL1 ==>|"Heartbeat POST<br/>(every 30s)"| DIR
+    REL2 ==>|"Heartbeat POST"| DIR
+    
+    %% Super peer self-registration
+    SUPER1 ==>|"Heartbeat"| DIR
+    SUPER2 ==>|"Heartbeat"| DIR
+    SUPER3 ==>|"Heartbeat"| DIR
+    EXIT1 ==>|"Heartbeat"| DIR
+    EXIT2 ==>|"Heartbeat"| DIR
+    
+    %% Mesh connectivity (encrypted relay)
+    UC1 <-->|"HTX encrypted packets"| REL1
+    UC1 <-->|"HTX encrypted packets"| SUPER1
+    UC2 <-->|"HTX encrypted packets"| REL2
+    UC2 <-->|"HTX encrypted packets"| SUPER2
+    
+    REL1 <-->|"Relay forwarding"| SUPER1
+    REL2 <-->|"Relay forwarding"| SUPER2
+    
+    %% Exit traffic
+    SUPER1 -->|"Exit to internet"| WEB["Internet<br/>(HTTP/HTTPS)"]
+    SUPER2 -->|"Exit to internet"| WEB
+    EXIT1 -->|"Exit to internet"| WEB
+    EXIT2 -->|"Exit to internet"| WEB
+    
+    style UC1 fill:#b2f2bb,stroke:#51cf66,stroke-width:2px
+    style UC2 fill:#b2f2bb,stroke:#51cf66,stroke-width:2px
+    style UC3 fill:#b2f2bb,stroke:#51cf66,stroke-width:2px
+    style REL1 fill:#a5d8ff,stroke:#74c0fc,stroke-width:2px
+    style REL2 fill:#a5d8ff,stroke:#74c0fc,stroke-width:2px
+    style DIR fill:#ffe066,stroke:#ffd43b,stroke-width:3px
+    style SUPER1 fill:#d0bfff,stroke:#b197fc,stroke-width:3px
+    style SUPER2 fill:#d0bfff,stroke:#b197fc,stroke-width:3px
+    style SUPER3 fill:#d0bfff,stroke:#b197fc,stroke-width:3px
+    style EXIT1 fill:#ffa8a8,stroke:#ff6b6b,stroke-width:2px
+    style EXIT2 fill:#ffa8a8,stroke:#ff6b6b,stroke-width:2px
+    style WEB fill:#e9ecef,stroke:#868e96,stroke-width:2px
 ```
 
-**Decentralized Discovery:**
-- Operator nodes maintain peer directory (HTTP registry)
-- Relay nodes register via heartbeat (30s interval)
-- Client nodes query directory on startup
-- Fallback to hardcoded operator nodes
-- Resilient to regional blocking
+**Network Architecture Components:**
+
+**Tier 1 - User Nodes (Client Mode):**
+- 99% of network population
+- Query directory on startup for peer discovery
+- Never register (invisible to operators)
+- Highest privacy level
+- SOCKS5 proxy for browser integration
+- Local status API for monitoring
+
+**Tier 2 - Community Relays (Relay Mode):**
+- Optional contributors increasing network capacity
+- Register via heartbeat (30s interval)
+- Forward encrypted packets only (never decrypt)
+- No legal liability (can't see content)
+- Country-tagged for geographic routing
+- Safe default for community participation
+
+**Tier 3 - Operator Infrastructure:**
+- **Super Peers**: 6 DigitalOcean droplets (bootstrap + relay + exit)
+  - NYC, Amsterdam, Singapore, London, San Francisco, Toronto
+  - Run directory service (HTTP registry)
+  - Provide fallback relay capacity
+  - Primary exit nodes (legal liability accepted)
+  
+- **Directory Service**: HTTP registry for peer discovery
+  - POST /api/relay/register (relay registration)
+  - GET /api/relays/by-country?country=US (query with filter)
+  - GET /api/relays/prune (manual pruning, admin only)
+  - 120s TTL per peer (automatic staleness detection)
+  - 60s pruning interval (background task)
+  - Country indexing for geographic routing
+  
+- **Exit Nodes**: Internet gateways (exit/super mode)
+  - HTTP/HTTPS only (ports 80, 443)
+  - SSRF prevention (block private IPs)
+  - Rate limiting (requests per minute)
+  - Abuse logging (sanitized, no PII)
+  - Professional VPS with proper abuse policies
+
+**Discovery Flow:**
+1. Client starts → Query operator directory (GET /api/relays/by-country)
+2. Receive peer list (JSON: peer_id, multiaddrs, country, capabilities)
+3. Dial discovered peers via libp2p
+4. Establish HTX tunnels for mesh routing
+5. <2s total discovery time (vs 90s DHT timeout)
+
+**Heartbeat Flow:**
+1. Relay starts → POST /api/relay/register (initial registration)
+2. Timer: Send heartbeat every 30 seconds
+3. Operator directory updates last_seen timestamp
+4. If no heartbeat for 120s → Mark stale
+5. Background pruning task removes stale peers every 60s
+
+**Data Flow (HTX Cover Transport):**
+1. User browser → SOCKS5 proxy (127.0.0.1:1088)
+2. Helper encrypts with HTX (looks like HTTPS to trusted domain)
+3. Route through P2P mesh (1-3 hops, encrypted per hop)
+4. Exit node decrypts HTX tunnel
+5. Make real HTTP/HTTPS request to target site
+6. Response flows back through same circuit
+
+**Key Security Properties:**
+- **Client Privacy**: Never register, query-only, invisible to operators
+- **Relay Safety**: Forward encrypted packets, no content visibility
+- **Exit Isolation**: Only super/exit modes handle plaintext traffic
+- **Geographic Diversity**: 6 operator nodes across 6 countries
+- **Censorship Resistance**: HTX makes traffic look like normal HTTPS
 
 ### Operator Peer Directory
 
@@ -327,10 +452,10 @@ QNet uses a hybrid approach balancing centralized discovery with decentralized o
 - **Fallback**: Direct connection to operator exits if directory unavailable
 
 **Why not DHT?**
-- ✅ Instant connections (no 90s bootstrap timeout)
-- ✅ Predictable performance (no NAT traversal issues)
-- ✅ Geographic routing (select relay by country)
-- ✅ **Precedent**: Tor (9 directory authorities), Bitcoin (DNS seeds), IPFS (Protocol Labs bootnodes) all use operator seeds for discovery
+- Instant connections (no 90s bootstrap timeout)
+- Predictable performance (no NAT traversal issues)
+- Geographic routing (select relay by country)
+- **Precedent**: Tor (9 directory authorities), Bitcoin (DNS seeds), IPFS (Protocol Labs bootnodes) all use operator seeds for discovery
 
 **Key Distinction**: Discovery mechanism ≠ network centralization. Relay operation remains fully P2P with end-to-end encryption.
 
@@ -371,7 +496,7 @@ graph TB
 
 ---
 
-## 🔧 Technology Stack
+## Technology Stack
 
 ### Core Technologies
 
@@ -426,7 +551,7 @@ graph TB
 
 ---
 
-## 🛠️ Quick Start (Developers)
+## Quick Start (Developers)
 
 ### Prerequisites
 
@@ -442,19 +567,19 @@ QNet uses a **3-tier architecture** with different operational modes for differe
 
 | Feature | Client | Relay | Bootstrap | Exit | Super |
 |---------|--------|-------|-----------|------|-------|
-| **Query directory on startup** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes |
-| **Register with directory** | ❌ No | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes |
-| **Run directory service** | ❌ No | ❌ No | ✅ Yes | ❌ No | ✅ Yes |
-| **Relay encrypted traffic** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Exit to internet** | ❌ No | ❌ No | ❌ No | ✅ Yes | ✅ Yes |
+| **Query directory on startup** | Yes | Yes | No | Yes | Yes |
+| **Register with directory** | No | Yes | No | Yes | Yes |
+| **Run directory service** | No | No | Yes | No | Yes |
+| **Relay encrypted traffic** | Yes | Yes | Yes | Yes | Yes |
+| **Exit to internet** | No | No | No | Yes | Yes |
 | **Legal liability** | None | None | None | **Yes** | **Yes** |
-| **Privacy level** | 🟢 **Highest** | 🟡 Medium | 🟡 Medium | 🟡 Medium | 🟡 Medium |
-| **Operator visibility** | ❌ Invisible | ✅ Visible | ✅ Visible | ✅ Visible | ✅ Visible |
+| **Privacy level** | **Highest** | Medium | Medium | Medium | Medium |
+| **Operator visibility** | Invisible | Visible | Visible | Visible | Visible |
 | **Typical deployment** | User devices | Trusted relays | Operator droplets | Exit relays | Operator droplets |
 
 #### Mode Details
 
-**🔵 Client Mode** (default for end-users)
+**Client Mode** (default for end-users)
 - **Purpose**: Maximum privacy for everyday users
 - **Behavior**: Queries directory to find relays, connects through mesh, never registers
 - **Privacy**: Operators cannot track individual users (no heartbeat = invisible)
@@ -468,7 +593,7 @@ QNet uses a **3-tier architecture** with different operational modes for differe
   STEALTH_MODE=client cargo run -p stealth-browser
   ```
 
-**🟢 Relay Mode** (community contributors)
+**Relay Mode** (community contributors)
 - **Purpose**: Increase network capacity without legal risk
 - **Behavior**: Registers with directory, forwards encrypted packets, never decrypts
 - **Legal**: Safe - relay nodes only forward encrypted data (no content visibility)
@@ -478,7 +603,7 @@ QNet uses a **3-tier architecture** with different operational modes for differe
   STEALTH_MODE=relay cargo run -p stealth-browser
   ```
 
-**🟡 Bootstrap Mode** (operator directory servers)
+**Bootstrap Mode** (operator directory servers)
 - **Purpose**: Run directory service for peer discovery
 - **Behavior**: Hosts HTTP endpoints (`/api/relay/register`, `/api/relays/by-country`)
 - **Infrastructure**: 6 global DigitalOcean droplets (geographically distributed)
@@ -488,10 +613,10 @@ QNet uses a **3-tier architecture** with different operational modes for differe
   STEALTH_MODE=bootstrap cargo run -p stealth-browser
   ```
 
-**🔴 Exit Mode** (dedicated exit nodes)
+**Exit Mode** (dedicated exit nodes)
 - **Purpose**: Internet gateway for mesh traffic
 - **Behavior**: Relay + exit to public internet (decrypt HTTPS CONNECT requests)
-- **Legal**: ⚠️ **High liability** - operator responsible for traffic from exit IP
+- **Legal**: WARNING **High liability** - operator responsible for traffic from exit IP
 - **Security**: Port filtering (80/443 only), SSRF prevention, rate limiting
 - **Usage**:
   ```powershell
@@ -499,7 +624,7 @@ QNet uses a **3-tier architecture** with different operational modes for differe
   STEALTH_MODE=exit cargo run -p stealth-browser
   ```
 
-**🟣 Super Mode** (all-in-one operator nodes)
+**Super Mode** (all-in-one operator nodes)
 - **Purpose**: Combined bootstrap + relay + exit (maximum functionality)
 - **Deployment**: The **6 operator droplets** run in super mode
 - **Features**: All capabilities enabled simultaneously
@@ -515,23 +640,23 @@ QNet uses a **3-tier architecture** with different operational modes for differe
 graph TB
     subgraph "QNet Global Infrastructure"
         subgraph "Tier 1: User Devices (Client Mode)"
-            C1[👤 User 1<br/>Client]
-            C2[👤 User 2<br/>Client]
-            C3[👤 User N<br/>Client]
+            C1[User 1<br/>Client]
+            C2[User 2<br/>Client]
+            C3[User N<br/>Client]
         end
         
         subgraph "Tier 2: Community Relays (Optional)"
-            R1[🔄 Relay 1<br/>Volunteer]
-            R2[🔄 Relay 2<br/>Volunteer]
+            R1[Relay 1<br/>Volunteer]
+            R2[Relay 2<br/>Volunteer]
         end
         
         subgraph "Tier 3: Operator Infrastructure (Super Mode)"
-            S1[🌐 Super Peer 1<br/>US East]
-            S2[🌐 Super Peer 2<br/>US West]
-            S3[🌐 Super Peer 3<br/>EU]
-            S4[🌐 Super Peer 4<br/>Asia]
-            S5[🌐 Super Peer 5<br/>AU]
-            S6[🌐 Super Peer 6<br/>SA]
+            S1[Super Peer 1<br/>US East]
+            S2[Super Peer 2<br/>US West]
+            S3[Super Peer 3<br/>EU]
+            S4[Super Peer 4<br/>Asia]
+            S5[Super Peer 5<br/>AU]
+            S6[Super Peer 6<br/>SA]
         end
     end
     
@@ -601,9 +726,9 @@ cargo run -p stealth-browser
 
 The Helper's status page (`http://127.0.0.1:8088/`) displays the connection state with visual indicators:
 
-- 🔴 **Offline** (red): Initial state when bootstrap is disabled or no peers
-- 🟠 **Calibrating** (orange): Bootstrap enabled but not yet connected
-- 🟢 **Connected** (green): Mesh network ready OR successful SOCKS5 traffic
+- **Offline** (red): Initial state when bootstrap is disabled or no peers
+- **Calibrating** (orange): Bootstrap enabled but not yet connected
+- **Connected** (green): Mesh network ready OR successful SOCKS5 traffic
 
 **State Transition Triggers:**
 ```
@@ -662,33 +787,33 @@ go build -o qnet-lint ./cmd/qnet-lint
 ```
 qnet/
 ├── apps/                      # User-facing applications
-│   ├── stealth-browser/       # 💻 Helper Node (SOCKS5 + status API)
-│   └── edge-gateway/          # 🚪 Server-side exit node
+│   ├── stealth-browser/       # Helper Node (SOCKS5 + status API)
+│   └── edge-gateway/          # Server-side exit node
 │
 ├── crates/                   # Core libraries
-│   ├── htx/                   # 🔒 HTX protocol (TLS tunneling)
-│   ├── core-framing/          # 📦 AEAD frame codec
-│   ├── core-crypto/           # 🔑 Cryptographic primitives
-│   ├── core-mesh/             # 🕸️ P2P mesh networking (libp2p)
-│   ├── core-routing/          # 🗺️ Path selection (future)
-│   ├── core-mix/              # 🎲 Mixnet integration (future)
-│   ├── alias-ledger/          # 📛 Decentralized naming (future)
-│   └── voucher/               # 💰 Payment system (future)
+│   ├── htx/                   # HTX protocol (TLS tunneling)
+│   ├── core-framing/          # AEAD frame codec
+│   ├── core-crypto/           # Cryptographic primitives
+│   ├── core-mesh/             # P2P mesh networking (libp2p)
+│   ├── core-routing/          # Path selection (future)
+│   ├── core-mix/              # Mixnet integration (future)
+│   ├── alias-ledger/          # Decentralized naming (future)
+│   └── voucher/               # Payment system (future)
 │
 ├── qnet-spec/                 # Specification & governance
 │   ├── specs/001-qnet/
-│   │   ├── spec.md            # 📖 Protocol specification
-│   │   ├── plan.md            # 🗺️ Strategic roadmap
-│   │   └── tasks.md           # ✅ Unified task list
+│   │   ├── spec.md            # Protocol specification
+│   │   ├── plan.md            #  Strategic roadmap
+│   │   └── tasks.md           #  Unified task list
 │   ├── memory/
-│   │   ├── ai-guardrail.md    # 🤖 AI coding guidelines
-│   │   └── testing-rules.md   # 🧪 Testing requirements
+│   │   ├── ai-guardrail.md    #  AI coding guidelines
+│   │   └── testing-rules.md   #  Testing requirements
 │   └── docs/                  # Component documentation
 │
 ├── docs/                      # Architecture documentation
-│   ├── ARCHITECTURE.md        # 🏗️ System architecture
-│   ├── CONTRIBUTING.md        # 🤝 Contribution guide
-│   └── helper.md              # 📚 Helper API reference
+│   ├── ARCHITECTURE.md        # System architecture
+│   ├── CONTRIBUTING.md        # Contribution guide
+│   └── helper.md              # Helper API reference
 │
 ├── tests/                     # Integration tests
 ├── fuzz/                      # Fuzzing targets
@@ -700,19 +825,19 @@ qnet/
 
 | Crate | Purpose | Status |
 |-------|---------|--------|
-| `htx` | HTX protocol implementation (TLS mirroring + Noise) | ✅ Complete |
-| `core-framing` | AEAD frame encoding (ChaCha20-Poly1305) | ✅ Complete |
-| `core-crypto` | Cryptographic wrappers (Ed25519, X25519, HKDF) | ✅ Complete |
-| `core-cbor` | Deterministic CBOR serialization | ✅ Complete |
-| `core-mesh` | P2P networking via libp2p (mDNS, DHT, circuits) | ✅ Complete |
-| `core-routing` | L1 multi-path routing (SCION-inspired) | 📋 Deferred |
-| `core-mix` | Mixnet integration (Sphinx packets) | 🔮 Future |
-| `alias-ledger` | Self-certifying identities | 🔮 Future |
-| `voucher` | Micropayment vouchers | 🔮 Future |
+| `htx` | HTX protocol implementation (TLS mirroring + Noise) | Complete |
+| `core-framing` | AEAD frame encoding (ChaCha20-Poly1305) | Complete |
+| `core-crypto` | Cryptographic wrappers (Ed25519, X25519, HKDF) | Complete |
+| `core-cbor` | Deterministic CBOR serialization | Complete |
+| `core-mesh` | P2P networking via libp2p (mDNS, DHT, circuits) | Complete |
+| `core-routing` | L1 multi-path routing (SCION-inspired) | Deferred |
+| `core-mix` | Mixnet integration (Sphinx packets) | Future |
+| `alias-ledger` | Self-certifying identities | Future |
+| `voucher` | Micropayment vouchers | Future |
 
 ---
 
-## 🔒 Security Model
+## Security Model
 
 ### Threat Model
 
@@ -761,33 +886,6 @@ graph TB
 
 ### Security Best Practices
 
-```mermaid
-graph TB
-    subgraph "Development Security"
-        S1[No Hardcoded Keys]
-        S2[Constant-Time Crypto]
-        S3[Secure RNG]
-        S4[Memory Wiping]
-    end
-    
-    subgraph "Operational Security"
-        S5[Key Rotation]
-        S6[Pinned Public Keys]
-        S7[Version Monotonicity]
-        S8[Audit Logging]
-    end
-    
-    S1 --> S5
-    S2 --> S6
-    S3 --> S7
-    S4 --> S8
-    
-    style S1 fill:#ffd43b
-    style S2 fill:#ffd43b
-    style S5 fill:#74c0fc
-    style S6 fill:#74c0fc
-```
-
 **Key Invariants:**
 - All cryptographic operations use vetted libraries (`ring`, `ed25519-dalek`)
 - No secret-dependent branching (constant-time guarantees)
@@ -797,7 +895,7 @@ graph TB
 
 ---
 
-## ⚡ Performance
+## Performance
 
 ### Benchmarks
 
@@ -850,7 +948,7 @@ graph LR
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 > [!WARNING]
 > This documentation is a work in progress. Please refer to the [qnet-spec/](qnet-spec/) directory for the most up-to-date technical specifications and design documents.
@@ -878,24 +976,11 @@ graph LR
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions! QNet is building the future of internet freedom.
 
 ### How to Contribute
-
-```mermaid
-graph LR
-    A[Pick a Task] --> B[Create Branch]
-    B --> C[Write Tests]
-    C --> D[Implement]
-    D --> E[Run Checks]
-    E --> F[Submit PR]
-    
-    style A fill:#ffd43b
-    style C fill:#74c0fc
-    style F fill:#51cf66
-```
 
 **Step-by-Step:**
 
@@ -939,12 +1024,12 @@ graph LR
 
 | Area | Skills | Difficulty |
 |------|--------|------------|
-| **HTX Protocol** | Rust, TLS, Cryptography | 🔴 Hard |
-| **Mesh Networking** | Rust, libp2p, P2P | 🟡 Medium |
-| **Helper/Extension** | Rust, JavaScript, UI | 🟢 Easy |
-| **Testing** | Any language, QA mindset | 🟢 Easy |
-| **Documentation** | Technical writing | 🟢 Easy |
-| **Performance** | Profiling, optimization | 🟡 Medium |
+| **HTX Protocol** | Rust, TLS, Cryptography | Hard |
+| **Mesh Networking** | Rust, libp2p, P2P | Medium |
+| **Helper/Extension** | Rust, JavaScript, UI | Easy |
+| **Testing** | Any language, QA mindset | Easy |
+| **Documentation** | Technical writing | Easy |
+| **Performance** | Profiling, optimization | Medium |
 
 ### Code Standards
 
@@ -956,7 +1041,7 @@ graph LR
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 ```mermaid
 gantt
@@ -964,26 +1049,26 @@ gantt
     dateFormat YYYY-MM-DD
     todayMarker stroke-width:5px,stroke:#ff6b6b,opacity:0.8
     
-    section Phase 1 ✅
+    section Phase 1 Complete
     Core Infrastructure    :done, p1, 2025-09-15, 2025-10-31
     HTX Protocol          :done, p1a, 2025-09-15, 2025-10-15
     Crypto & Framing      :done, p1b, 2025-09-20, 2025-10-20
     Catalog System (REMOVED):crit, p1c, 2025-10-01, 2025-10-25
     
-    section Phase 2 🚧
+    section Phase 2 In Progress
     Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-15
     Relay Logic (2.2)     :done, p2b, 2025-11-01, 2025-11-10
     Circuit Building (2.3):done, p2c, 2025-11-10, 2025-11-20
     Helper Integration (2.4):done, p2d, 2025-11-20, 2025-11-27
     Super Peer Impl (2.1.11):active, p2e, 2025-11-20, 2025-11-30
     
-    section Phase 3 🚧
+    section Phase 3 Planned
     Browser Extension     :p3, 2025-12-01, 2026-02-28
     Native Messaging      :p3a, 2025-12-15, 2026-01-15
     UI/UX Development     :p3b, 2026-01-01, 2026-02-15
     Installers & Packaging:p3c, 2026-02-01, 2026-03-01
     
-    section Phase 4 🔮
+    section Phase 4 Future
     L1 Path Routing       :p4a, 2026-03-01, 2026-05-31
     Mixnet Integration    :p4b, 2026-04-01, 2026-07-31
     Payment System        :p4c, 2026-06-01, 2026-09-30
@@ -995,9 +1080,44 @@ gantt
 > [!NOTE]
 > **Multi-Mode Helper (Nov 30, 2025)**: Implemented 5 operational modes (client, relay, bootstrap, exit, super) with conditional feature enablement. Directory endpoints, heartbeat registration, and exit capabilities now respect helper mode configuration. 4 of 6 subtasks complete.
 
-**Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
+**Quick Summary:**
 
-- ✅ **HTX Protocol Implementation** (`htx/` crate)
+- **Phase 1 Complete** (Sept 15 - Oct 31, 2025): Core infrastructure ready
+  - HTX protocol (TLS fingerprint cloning + Noise XK handshake)
+  - AEAD framing layer (ChaCha20-Poly1305)
+  - Cryptographic primitives (Ed25519, X25519, HKDF)
+  - Deterministic CBOR encoding
+  
+- **Phase 2.1-2.4 Complete** (Oct 15 - Nov 27, 2025): P2P mesh operational
+  - Peer discovery (mDNS + operator directory, DHT removed)
+  - Relay logic (circuit-based packet forwarding)
+  - Circuit building (multi-hop routing, 1-3 hops)
+  - Helper integration (SOCKS5 proxy, status API, libp2p Circuit Relay V2)
+
+-  **Phase 2.1.11 In Progress** (Nov 20 - Nov 30, 2025): Super peer mode - **67% complete (4 of 6 subtasks)**
+  -  Directory HTTP endpoints (POST register, GET by-country, GET prune)
+  -  Exit node logic (7 modules, 20 unit tests, SSRF prevention)
+  -  5-mode system (client, relay, bootstrap, exit, super)
+  -  Directory integration (conditional endpoints, background pruning)
+  -  Exit node integration (SOCKS5 pipeline, stats tracking) - **NEXT**
+  -  End-to-end testing (local super peer validation)
+
+-  **Phase 3 Starting** (Dec 2025 - Feb 2026): User experience
+  - Browser extension UI (WebExtensions Manifest V3)
+  - Native messaging bridge (extension ↔ helper)
+  - Cross-platform installers (Windows/Linux/macOS)
+  - User documentation & onboarding
+
+ **For detailed task breakdown**, see **[tasks.md](qnet-spec/specs/001-qnet/tasks.md)**
+
+---
+
+## Phase Completion Details
+
+<details>
+<summary><b>Phase 1: Core Infrastructure</b> ( 100% Complete)</summary>
+
+-  **HTX Protocol Implementation** (`htx/` crate)
   - TLS 1.3 fingerprint mirroring (ClientHello templates from real browsers)
   - Origin-aware handshake (mimic target site's TLS characteristics)
   - Noise XK handshake derivative (Ed25519 static key verification)
@@ -1007,7 +1127,7 @@ gantt
   - Deterministic nonce generation (monotonic counters, never reuse)
   - Integration tests with localhost TLS server (`certs/target3/`)
   
-- ✅ **AEAD Framing Layer** (`core-framing/` crate)
+-  **AEAD Framing Layer** (`core-framing/` crate)
   - ChaCha20-Poly1305 AEAD per frame (integrity + confidentiality)
   - Length-prefixed frames (u16 header, max 16KB payload)
   - Monotonic nonce counters (per encoder/decoder instance)
@@ -1016,7 +1136,7 @@ gantt
   - Fuzz targets (`fuzz/fuzz_targets/framing_fuzz.rs`)
   - Criterion benchmarks (throughput: ~1.2 GB/s on modern CPU)
   
-- ✅ **Cryptographic Primitives** (`core-crypto/` crate)
+-  **Cryptographic Primitives** (`core-crypto/` crate)
   - Ed25519 signatures (identity, catalog signing)
   - X25519 ECDH (ephemeral key exchange)
   - ChaCha20-Poly1305 AEAD (symmetric encryption)
@@ -1025,7 +1145,7 @@ gantt
   - Wrappers around `ring` crate (constant-time, audited)
   - No raw crypto calls outside this crate (centralized, auditable)
   
-- ❌ **Catalog System** (removed Oct 25, 2025 - replaced by hardcoded bootstrap)
+- NO **Catalog System** (removed Oct 25, 2025 - replaced by hardcoded bootstrap)
   - Originally: Signed JSON catalog with decoy sites + operator nodes
   - DET-CBOR canonical encoding (for Ed25519 signature verification)
   - Expiration TTL with grace period (staleness detection)
@@ -1034,7 +1154,7 @@ gantt
   - Replacement: Hardcoded operator nodes in `core-mesh::discovery::load_bootstrap_nodes()`
   - Future: May revive for auto-update mechanism (Phase 3.4)
   
-- ✅ **Deterministic CBOR Encoding** (`core-cbor/` crate)
+-  **Deterministic CBOR Encoding** (`core-cbor/` crate)
   - DET-CBOR implementation (RFC 8949 + deterministic rules)
   - Canonical ordering (map keys sorted lexicographically)
   - Used for signed payloads (catalog was primary use case)
@@ -1042,10 +1162,13 @@ gantt
   - Integration with `serde` (derive macros for structs)
   - Still used for future signed artifacts (protocol upgrades, governance votes)
 
-**Phase 2: P2P Mesh Network** (🚧 67% Complete - Oct 15 - Nov 30, 2025)
+</details>
+
+<details>
+<summary><b>Phase 2: P2P Mesh Network</b> ( 67% Complete)</summary>
 
 *Completed Sections (2.1-2.4):*
-- ✅ **2.1 Peer Discovery** - mDNS local ✅ + Operator Directory ✅ (DHT removed Nov 30)
+-  **2.1 Peer Discovery** - mDNS local  + Operator Directory  (DHT removed Nov 30)
   - Multicast DNS for LAN peer discovery
   - HTTP-based operator directory (POST /api/relay/register, GET /api/relays/by-country)
   - Heartbeat registration (30s interval) for relay visibility
@@ -1053,21 +1176,21 @@ gantt
   - Background pruning (120s TTL, 60s interval)
   - ~480 lines directory implementation (replaced ~450 lines Kademala DHT)
   
-- ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking
+-  **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking
   - Circuit-based message routing with hop-by-hop forwarding
   - Encrypted packet relay (relays never see plaintext)
   - Bandwidth tracking per relay (bytes in/out)
   - Active circuit management (creation, teardown, timeouts)
   - Routing table with peer capability tracking
   
-- ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
+-  **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
   - Multi-hop circuit establishment (1-3 hops configurable)
   - Onion routing protocol (layered encryption per hop)
   - Circuit teardown on timeout/error (60s idle timeout)
   - Path selection with relay capability filtering
   - Circuit reuse for performance (connection pooling)
   
-- ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
+-  **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
   - SOCKS5 proxy server (127.0.0.1:1088) for browser/app integration
   - Local status API (127.0.0.1:8088) with JSON endpoints
   - CLI configuration (--socks-port, --status-port, --helper-mode)
@@ -1076,40 +1199,40 @@ gantt
   - Connection bridging (SOCKS ↔ mesh streams)
 
 *Phase 2.1.10 Complete (Operator Directory):*
-- ✅ **Operator Peer Directory** - Lightweight HTTP registry for peer discovery
+-  **Operator Peer Directory** - Lightweight HTTP registry for peer discovery
   - `PeerDirectory` struct with HashMap storage (country-indexed)
   - `RelayInfo` registration with timestamps and capabilities
   - Country-based filtering (GeoIP integration ready for Task 7)
   - Automatic staleness detection (120s TTL)
   - 8 unit tests (registration, updates, queries, pruning)
   
-- ✅ **Heartbeat Registration** - Relay nodes auto-register with operator directory
+-  **Heartbeat Registration** - Relay nodes auto-register with operator directory
   - 30-second heartbeat interval (tokio timer)
   - Retry logic across 3 operator nodes (fallback redundancy)
   - JSON payload with peer_id, multiaddrs, country, capabilities
   - Response validation (200 OK, JSON confirmation)
   
-- ✅ **Directory Query** - Clients fetch peer list on mesh startup
+-  **Directory Query** - Clients fetch peer list on mesh startup
   - 3-tier fallback: directory → disk cache (TODO) → hardcoded operators
   - HTTP GET with optional country filter (?country=US)
   - Parse multiaddr list and dial discovered peers
   - <2s discovery time vs 90s DHT timeout (45x faster)
   
-- ✅ **DHT Removal** - Simplified architecture, reduced attack surface
+-  **DHT Removal** - Simplified architecture, reduced attack surface
   - Removed Kademlia imports and "kad" feature flag
   - Removed ~450 lines of DHT event handling
   - Replaced with ~480 lines of operator directory code
   - No more DHT bootstrap delays or provider record issues
 
 *Phase 2.1.11 In Progress (Super Peer Implementation - 67% Complete):*
-- ✅ **2.1.11.1 Directory HTTP Endpoints** - Bootstrap nodes serve peer directory
+-  **2.1.11.1 Directory HTTP Endpoints** - Bootstrap nodes serve peer directory
   - POST /api/relay/register - Relay registration endpoint
   - GET /api/relays/by-country - Query relays by country code
   - GET /api/relays/prune - Manual pruning trigger (dev/admin only)
   - JSON request/response format with error handling
   - 6 unit tests (endpoint parsing, response format, country filters)
   
-- ✅ **2.1.11.2 Exit Node Logic** - Internet gateway implementation
+-  **2.1.11.2 Exit Node Logic** - Internet gateway implementation
   - 7 modules: handler, parser, validator, errors, config, types, tests
   - HTTP CONNECT parsing with httparse (memory-safe, no buffer overflows)
   - Destination validation (port policy 80/443 only, SSRF prevention)
@@ -1121,7 +1244,7 @@ gantt
   - Abuse logging (sanitized, no PII leakage)
   - 20 unit tests across all modules (100% coverage on parser/validator)
   
-- ✅ **2.1.11.3 Super Peer Mode Config** - 5-mode operational model
+-  **2.1.11.3 Super Peer Mode Config** - 5-mode operational model
   - **Client Mode** (default): Query directory, no registration, highest privacy
   - **Relay Mode**: Register with directory, forward encrypted packets, no exit
   - **Bootstrap Mode**: Run directory service, relay traffic, no exit
@@ -1135,7 +1258,7 @@ gantt
   - Exit node warnings at startup (legal liability notice)
   - 6 unit tests (mode parsing, feature detection, descriptions)
   
-- ✅ **2.1.11.4 Directory Integration** - Mode-aware endpoint routing
+-  **2.1.11.4 Directory Integration** - Mode-aware endpoint routing
   - Conditional directory endpoints (bootstrap/super only)
   - 404 responses in client/relay/exit modes with error JSON
   - Background pruning task (60s interval, bootstrap/super only)
@@ -1144,7 +1267,7 @@ gantt
   - 5 unit tests (endpoint availability per mode)
   - 37 total tests passing (was 32 + 5 new mode tests)
   
-- 📋 **2.1.11.5 Exit Node Integration** - SOCKS5 ↔ exit node pipeline (NEXT)
+-  **2.1.11.5 Exit Node Integration** - SOCKS5 ↔ exit node pipeline (NEXT)
   - Integrate exit logic with SOCKS5 handler (`handle_connect()`)
   - Check `helper_mode.supports_exit()` before processing exit requests
   - Reject with SOCKS error 0x02 if mode doesn't support exit
@@ -1158,7 +1281,7 @@ gantt
   - Exit policy logging (blocked destinations, abuse attempts)
   - Integration tests (SOCKS → exit → real HTTP/HTTPS)
   
-- 📋 **2.1.11.6 Testing - Local Super Peer** - End-to-end validation
+-  **2.1.11.6 Testing - Local Super Peer** - End-to-end validation
   - Test: Run helper in super mode locally
     - Verify directory endpoints respond (register, query, prune)
     - Verify exit requests succeed (HTTP/HTTPS forwarding)
@@ -1182,24 +1305,27 @@ gantt
   - Security: Verify SSRF prevention (attempt private IPs)
   - Security: Verify port policy enforcement (attempt non-80/443)
 
-**Phase 3: User Experience** (📋 0% - Starting Dec 2025)
+</details>
+
+<details>
+<summary><b>Phase 3: User Experience</b> ( 0% - Starting Dec 2025)</summary>
 
 *Browser Extension (Dec 2025 - Feb 2026):*
-- 📋 **3.1 Extension Architecture** - WebExtensions API (Chrome/Edge/Firefox)
+-  **3.1 Extension Architecture** - WebExtensions API (Chrome/Edge/Firefox)
   - Manifest V3 implementation (modern Chrome extension format)
   - Background service worker (persistent connection manager)
   - Popup UI (React/Preact, Tailwind CSS)
   - Options page (settings, preferences, advanced config)
   - Content scripts (minimal, privacy-preserving)
   
-- 📋 **3.2 Native Messaging Bridge** - Extension ↔ Helper communication
+-  **3.2 Native Messaging Bridge** - Extension ↔ Helper communication
   - Native messaging protocol (JSON length-prefixed)
   - Command channel: start/stop helper, mode switching
   - Status polling: connection state, peer count, bandwidth
   - Error handling: helper not installed, permission denied
   - Automatic helper installation detection
   
-- 📋 **3.3 UI/UX Development** - Simple, intuitive privacy control
+-  **3.3 UI/UX Development** - Simple, intuitive privacy control
   - One-click connect/disconnect toggle
   - Real-time status: online/offline, peer count, mode
   - Mode switcher: client (default), relay (contribute), exit (advanced)
@@ -1209,7 +1335,7 @@ gantt
   - Settings: auto-start, notifications, exit policy
   - Onboarding: 3-step setup wizard (install → connect → done)
   
-- 📋 **3.4 Installers & Packaging** - Zero-configuration deployment
+-  **3.4 Installers & Packaging** - Zero-configuration deployment
   - Windows: MSI installer (WiX toolset) with auto-start service
   - Linux: .deb/.rpm packages + systemd service + AppImage
   - macOS: .dmg bundle + launchd service + Homebrew formula
@@ -1217,7 +1343,7 @@ gantt
   - Auto-updater: silent background updates (catalog system revival?)
   - Uninstaller: clean removal (service, files, registry)
   
-- 📋 **3.5 Documentation & Onboarding** - Help users succeed
+-  **3.5 Documentation & Onboarding** - Help users succeed
   - Installation guides (per-platform screenshots)
   - Troubleshooting FAQ (firewall, antivirus, ports)
   - Privacy explainer: what QNet sees vs doesn't see
@@ -1225,10 +1351,13 @@ gantt
   - Video tutorials (YouTube: "Get Started with QNet in 2 Minutes")
   - Community forum (GitHub Discussions)
 
-**Phase 4: Advanced Features** (🔮 Future - Q2 2026+)
+</details>
+
+<details>
+<summary><b>Phase 4: Advanced Features</b> ( Future - Q2 2026+)</summary>
 
 *L1 Path Routing (Q2 2026):*
-- 📋 **4.1 SCION-Inspired Path Validation** - Cryptographic path control
+-  **4.1 SCION-Inspired Path Validation** - Cryptographic path control
   - Path-aware networking (select paths, not just destinations)
   - Cryptographic path validation (prevent path hijacking)
   - Multi-path routing (bandwidth aggregation, failover)
@@ -1236,7 +1365,7 @@ gantt
   - Integration with `core-routing` crate (skeletal structures exist)
   
 *Mixnet Privacy Hops (Q2-Q3 2026):*
-- 📋 **4.2 Nym/Sphinx Integration** - High-latency anonymity layer
+-  **4.2 Nym/Sphinx Integration** - High-latency anonymity layer
   - Sphinx packet format (layered encryption with cover traffic)
   - Poisson mixing (randomized delays, traffic analysis resistance)
   - Integration with `core-mix` and `mixnode` crates (placeholders exist)
@@ -1244,7 +1373,7 @@ gantt
   - Cover traffic generation (constant rate, hide actual usage patterns)
   
 *Micropayment System (Q3-Q4 2026):*
-- 📋 **4.3 Voucher & Cashu Ecash** - Relay incentive economy
+-  **4.3 Voucher & Cashu Ecash** - Relay incentive economy
   - Voucher system (`voucher` crate exists, implementation pending)
   - Cashu ecash tokens (privacy-preserving micropayments)
   - Relay compensation (earn vouchers for bandwidth contribution)
@@ -1253,7 +1382,7 @@ gantt
   - Integration with `alias-ledger` (self-certifying IDs)
   
 *Decentralized Governance (Q4 2026):*
-- 📋 **4.4 Protocol Upgrades & Voting** - Community-driven evolution
+-  **4.4 Protocol Upgrades & Voting** - Community-driven evolution
   - On-chain governance (voting on protocol changes)
   - Upgrade proposals (RFC-style specifications)
   - Stake-weighted voting (relay operators vote proportionally)
@@ -1262,7 +1391,7 @@ gantt
   - Integration with `core-governance` crate (exists, not implemented)
   
 *Mobile Support (Q1 2027+):*
-- 📋 **4.5 Android & iOS Apps** - Privacy on mobile devices
+-  **4.5 Android & iOS Apps** - Privacy on mobile devices
   - Android: Native Kotlin app with VPN API
   - iOS: Swift app with Network Extension framework
   - Mobile-optimized UI (battery-efficient, low bandwidth)
@@ -1270,9 +1399,11 @@ gantt
   - App store distribution (Google Play, Apple App Store)
   - Sync with desktop (shared preferences, circuits)
 
+</details>
+
 ---
 
-## 📜 License
+## License
 
 QNet is released under the **MIT License**.
 
@@ -1292,7 +1423,7 @@ See [LICENSE](LICENSE) for full text.
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 QNet builds on the shoulders of giants:
 - **Tor Project**: Pioneering anonymous communication
@@ -1313,5 +1444,5 @@ QNet builds on the shoulders of giants:
 
 <div align="center">
   <p><strong>Building the unblockable internet, one node at a time.</strong></p>
-  <p>⭐ Star us on GitHub | 🍴 Fork and contribute | 📢 Spread the word</p>
+  <p> Star us on GitHub |  Fork and contribute |  Spread the word</p>
 </div>
