@@ -154,50 +154,184 @@ Avoid `--allow-unsigned-decoy` in production: unsigned catalogs bypass signature
 
 ## Peer Discovery and Registration
 
-### Relay-Only Mode (Default for Relay Nodes)
+### Helper Modes (Task 2.1.11.3)
 
-When Helper runs in relay-only mode (`--relay-only` or `helper_mode: RelayOnly`):
+QNet Helper supports five operational modes, configurable via CLI (`--helper-mode <MODE>`) or environment variable (`STEALTH_MODE`):
 
-1. **Startup**: Query operator node at `http://<operator-ip>:8088/api/relays/by-country`
-2. **Heartbeat**: POST to `http://<operator-ip>:8088/api/relay/register` every 30 seconds
-3. **Payload Example**:
-   ```json
-   {
-     "peer_id": "12D3KooW...",
-     "addrs": ["/ip4/192.168.1.100/tcp/4001"],
-     "country": "US",
-     "capabilities": ["relay"],
-     "last_seen": 1732900000,
-     "first_seen": 1732900000
-   }
-   ```
-4. **Pruning**: If no heartbeat received for 2 minutes, peer is removed from directory
+#### 1. Client Mode (default)
+**Usage**: End-user devices (laptops, desktops)
+```bash
+stealth-browser --helper-mode client
+# or
+STEALTH_MODE=client stealth-browser
+```
 
-### Bootstrap Mode (Operator Nodes Only)
+**Behavior**:
+- Query operator directory for relay peer list on startup
+- Dial discovered relay peers for circuit building
+- **Does NOT register** with directory (privacy: no operator visibility)
+- **Does NOT run** directory service endpoints
+- **Does NOT support** exit node functionality
 
-When Helper runs in bootstrap mode (`--bootstrap` or `helper_mode: Bootstrap`):
+**Feature Summary**: Query directory, no registration, no exit
 
-1. **Directory Service**: Host HTTP endpoints:
-   - `POST /api/relay/register` - Accept relay registrations
-   - `GET /api/relays/by-country` - Return peer list grouped by country
-2. **Storage**: In-memory `HashMap<PeerId, RelayInfo>` with last_seen timestamps
-3. **Pruning**: Background task removes stale peers (no heartbeat for 2+ minutes) every 60 seconds
-4. **Response Format**:
-   ```json
-   {
-     "US": [{"peer_id": "...", "addrs": [...], "capabilities": [...]}],
-     "FR": [{"peer_id": "...", "addrs": [...], "capabilities": [...]}]
-   }
-   ```
+---
 
-### Client Mode (Default for Users)
+#### 2. Relay Mode
+**Usage**: Trusted relay nodes (forwarding encrypted packets only)
+```bash
+stealth-browser --helper-mode relay
+# or
+STEALTH_MODE=relay stealth-browser
+```
 
-When Helper runs in client mode (default, no flags):
+**Behavior**:
+- Query operator directory on startup (discover other relays)
+- **Registers with directory** via heartbeat (POST `/api/relay/register` every 30s)
+- Relay encrypted traffic for other peers
+- **Does NOT run** directory service endpoints
+- **Does NOT support** exit node functionality (safe, no legal liability)
 
-1. **Startup**: Query operator directory for relay peer list
-2. **Dial**: Attempt connection to relay peers from directory
-3. **Fallback**: If directory query fails, dial hardcoded operator nodes directly
-4. **No Registration**: Client nodes do not register with directory (privacy)
+**Heartbeat Payload**:
+```json
+{
+  "peer_id": "12D3KooW...",
+  "addrs": ["/ip4/192.168.1.100/tcp/4001"],
+  "country": "US",
+  "capabilities": ["relay"],
+  "last_seen": 1732900000,
+  "first_seen": 1732900000
+}
+```
+
+**Feature Summary**: Register with directory, relay traffic, no exit
+
+---
+
+#### 3. Bootstrap Mode
+**Usage**: Operator-run directory servers (6 global droplets)
+```bash
+stealth-browser --helper-mode bootstrap
+# or
+STEALTH_MODE=bootstrap stealth-browser
+```
+
+**Behavior**:
+- **Runs directory service** HTTP endpoints:
+  - `POST /api/relay/register` - Accept relay registrations
+  - `GET /api/relays/by-country?country=US` - Return peer list (optionally filtered by country)
+  - `GET /api/relays/prune` - Manual pruning trigger (dev only)
+- Relay encrypted traffic for other peers
+- **Does NOT send heartbeats** (bootstrap nodes don't register with themselves)
+- **Does NOT query directory** on startup (self-contained)
+- **Does NOT support** exit node functionality
+
+**Directory Storage**: In-memory `HashMap<PeerId, RelayInfo>` with automatic pruning (stale entries removed after 2 minutes without heartbeat)
+
+**Pruning**: Background task runs every 60 seconds, removes peers with `last_seen` > 120 seconds ago
+
+**Response Format** (`GET /api/relays/by-country`):
+```json
+{
+  "US": [{"peer_id": "...", "addrs": [...], "capabilities": ["relay"], "last_seen": 1732900000}],
+  "FR": [{"peer_id": "...", "addrs": [...], "capabilities": ["relay"], "last_seen": 1732900050}]
+}
+```
+
+**Feature Summary**: Run directory service, relay traffic, no exit
+
+---
+
+#### 4. Exit Mode
+**Usage**: Dedicated exit nodes (forwarding to public internet)
+```bash
+stealth-browser --helper-mode exit
+# or
+STEALTH_MODE=exit stealth-browser
+```
+
+**Behavior**:
+- Query operator directory on startup
+- **Registers with directory** via heartbeat
+- Relay encrypted traffic for other peers
+- **Exit to internet** enabled (handle HTTP/HTTPS CONNECT requests)
+- **Does NOT run** directory service endpoints
+
+**Exit Node Features** (Task 2.1.11.2):
+- TLS Passthrough (no MITM, end-to-end encryption preserved)
+- Port filtering: Allow 80/443, block 25/110/143 (SMTP/POP3/IMAP)
+- SSRF prevention: Block localhost, 127.0.0.1, private IP ranges (RFC 1918)
+- Rate limiting: 20 connections/client, 100 requests/min/client
+- Logging: Sanitized (destination host/port only, no PII, 7-day retention)
+
+**Legal Considerations**:
+- DMCA §512(a) safe harbor (US): Transitory network communications exemption
+- E-Commerce Directive Article 12 (EU): Mere conduit safe harbor
+- Operator responsible for traffic from exit node IP address
+- Abuse contact email required (`EXIT_ABUSE_EMAIL` env var)
+
+**⚠️ WARNING**: Exit node mode enables internet forwarding. Legal liability applies. Your IP will be visible to destination websites.
+
+**Feature Summary**: Relay + exit to internet, no directory service
+
+---
+
+#### 5. Super Mode
+**Usage**: Operator-run super peers (all features enabled)
+```bash
+stealth-browser --helper-mode super
+# or
+STEALTH_MODE=super stealth-browser
+```
+
+**Behavior**:
+- **Runs directory service** (bootstrap endpoints)
+- **Registers with directory** via heartbeat
+- Relay encrypted traffic for other peers
+- **Exit to internet** enabled (full exit node functionality)
+
+**Use Case**: Operator droplets serving as combined bootstrap + relay + exit nodes (6-droplet global infrastructure)
+
+**Feature Summary**: All features (bootstrap + relay + exit)
+
+---
+
+### Mode Comparison Table
+
+| Feature | Client | Relay | Bootstrap | Exit | Super |
+|---------|--------|-------|-----------|------|-------|
+| Query directory on startup | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Register with directory (heartbeat) | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Run directory service | ❌ | ❌ | ✅ | ❌ | ✅ |
+| Relay encrypted traffic | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Exit to internet | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Legal liability | No | No | No | **Yes** | **Yes** |
+| Typical deployment | User devices | Trusted relays | Operator droplets | Exit relays | Operator droplets |
+
+---
+
+### Environment Variables
+
+- `STEALTH_MODE` - Helper mode (overrides CLI flag): `client`, `relay`, `bootstrap`, `exit`, `super`
+- `STEALTH_SOCKS_PORT` - SOCKS5 port (default: 1088)
+- `STEALTH_STATUS_PORT` - Status API port (default: 8088)
+- `EXIT_ABUSE_EMAIL` - Abuse contact email (required for exit/super modes)
+- `EXIT_MAX_CONNECTIONS` - Max concurrent exit connections (default: 1000)
+- `EXIT_ALLOWED_PORTS` - Comma-separated allowed ports (default: 80,443)
+
+---
+
+### Legacy Aliases (Backward Compatibility)
+
+For backward compatibility, the following CLI flags still work:
+
+- `--relay-only` → `--helper-mode relay`
+- `--exit-node` → `--helper-mode exit`
+- `--bootstrap` → `--helper-mode bootstrap`
+
+Environment variable `QNET_MODE` is deprecated; use `STEALTH_MODE` instead.
+
+---
 
 ## Logging
 

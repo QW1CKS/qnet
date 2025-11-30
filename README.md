@@ -434,6 +434,151 @@ graph TB
 - **Windows** (primary dev environment) or Linux/macOS
 - **PowerShell** (for Windows scripts)
 
+### Understanding QNet Peer Modes
+
+QNet uses a **3-tier architecture** with different operational modes for different roles:
+
+#### Peer Mode Comparison
+
+| Feature | Client | Relay | Bootstrap | Exit | Super |
+|---------|--------|-------|-----------|------|-------|
+| **Query directory on startup** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes |
+| **Register with directory** | ❌ No | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes |
+| **Run directory service** | ❌ No | ❌ No | ✅ Yes | ❌ No | ✅ Yes |
+| **Relay encrypted traffic** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Exit to internet** | ❌ No | ❌ No | ❌ No | ✅ Yes | ✅ Yes |
+| **Legal liability** | None | None | None | **Yes** | **Yes** |
+| **Privacy level** | 🟢 **Highest** | 🟡 Medium | 🟡 Medium | 🟡 Medium | 🟡 Medium |
+| **Operator visibility** | ❌ Invisible | ✅ Visible | ✅ Visible | ✅ Visible | ✅ Visible |
+| **Typical deployment** | User devices | Trusted relays | Operator droplets | Exit relays | Operator droplets |
+
+#### Mode Details
+
+**🔵 Client Mode** (default for end-users)
+- **Purpose**: Maximum privacy for everyday users
+- **Behavior**: Queries directory to find relays, connects through mesh, never registers
+- **Privacy**: Operators cannot track individual users (no heartbeat = invisible)
+- **Usage**: 
+  ```powershell
+  # Default mode (no flag needed)
+  cargo run -p stealth-browser
+  
+  # Explicit
+  cargo run -p stealth-browser -- --helper-mode client
+  STEALTH_MODE=client cargo run -p stealth-browser
+  ```
+
+**🟢 Relay Mode** (community contributors)
+- **Purpose**: Increase network capacity without legal risk
+- **Behavior**: Registers with directory, forwards encrypted packets, never decrypts
+- **Legal**: Safe - relay nodes only forward encrypted data (no content visibility)
+- **Usage**:
+  ```powershell
+  cargo run -p stealth-browser -- --helper-mode relay
+  STEALTH_MODE=relay cargo run -p stealth-browser
+  ```
+
+**🟡 Bootstrap Mode** (operator directory servers)
+- **Purpose**: Run directory service for peer discovery
+- **Behavior**: Hosts HTTP endpoints (`/api/relay/register`, `/api/relays/by-country`)
+- **Infrastructure**: 6 global DigitalOcean droplets (geographically distributed)
+- **Usage**:
+  ```powershell
+  cargo run -p stealth-browser -- --helper-mode bootstrap
+  STEALTH_MODE=bootstrap cargo run -p stealth-browser
+  ```
+
+**🔴 Exit Mode** (dedicated exit nodes)
+- **Purpose**: Internet gateway for mesh traffic
+- **Behavior**: Relay + exit to public internet (decrypt HTTPS CONNECT requests)
+- **Legal**: ⚠️ **High liability** - operator responsible for traffic from exit IP
+- **Security**: Port filtering (80/443 only), SSRF prevention, rate limiting
+- **Usage**:
+  ```powershell
+  cargo run -p stealth-browser -- --helper-mode exit
+  STEALTH_MODE=exit cargo run -p stealth-browser
+  ```
+
+**🟣 Super Mode** (all-in-one operator nodes)
+- **Purpose**: Combined bootstrap + relay + exit (maximum functionality)
+- **Deployment**: The **6 operator droplets** run in super mode
+- **Features**: All capabilities enabled simultaneously
+- **Usage**:
+  ```powershell
+  cargo run -p stealth-browser -- --helper-mode super
+  STEALTH_MODE=super cargo run -p stealth-browser
+  ```
+
+#### Network Architecture
+
+```mermaid
+graph TB
+    subgraph "QNet Global Infrastructure"
+        subgraph "Tier 1: User Devices (Client Mode)"
+            C1[👤 User 1<br/>Client]
+            C2[👤 User 2<br/>Client]
+            C3[👤 User N<br/>Client]
+        end
+        
+        subgraph "Tier 2: Community Relays (Optional)"
+            R1[🔄 Relay 1<br/>Volunteer]
+            R2[🔄 Relay 2<br/>Volunteer]
+        end
+        
+        subgraph "Tier 3: Operator Infrastructure (Super Mode)"
+            S1[🌐 Super Peer 1<br/>US East]
+            S2[🌐 Super Peer 2<br/>US West]
+            S3[🌐 Super Peer 3<br/>EU]
+            S4[🌐 Super Peer 4<br/>Asia]
+            S5[🌐 Super Peer 5<br/>AU]
+            S6[🌐 Super Peer 6<br/>SA]
+        end
+    end
+    
+    C1 -.->|Query directory| S1
+    C2 -.->|Query directory| S3
+    C3 -.->|Query directory| S5
+    
+    R1 -->|Register| S2
+    R2 -->|Register| S4
+    
+    C1 -->|Route via mesh| R1
+    R1 -->|Forward| S1
+    S1 -->|Exit to internet| Web[🌍 Public Internet]
+    
+    C2 -->|Route via mesh| S3
+    S3 -->|Exit to internet| Web
+    
+    style C1 fill:#74c0fc
+    style C2 fill:#74c0fc
+    style C3 fill:#74c0fc
+    style R1 fill:#51cf66
+    style R2 fill:#51cf66
+    style S1 fill:#ffd43b
+    style S2 fill:#ffd43b
+    style S3 fill:#ffd43b
+    style S4 fill:#ffd43b
+    style S5 fill:#ffd43b
+    style S6 fill:#ffd43b
+```
+
+**Key Design Principles:**
+
+1. **Privacy by Default**: Client mode never registers (invisible to operators)
+2. **Scalability**: 6 super peers can serve thousands of clients
+3. **Legal Clarity**: Only operator droplets have exit liability (known, controlled IPs)
+4. **Community Growth**: Relay mode allows contributions without legal risk
+5. **Flexible Deployment**: Modes can be mixed/matched per network needs
+
+**Environment Variables:**
+```bash
+STEALTH_MODE=client|relay|bootstrap|exit|super  # Override mode
+STEALTH_SOCKS_PORT=1088                         # SOCKS5 port
+STEALTH_STATUS_PORT=8088                        # Status API port
+EXIT_ABUSE_EMAIL=abuse@example.com              # Required for exit/super
+EXIT_MAX_CONNECTIONS=1000                       # Exit rate limit
+```
+
 ### Build & Run
 
 ```powershell

@@ -133,19 +133,21 @@
 - [x] Add logging for exit traffic (sanitized, no PII)
 - [x] Add unit tests for exit logic (20 tests across 5 modules)
 
-#### 2.1.11.3 Add Super Peer Mode Configuration 📋 PENDING
-- [ ] Open file: `apps/stealth-browser/src/main.rs`
-- [ ] Add CLI flag: `--mode <MODE>` where MODE = client | relay | bootstrap | exit | super
-  - [ ] `client`: Default, query directory, no registration, no exit
-  - [ ] `relay`: Register with directory, relay traffic, no exit
-  - [ ] `bootstrap`: Run directory service, relay traffic, no exit
-  - [ ] `exit`: Relay traffic + exit to internet, no directory service
-  - [ ] `super`: All features (bootstrap + relay + exit)
-- [ ] Add environment variable: `STEALTH_MODE` (overrides CLI)
-- [ ] Implement mode validation and feature enablement logic
-- [ ] Update `AppState` to include `mode: HelperMode` enum
-- [ ] Add startup log showing enabled features based on mode
-- [ ] Document mode behaviors in `qnet-spec/docs/helper.md`
+#### 2.1.11.3 Add Super Peer Mode Configuration ✅ COMPLETE
+- [x] Open file: `apps/stealth-browser/src/main.rs`
+- [x] Add CLI flag: `--helper-mode <MODE>` where MODE = client | relay | bootstrap | exit | super
+  - [x] `client`: Default, query directory, no registration, no exit
+  - [x] `relay`: Register with directory, relay traffic, no exit
+  - [x] `bootstrap`: Run directory service, relay traffic, no exit
+  - [x] `exit`: Relay traffic + exit to internet, no directory service
+  - [x] `super`: All features (bootstrap + relay + exit)
+- [x] Add environment variable: `STEALTH_MODE` (overrides CLI)
+- [x] Implement mode validation and feature enablement logic
+- [x] Update `AppState` to include `helper_mode: HelperMode` field
+- [x] Add startup log showing enabled features based on mode
+- [x] Document mode behaviors in `qnet-spec/docs/helper.md`
+- [x] Add unit tests (6 tests: from_str, runs_directory, sends_heartbeat, supports_exit, queries_directory, feature_description)
+- [x] Verify compilation and test pass (32 passed; 0 failed)
 
 #### 2.1.11.4 Integrate Directory with Super Peer Mode 📋 PENDING
 - [ ] Modify `spawn_status_server()` to conditionally enable directory endpoints

@@ -183,20 +183,54 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+                "--helper-mode" => {
+                    if let Some(v) = args.next() {
+                        match HelperMode::from_str(&v) {
+                            Ok(mode) => {
+                                cfg.helper_mode = mode;
+                                eprintln!("cli-override: helper_mode={:?} ({})", mode, mode.feature_description());
+                                if mode.supports_exit() {
+                                    eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
+                                    eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("cli-error: {}", e);
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+                s if s.starts_with("--helper-mode=") => {
+                    let v = s.split_once('=').map(|(_, v)| v).unwrap_or("");
+                    match HelperMode::from_str(v) {
+                        Ok(mode) => {
+                            cfg.helper_mode = mode;
+                            eprintln!("cli-override: helper_mode={:?} ({})", mode, mode.feature_description());
+                            if mode.supports_exit() {
+                                eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
+                                eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("cli-error: {}", e);
+                            return Err(e);
+                        }
+                    }
+                }
+                // Legacy aliases for backward compatibility
                 "--relay-only" => {
-                    cfg.helper_mode = HelperMode::RelayOnly;
-                    eprintln!("cli-override: helper_mode=relay-only (safe, no exit liability)");
+                    cfg.helper_mode = HelperMode::Relay;
+                    eprintln!("cli-override: helper_mode=relay (legacy alias --relay-only)");
                 }
                 "--exit-node" => {
-                    cfg.helper_mode = HelperMode::ExitNode;
-                    eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
-                    eprintln!(
-                        "⚠️  You will make web requests for other users. Legal liability applies!"
-                    );
+                    cfg.helper_mode = HelperMode::Exit;
+                    eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI (legacy alias --exit-node)");
+                    eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
                 }
                 "--bootstrap" => {
                     cfg.helper_mode = HelperMode::Bootstrap;
-                    eprintln!("cli-override: helper_mode=bootstrap (seed + exit)");
+                    eprintln!("cli-override: helper_mode=bootstrap (legacy alias)");
                 }
                 "--no-mesh" => {
                     cfg.mesh_enabled = false;
@@ -212,7 +246,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 "--help" | "-h" => {
-                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --socks-port <port>\n  --status-port <port>\n  --relay-only (default, safe - forward encrypted packets)\n  --exit-node (opt-in, liability - make actual web requests)\n  --bootstrap (seed node + exit)\n  --no-mesh (disable peer discovery and relay)\n  --generate-keypair <path> (generate persistent keypair for operator nodes)\n  -h,--help show help");
+                    println!("QNet stealth-browser options:\n  --mode <direct|masked|htx-http-echo>\n  --helper-mode <client|relay|bootstrap|exit|super>\n  --socks-port <port>\n  --status-port <port>\n  --no-mesh (disable peer discovery and relay)\n  --generate-keypair <path> (generate persistent keypair for operator nodes)\n\nHelper Modes (Task 2.1.11.3):\n  client    - Default: query directory, no registration, no exit\n  relay     - Register with directory, relay traffic, no exit\n  bootstrap - Run directory service, relay traffic, no exit\n  exit      - Relay + exit to internet, no directory service\n  super     - All features (bootstrap + relay + exit)\n\nEnvironment Variables:\n  STEALTH_MODE        - Override helper mode (client|relay|bootstrap|exit|super)\n  STEALTH_SOCKS_PORT  - SOCKS5 port (default: 1088)\n  STEALTH_STATUS_PORT - Status API port (default: 8088)\n\n  -h,--help show help");
                     return Ok(());
                 }
                 _ => { /* ignore unknown for forward compat */ }
@@ -236,7 +270,22 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!(port = cfg.socks_port, status_port = cfg.status_port, mode=?cfg.mode, "config loaded");
+    info!(port = cfg.socks_port, status_port = cfg.status_port, mode=?cfg.mode, helper_mode=?cfg.helper_mode, "config loaded");
+
+    // Log enabled features based on helper mode (Task 2.1.11.3)
+    info!(
+        helper_mode = ?cfg.helper_mode,
+        features = cfg.helper_mode.feature_description(),
+        runs_directory = cfg.helper_mode.runs_directory(),
+        sends_heartbeat = cfg.helper_mode.sends_heartbeat(),
+        supports_exit = cfg.helper_mode.supports_exit(),
+        "helper mode features"
+    );
+    if cfg.helper_mode.supports_exit() {
+        warn!("⚠️  EXIT NODE MODE ACTIVE - You are responsible for traffic from this IP address");
+        warn!("⚠️  Exit Policy: HTTP/HTTPS only (ports 80, 443), SMTP/POP3/IMAP blocked (25, 110, 143)");
+        warn!("⚠️  Legal: Ensure compliance with local laws and ISP terms of service");
+    }
 
     // Shared app state for status reporting
     let (app_state, mesh_rx) = AppState::new(cfg.clone());
@@ -455,12 +504,64 @@ enum Mode {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum HelperMode {
-    /// Relay only (default, safe) - forward encrypted packets, no exit liability
-    RelayOnly,
-    /// Exit node (opt-in) - make actual web requests, legal liability
-    ExitNode,
-    /// Bootstrap node (optional) - act as seed + exit
+    /// Client mode (default) - query directory, no registration, no exit
+    Client,
+    /// Relay mode - register with directory, relay traffic, no exit
+    Relay,
+    /// Bootstrap mode - run directory service, relay traffic, no exit
     Bootstrap,
+    /// Exit mode - relay traffic + exit to internet, no directory service
+    Exit,
+    /// Super mode - all features (bootstrap + relay + exit)
+    Super,
+}
+
+impl HelperMode {
+    /// Parse mode from string
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "client" => Ok(HelperMode::Client),
+            "relay" => Ok(HelperMode::Relay),
+            "bootstrap" => Ok(HelperMode::Bootstrap),
+            "exit" => Ok(HelperMode::Exit),
+            "super" => Ok(HelperMode::Super),
+            // Legacy aliases for backward compatibility
+            "relay-only" => Ok(HelperMode::Relay),
+            "exit-node" => Ok(HelperMode::Exit),
+            _ => Err(anyhow!("Invalid helper mode: '{}'. Valid modes: client, relay, bootstrap, exit, super", s)),
+        }
+    }
+
+    /// Check if mode runs directory service (bootstrap endpoints)
+    pub fn runs_directory(&self) -> bool {
+        matches!(self, HelperMode::Bootstrap | HelperMode::Super)
+    }
+
+    /// Check if mode sends heartbeats (registers with directory)
+    pub fn sends_heartbeat(&self) -> bool {
+        matches!(self, HelperMode::Relay | HelperMode::Exit | HelperMode::Super)
+    }
+
+    /// Check if mode supports exit functionality
+    pub fn supports_exit(&self) -> bool {
+        matches!(self, HelperMode::Exit | HelperMode::Super)
+    }
+
+    /// Check if mode should query directory on startup
+    pub fn queries_directory(&self) -> bool {
+        !matches!(self, HelperMode::Bootstrap) // All except bootstrap query directory
+    }
+
+    /// Get human-readable description of enabled features
+    pub fn feature_description(&self) -> &'static str {
+        match self {
+            HelperMode::Client => "query directory, no registration, no exit",
+            HelperMode::Relay => "register with directory, relay traffic, no exit",
+            HelperMode::Bootstrap => "run directory service, relay traffic, no exit",
+            HelperMode::Exit => "relay + exit to internet, no directory service",
+            HelperMode::Super => "all features (bootstrap + relay + exit)",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -487,16 +588,16 @@ impl Default for Config {
         // Defaults aligned with docs:
         //  - SOCKS proxy: 127.0.0.1:1088
         //  - Status API: 127.0.0.1:8088
-        //  - Helper mode: relay-only (safe by default, no exit liability)
+        //  - Helper mode: client (default, query directory, no registration)
         //  - Mesh: enabled (peer discovery and relay)
-        // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, QNET_MODE, QNET_MESH_ENABLED).
+        // Both can be overridden via env (STEALTH_SOCKS_PORT, STEALTH_STATUS_PORT, STEALTH_MODE, QNET_MESH_ENABLED).
         Self {
             socks_port: 1088,
             mode: Mode::Direct,
             bootstrap: false,
             status_port: 8088,
             disable_bootstrap: true,
-            helper_mode: HelperMode::RelayOnly, // Phase 2.5.3: safe by default
+            helper_mode: HelperMode::Client, // Task 2.1.11.3: client mode by default
             mesh_enabled: true,                 // Phase 2.4: mesh network enabled
             mesh_max_circuits: 10,              // Phase 2.4.4: circuit limit
             mesh_build_circuits: true,          // Phase 2.4.4: enable circuit building
@@ -561,28 +662,22 @@ impl Config {
                 cfg.status_port = n;
             }
         }
-        // Phase 2.5.3: Helper mode (relay-only, exit-node, bootstrap)
+        // Phase 2.5.3: Helper mode (client, relay, bootstrap, exit, super)
+        // QNET_MODE is deprecated; use STEALTH_MODE instead (handled earlier in Config::load_default)
         if let Ok(mode_str) = std::env::var("QNET_MODE") {
-            cfg.helper_mode = match mode_str.to_ascii_lowercase().as_str() {
-                "relay" | "relay-only" => HelperMode::RelayOnly,
-                "exit" | "exit-node" => {
-                    eprintln!(
-                        "⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!"
-                    );
-                    eprintln!(
-                        "⚠️  Legal liability: Your IP will be visible to destination websites."
-                    );
-                    HelperMode::ExitNode
+            warn!("QNET_MODE is deprecated; use STEALTH_MODE instead");
+            match HelperMode::from_str(&mode_str) {
+                Ok(mode) => {
+                    cfg.helper_mode = mode;
+                    if mode.supports_exit() {
+                        eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
+                        eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
+                    }
                 }
-                "bootstrap" => {
-                    eprintln!("BOOTSTRAP MODE: Acting as seed node + exit");
-                    HelperMode::Bootstrap
+                Err(e) => {
+                    warn!(error=%e, "invalid QNET_MODE; using default (client)");
                 }
-                other => {
-                    warn!(%other, "unknown QNET_MODE; defaulting to relay-only");
-                    HelperMode::RelayOnly
-                }
-            };
+            }
         }
         // Phase 2.4: Mesh network enable/disable
         if let Ok(v) = std::env::var("QNET_MESH_ENABLED") {
@@ -655,6 +750,8 @@ struct AppState {
     mesh_commands: tokio::sync::mpsc::UnboundedSender<MeshCommand>,
     // Peer directory for operator nodes (Task 2.1.11.1)
     directory: directory::PeerDirectory,
+    // Helper mode (client/relay/bootstrap/exit/super) (Task 2.1.11.3)
+    helper_mode: HelperMode,
 }
 
 /// Commands sent from SOCKS5 handler (Tokio) to Swarm event loop (async-std)
@@ -739,7 +836,7 @@ impl AppState {
         let (mesh_tx, mesh_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let state = Self {
-            cfg,
+            cfg: cfg.clone(),
             status: Mutex::new((snap, None)),
             last_masked_connect: Mutex::new(None),
             masked_stats: Mutex::new(MaskedStats::default()),
@@ -751,6 +848,7 @@ impl AppState {
             relay_route_count: Arc::new(AtomicU32::new(0)),
             mesh_commands: mesh_tx,
             directory: directory::PeerDirectory::new(), // Task 2.1.11.1
+            helper_mode: cfg.helper_mode, // Task 2.1.11.3
         };
 
         (state, mesh_rx)
@@ -983,17 +1081,17 @@ fn extract_http_url_from_multiaddr(addr: &libp2p::Multiaddr) -> Option<String> {
     ip.map(|ip_str| format!("http://{}:{}", ip_str, port))
 }
 
-/// Spawn heartbeat loop for relay-only mode.
+/// Spawn heartbeat loop for relay/exit/super modes.
 ///
 /// Registers this peer with operator directory every 30 seconds.
-/// Only runs if helper_mode is RelayOnly.
+/// Only runs if helper_mode sends heartbeat (relay, exit, super).
 fn spawn_heartbeat_loop(
     peer_id: libp2p::PeerId,
     local_addrs: Vec<libp2p::Multiaddr>,
     helper_mode: HelperMode,
 ) {
-    if !matches!(helper_mode, HelperMode::RelayOnly) {
-        info!("heartbeat: Skipping registration (not relay-only mode)");
+    if !helper_mode.sends_heartbeat() {
+        info!("heartbeat: Skipping registration (mode doesn't send heartbeat: {:?})", helper_mode);
         return;
     }
 
@@ -1619,10 +1717,12 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     json["config_mode"] = json["mode"].clone(); // backward compat
 
     // Phase 2.4: Mesh network status
-    json["helper_mode"] = serde_json::json!(match app.cfg.helper_mode {
-        HelperMode::RelayOnly => "relay-only",
-        HelperMode::ExitNode => "exit-node",
+    json["helper_mode"] = serde_json::json!(match app.helper_mode {
+        HelperMode::Client => "client",
+        HelperMode::Relay => "relay",
         HelperMode::Bootstrap => "bootstrap",
+        HelperMode::Exit => "exit",
+        HelperMode::Super => "super",
     });
     json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
 
@@ -2604,5 +2704,71 @@ mod tests {
         assert_eq!(response.get("pruned").and_then(|v| v.as_u64()), Some(5));
         assert_eq!(response.get("active_peers").and_then(|v| v.as_u64()), Some(10));
         assert_eq!(response.get("total_peers").and_then(|v| v.as_u64()), Some(15));
+    }
+
+    // Task 2.1.11.3: Helper mode tests
+    #[test]
+    fn test_helper_mode_from_str() {
+        assert_eq!(HelperMode::from_str("client").unwrap(), HelperMode::Client);
+        assert_eq!(HelperMode::from_str("relay").unwrap(), HelperMode::Relay);
+        assert_eq!(HelperMode::from_str("bootstrap").unwrap(), HelperMode::Bootstrap);
+        assert_eq!(HelperMode::from_str("exit").unwrap(), HelperMode::Exit);
+        assert_eq!(HelperMode::from_str("super").unwrap(), HelperMode::Super);
+
+        // Case insensitive
+        assert_eq!(HelperMode::from_str("CLIENT").unwrap(), HelperMode::Client);
+        assert_eq!(HelperMode::from_str("Super").unwrap(), HelperMode::Super);
+
+        // Legacy aliases
+        assert_eq!(HelperMode::from_str("relay-only").unwrap(), HelperMode::Relay);
+        assert_eq!(HelperMode::from_str("exit-node").unwrap(), HelperMode::Exit);
+
+        // Invalid mode
+        assert!(HelperMode::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_helper_mode_runs_directory() {
+        assert!(!HelperMode::Client.runs_directory());
+        assert!(!HelperMode::Relay.runs_directory());
+        assert!(HelperMode::Bootstrap.runs_directory());
+        assert!(!HelperMode::Exit.runs_directory());
+        assert!(HelperMode::Super.runs_directory());
+    }
+
+    #[test]
+    fn test_helper_mode_sends_heartbeat() {
+        assert!(!HelperMode::Client.sends_heartbeat());
+        assert!(HelperMode::Relay.sends_heartbeat());
+        assert!(!HelperMode::Bootstrap.sends_heartbeat());
+        assert!(HelperMode::Exit.sends_heartbeat());
+        assert!(HelperMode::Super.sends_heartbeat());
+    }
+
+    #[test]
+    fn test_helper_mode_supports_exit() {
+        assert!(!HelperMode::Client.supports_exit());
+        assert!(!HelperMode::Relay.supports_exit());
+        assert!(!HelperMode::Bootstrap.supports_exit());
+        assert!(HelperMode::Exit.supports_exit());
+        assert!(HelperMode::Super.supports_exit());
+    }
+
+    #[test]
+    fn test_helper_mode_queries_directory() {
+        assert!(HelperMode::Client.queries_directory());
+        assert!(HelperMode::Relay.queries_directory());
+        assert!(!HelperMode::Bootstrap.queries_directory());
+        assert!(HelperMode::Exit.queries_directory());
+        assert!(HelperMode::Super.queries_directory());
+    }
+
+    #[test]
+    fn test_helper_mode_feature_description() {
+        assert_eq!(HelperMode::Client.feature_description(), "query directory, no registration, no exit");
+        assert_eq!(HelperMode::Relay.feature_description(), "register with directory, relay traffic, no exit");
+        assert_eq!(HelperMode::Bootstrap.feature_description(), "run directory service, relay traffic, no exit");
+        assert_eq!(HelperMode::Exit.feature_description(), "relay + exit to internet, no directory service");
+        assert_eq!(HelperMode::Super.feature_description(), "all features (bootstrap + relay + exit)");
     }
 }
