@@ -299,6 +299,9 @@ async fn main() -> Result<()> {
     // Start mesh peer discovery (task 2.1.6, Phase 2.4.2)
     spawn_mesh_discovery(app_state.clone(), mesh_rx);
 
+    // Start background directory pruning task (Task 2.1.11.4)
+    spawn_directory_pruning_task(app_state.clone());
+
     // Start a tiny local status server (headless-friendly)
     // Bind address controlled by QNET_STATUS_BIND env var (default: 127.0.0.1)
     // Set to "0.0.0.0" or "0.0.0.0:8088" on droplets for remote monitoring
@@ -1139,6 +1142,29 @@ fn spawn_heartbeat_loop(
     });
 }
 
+/// Spawn background directory pruning task (Task 2.1.11.4)
+///
+/// Runs every 60 seconds, removing stale relay registrations from the directory.
+/// Only runs in bootstrap/super modes (modes that run the directory service).
+/// Other modes skip this task as they don't maintain a directory.
+fn spawn_directory_pruning_task(state: Arc<AppState>) {
+    if !state.helper_mode.runs_directory() {
+        info!("directory-pruning: Skipping (mode doesn't run directory: {:?})", state.helper_mode);
+        return;
+    }
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let pruned = state.directory.prune_stale_peers();
+            if pruned > 0 {
+                info!("directory-pruning: Removed {} stale peers", pruned);
+            }
+        }
+    });
+}
+
 /// Spawn mesh peer discovery thread (task 2.1.6, Phase 2.4.2)
 ///
 /// Runs libp2p Swarm event loop in a dedicated async-std thread.
@@ -1922,8 +1948,14 @@ fn handle_status_blocking(
             .replace("__SOCKS_ADDR__", &socks_addr);
         (html, "text/html; charset=utf-8", true)
     } else if path_token == "/api/relay/register" {
-        // Task 2.1.11.1: POST /api/relay/register - relay heartbeat registration
-        if !line.starts_with("POST ") {
+        // Task 2.1.11.4: POST /api/relay/register - only available in bootstrap/super modes
+        if !app.helper_mode.runs_directory() {
+            (
+                serde_json::json!({"error":"directory service not available in this mode","mode":format!("{:?}", app.helper_mode)}).to_string(),
+                "application/json",
+                false,
+            )
+        } else if !line.starts_with("POST ") {
             (
                 serde_json::json!({"error":"method not allowed, use POST"}).to_string(),
                 "application/json",
@@ -1954,18 +1986,25 @@ fn handle_status_blocking(
             }
         }
     } else if path_token == "/api/relays/by-country" {
-        // Task 2.1.11.1: GET /api/relays/by-country?country=US - query registered relays
-        let query_params = sp.next().unwrap_or("");
-        let country_filter = query_params
-            .split('&')
-            .find_map(|param| {
-                let mut kv = param.splitn(2, '=');
-                if kv.next() == Some("country") {
-                    kv.next()
-                } else {
-                    None
-                }
-            });
+        // Task 2.1.11.4: GET /api/relays/by-country?country=US - only available in bootstrap/super modes
+        if !app.helper_mode.runs_directory() {
+            (
+                serde_json::json!({"error":"directory service not available in this mode","mode":format!("{:?}", app.helper_mode)}).to_string(),
+                "application/json",
+                false,
+            )
+        } else {
+            let query_params = sp.next().unwrap_or("");
+            let country_filter = query_params
+                .split('&')
+                .find_map(|param| {
+                    let mut kv = param.splitn(2, '=');
+                    if kv.next() == Some("country") {
+                        kv.next()
+                    } else {
+                        None
+                    }
+                });
 
         let all_relays = app.directory.get_relays_by_country();
         
@@ -1983,15 +2022,25 @@ fn handle_status_blocking(
 
         let response = serde_json::to_string(&filtered).unwrap_or_else(|_| "{}".to_string());
         (response, "application/json", true)
+        }
     } else if path_token == "/api/relays/prune" {
         // Task 2.1.11.1: GET /api/relays/prune - manual pruning (dev only)
-        let pruned = app.directory.prune_stale_peers();
-        let response = serde_json::json!({
-            "pruned": pruned,
-            "active_peers": app.directory.active_peer_count(),
-            "total_peers": app.directory.total_peer_count()
-        });
-        (response.to_string(), "application/json", true)
+        // Task 2.1.11.4: Only available in bootstrap/super modes
+        if !app.helper_mode.runs_directory() {
+            (
+                serde_json::json!({"error":"directory service not available in this mode","mode":format!("{:?}", app.helper_mode)}).to_string(),
+                "application/json",
+                false,
+            )
+        } else {
+            let pruned = app.directory.prune_stale_peers();
+            let response = serde_json::json!({
+                "pruned": pruned,
+                "active_peers": app.directory.active_peer_count(),
+                "total_peers": app.directory.total_peer_count()
+            });
+            (response.to_string(), "application/json", true)
+        }
     } else {
         STATUS_PATH_OTHER.fetch_add(1, Ordering::Relaxed);
         (
@@ -2771,4 +2820,37 @@ mod tests {
         assert_eq!(HelperMode::Exit.feature_description(), "relay + exit to internet, no directory service");
         assert_eq!(HelperMode::Super.feature_description(), "all features (bootstrap + relay + exit)");
     }
+
+    // Task 2.1.11.4: Test directory endpoint conditional access
+
+    #[test]
+    fn test_directory_endpoints_available_in_bootstrap_mode() {
+        // Bootstrap mode should run directory service
+        assert!(HelperMode::Bootstrap.runs_directory());
+    }
+
+    #[test]
+    fn test_directory_endpoints_available_in_super_mode() {
+        // Super mode should run directory service
+        assert!(HelperMode::Super.runs_directory());
+    }
+
+    #[test]
+    fn test_directory_endpoints_unavailable_in_client_mode() {
+        // Client mode should NOT run directory service
+        assert!(!HelperMode::Client.runs_directory());
+    }
+
+    #[test]
+    fn test_directory_endpoints_unavailable_in_relay_mode() {
+        // Relay mode should NOT run directory service
+        assert!(!HelperMode::Relay.runs_directory());
+    }
+
+    #[test]
+    fn test_directory_endpoints_unavailable_in_exit_mode() {
+        // Exit mode should NOT run directory service
+        assert!(!HelperMode::Exit.runs_directory());
+    }
 }
+

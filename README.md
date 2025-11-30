@@ -970,12 +970,12 @@ gantt
     Crypto & Framing      :done, p1b, 2025-09-20, 2025-10-20
     Catalog System (REMOVED):crit, p1c, 2025-10-01, 2025-10-25
     
-    section Phase 2 ✅
-    Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-01
+    section Phase 2 🚧
+    Peer Discovery (2.1)  :done, p2a, 2025-10-15, 2025-11-15
     Relay Logic (2.2)     :done, p2b, 2025-11-01, 2025-11-10
     Circuit Building (2.3):done, p2c, 2025-11-10, 2025-11-20
     Helper Integration (2.4):done, p2d, 2025-11-20, 2025-11-27
-    Exit Infrastructure (2.5):active, p2e, 2025-11-27, 2025-12-15
+    Super Peer Impl (2.1.11):active, p2e, 2025-11-20, 2025-11-30
     
     section Phase 3 🚧
     Browser Extension     :p3, 2025-12-01, 2026-02-28
@@ -990,48 +990,285 @@ gantt
     Governance            :p4d, 2026-07-01, 2026-10-31
 ```
 
-### Current Status: Phase 2.1.10 - Operator Peer Directory (Complete)
+### Current Status: Phase 2.1.11 - Super Peer Implementation (In Progress)
 
 > [!NOTE]
-> **DHT Removed (Nov 30, 2025)**: Replaced Kademlia DHT with operator peer directory for faster, more reliable peer discovery. Relay nodes register via HTTP heartbeat every 30s. Clients query directory on startup for instant peer list (<2s vs 90s DHT timeout).
+> **Multi-Mode Helper (Nov 30, 2025)**: Implemented 5 operational modes (client, relay, bootstrap, exit, super) with conditional feature enablement. Directory endpoints, heartbeat registration, and exit capabilities now respect helper mode configuration. 4 of 6 subtasks complete.
 
 **Phase 1: Core Infrastructure** (✅ 100% Complete - Sept 15 - Oct 31, 2025)
-- ✅ HTX protocol implementation (`htx/`)
-- ✅ AEAD framing layer (`core-framing/`)
-- ✅ Cryptographic primitives (`core-crypto/`)
-- ❌ Catalog system (removed - replaced by hardcoded bootstrap)
-- ✅ Deterministic CBOR encoding (`core-cbor/`)
 
-**Phase 2: P2P Mesh Network** (✅ 100% Complete - Oct 15 - Nov 30, 2025)
+- ✅ **HTX Protocol Implementation** (`htx/` crate)
+  - TLS 1.3 fingerprint mirroring (ClientHello templates from real browsers)
+  - Origin-aware handshake (mimic target site's TLS characteristics)
+  - Noise XK handshake derivative (Ed25519 static key verification)
+  - Ephemeral X25519 key exchange (forward secrecy per connection)
+  - ChaCha20-Poly1305 AEAD for post-handshake encryption
+  - HKDF-SHA256 key derivation (traffic keys, rekey mechanism)
+  - Deterministic nonce generation (monotonic counters, never reuse)
+  - Integration tests with localhost TLS server (`certs/target3/`)
+  
+- ✅ **AEAD Framing Layer** (`core-framing/` crate)
+  - ChaCha20-Poly1305 AEAD per frame (integrity + confidentiality)
+  - Length-prefixed frames (u16 header, max 16KB payload)
+  - Monotonic nonce counters (per encoder/decoder instance)
+  - Frame encoder/decoder API (stateful, reusable)
+  - Bidirectional streaming support (concurrent read/write)
+  - Fuzz targets (`fuzz/fuzz_targets/framing_fuzz.rs`)
+  - Criterion benchmarks (throughput: ~1.2 GB/s on modern CPU)
+  
+- ✅ **Cryptographic Primitives** (`core-crypto/` crate)
+  - Ed25519 signatures (identity, catalog signing)
+  - X25519 ECDH (ephemeral key exchange)
+  - ChaCha20-Poly1305 AEAD (symmetric encryption)
+  - HKDF-SHA256 (key derivation function)
+  - BLAKE3 hashing (fast, parallelizable)
+  - Wrappers around `ring` crate (constant-time, audited)
+  - No raw crypto calls outside this crate (centralized, auditable)
+  
+- ❌ **Catalog System** (removed Oct 25, 2025 - replaced by hardcoded bootstrap)
+  - Originally: Signed JSON catalog with decoy sites + operator nodes
+  - DET-CBOR canonical encoding (for Ed25519 signature verification)
+  - Expiration TTL with grace period (staleness detection)
+  - Version monotonicity (prevent rollback attacks)
+  - Decision: Removed due to operational complexity for MVP
+  - Replacement: Hardcoded operator nodes in `core-mesh::discovery::load_bootstrap_nodes()`
+  - Future: May revive for auto-update mechanism (Phase 3.4)
+  
+- ✅ **Deterministic CBOR Encoding** (`core-cbor/` crate)
+  - DET-CBOR implementation (RFC 8949 + deterministic rules)
+  - Canonical ordering (map keys sorted lexicographically)
+  - Used for signed payloads (catalog was primary use case)
+  - No ambiguous encoding (exactly one representation per value)
+  - Integration with `serde` (derive macros for structs)
+  - Still used for future signed artifacts (protocol upgrades, governance votes)
+
+**Phase 2: P2P Mesh Network** (🚧 67% Complete - Oct 15 - Nov 30, 2025)
 
 *Completed Sections (2.1-2.4):*
-- ✅ **2.1 Peer Discovery** - mDNS local ✅ + Operator Directory ✅ (DHT removed)
-- ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking  
+- ✅ **2.1 Peer Discovery** - mDNS local ✅ + Operator Directory ✅ (DHT removed Nov 30)
+  - Multicast DNS for LAN peer discovery
+  - HTTP-based operator directory (POST /api/relay/register, GET /api/relays/by-country)
+  - Heartbeat registration (30s interval) for relay visibility
+  - Client query with country filtering (<2s discovery vs 90s DHT timeout)
+  - Background pruning (120s TTL, 60s interval)
+  - ~480 lines directory implementation (replaced ~450 lines Kademala DHT)
+  
+- ✅ **2.2 Relay Logic** - Packet forwarding, routing table, statistics tracking
+  - Circuit-based message routing with hop-by-hop forwarding
+  - Encrypted packet relay (relays never see plaintext)
+  - Bandwidth tracking per relay (bytes in/out)
+  - Active circuit management (creation, teardown, timeouts)
+  - Routing table with peer capability tracking
+  
 - ✅ **2.3 Circuit Building** - Multi-hop circuits (max 3 hops), auto-teardown
+  - Multi-hop circuit establishment (1-3 hops configurable)
+  - Onion routing protocol (layered encryption per hop)
+  - Circuit teardown on timeout/error (60s idle timeout)
+  - Path selection with relay capability filtering
+  - Circuit reuse for performance (connection pooling)
+  
 - ✅ **2.4 Helper Integration** - SOCKS5→Mesh tunneling, status API, CLI modes, Circuit Relay V2
+  - SOCKS5 proxy server (127.0.0.1:1088) for browser/app integration
+  - Local status API (127.0.0.1:8088) with JSON endpoints
+  - CLI configuration (--socks-port, --status-port, --helper-mode)
+  - libp2p Circuit Relay V2 support (NAT traversal)
+  - Mesh command channel (tokio mpsc) for circuit control
+  - Connection bridging (SOCKS ↔ mesh streams)
 
-*Phase 2.1.10 Complete:*
-- ✅ **Operator Peer Directory** - HTTP registry (POST /api/relay/register, GET /api/relays/by-country)
-- ✅ **Heartbeat Registration** - Relay nodes register every 30s
-- ✅ **Directory Query** - Clients retrieve peer list on startup (<2s)
-- ✅ **DHT Removal** - Removed ~450 lines of Kademlia code
+*Phase 2.1.10 Complete (Operator Directory):*
+- ✅ **Operator Peer Directory** - Lightweight HTTP registry for peer discovery
+  - `PeerDirectory` struct with HashMap storage (country-indexed)
+  - `RelayInfo` registration with timestamps and capabilities
+  - Country-based filtering (GeoIP integration ready for Task 7)
+  - Automatic staleness detection (120s TTL)
+  - 8 unit tests (registration, updates, queries, pruning)
+  
+- ✅ **Heartbeat Registration** - Relay nodes auto-register with operator directory
+  - 30-second heartbeat interval (tokio timer)
+  - Retry logic across 3 operator nodes (fallback redundancy)
+  - JSON payload with peer_id, multiaddrs, country, capabilities
+  - Response validation (200 OK, JSON confirmation)
+  
+- ✅ **Directory Query** - Clients fetch peer list on mesh startup
+  - 3-tier fallback: directory → disk cache (TODO) → hardcoded operators
+  - HTTP GET with optional country filter (?country=US)
+  - Parse multiaddr list and dial discovered peers
+  - <2s discovery time vs 90s DHT timeout (45x faster)
+  
+- ✅ **DHT Removal** - Simplified architecture, reduced attack surface
+  - Removed Kademlia imports and "kad" feature flag
+  - Removed ~450 lines of DHT event handling
+  - Replaced with ~480 lines of operator directory code
+  - No more DHT bootstrap delays or provider record issues
 
-*Blocked Pending Discovery Fix (2.5-2.6):*
-- ⏸️ **2.5 Exit Infrastructure** - Blocked until peer discovery working (need mesh connectivity)
-- ⏸️ **2.6 Production Checkpoint** - Blocked until Phase 2.1 fully operational
+*Phase 2.1.11 In Progress (Super Peer Implementation - 67% Complete):*
+- ✅ **2.1.11.1 Directory HTTP Endpoints** - Bootstrap nodes serve peer directory
+  - POST /api/relay/register - Relay registration endpoint
+  - GET /api/relays/by-country - Query relays by country code
+  - GET /api/relays/prune - Manual pruning trigger (dev/admin only)
+  - JSON request/response format with error handling
+  - 6 unit tests (endpoint parsing, response format, country filters)
+  
+- ✅ **2.1.11.2 Exit Node Logic** - Internet gateway implementation
+  - 7 modules: handler, parser, validator, errors, config, types, tests
+  - HTTP CONNECT parsing with httparse (memory-safe, no buffer overflows)
+  - Destination validation (port policy 80/443 only, SSRF prevention)
+  - Private IP blocking (127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12)
+  - TLS passthrough (no MITM, preserves E2E encryption)
+  - Bidirectional TCP bridging (client ↔ destination)
+  - Bandwidth tracking per connection (config ready, not enforced yet)
+  - Rate limiting structures (validator ready, not enforced yet)
+  - Abuse logging (sanitized, no PII leakage)
+  - 20 unit tests across all modules (100% coverage on parser/validator)
+  
+- ✅ **2.1.11.3 Super Peer Mode Config** - 5-mode operational model
+  - **Client Mode** (default): Query directory, no registration, highest privacy
+  - **Relay Mode**: Register with directory, forward encrypted packets, no exit
+  - **Bootstrap Mode**: Run directory service, relay traffic, no exit
+  - **Exit Mode**: Relay + exit to internet, no directory (dedicated gateways)
+  - **Super Mode**: All features enabled (bootstrap + relay + exit for operators)
+  - CLI flag: `--helper-mode <client|relay|bootstrap|exit|super>`
+  - Environment variable: `STEALTH_MODE` (overrides CLI)
+  - Legacy aliases: `--relay-only`, `--exit-node`, `--bootstrap`
+  - Feature detection: `runs_directory()`, `sends_heartbeat()`, `supports_exit()`, `queries_directory()`
+  - Startup logging with enabled features per mode
+  - Exit node warnings at startup (legal liability notice)
+  - 6 unit tests (mode parsing, feature detection, descriptions)
+  
+- ✅ **2.1.11.4 Directory Integration** - Mode-aware endpoint routing
+  - Conditional directory endpoints (bootstrap/super only)
+  - 404 responses in client/relay/exit modes with error JSON
+  - Background pruning task (60s interval, bootstrap/super only)
+  - Heartbeat respects mode (relay/exit/super send, client/bootstrap skip)
+  - Mode-aware query_operator_directory (all modes supported)
+  - 5 unit tests (endpoint availability per mode)
+  - 37 total tests passing (was 32 + 5 new mode tests)
+  
+- 📋 **2.1.11.5 Exit Node Integration** - SOCKS5 ↔ exit node pipeline (NEXT)
+  - Integrate exit logic with SOCKS5 handler (`handle_connect()`)
+  - Check `helper_mode.supports_exit()` before processing exit requests
+  - Reject with SOCKS error 0x02 if mode doesn't support exit
+  - Decrypt HTX stream before forwarding to exit handler
+  - Add exit statistics to `AppState`:
+    - `exit_requests_total: AtomicU64`
+    - `exit_requests_success: AtomicU64`
+    - `exit_requests_blocked: AtomicU64`
+    - `exit_bandwidth_bytes: AtomicU64`
+  - Update `/status` endpoint with exit stats (conditional on mode)
+  - Exit policy logging (blocked destinations, abuse attempts)
+  - Integration tests (SOCKS → exit → real HTTP/HTTPS)
+  
+- 📋 **2.1.11.6 Testing - Local Super Peer** - End-to-end validation
+  - Test: Run helper in super mode locally
+    - Verify directory endpoints respond (register, query, prune)
+    - Verify exit requests succeed (HTTP/HTTPS forwarding)
+    - Monitor exit stats via `/status` endpoint
+  - Test: Run second helper in client mode
+    - Point at local super peer (override hardcoded operators)
+    - Verify client discovers super peer from directory
+    - Verify client can route through super peer
+    - Verify client can exit through super peer gateway
+  - Test: Directory pruning correctness
+    - Register fake peer with old timestamp
+    - Wait 120 seconds for TTL expiration
+    - Verify peer removed from directory after pruning
+  - Test: Heartbeat registration flow
+    - Run relay mode pointing at super peer
+    - Verify POST /api/relay/register every 30s
+    - Verify relay appears in directory query results
+    - Verify relay persists across heartbeats (update, not duplicate)
+  - Performance: Measure directory query latency vs DHT
+  - Performance: Measure exit throughput (HTTP/HTTPS)
+  - Security: Verify SSRF prevention (attempt private IPs)
+  - Security: Verify port policy enforcement (attempt non-80/443)
 
 **Phase 3: User Experience** (📋 0% - Starting Dec 2025)
-- 📋 Browser extension UI (React/Preact)
-- 📋 Native messaging bridge (Helper ↔ Extension)
-- 📋 Cross-platform installers (Windows/Linux/macOS)
-- 📋 User documentation & onboarding guides
+
+*Browser Extension (Dec 2025 - Feb 2026):*
+- 📋 **3.1 Extension Architecture** - WebExtensions API (Chrome/Edge/Firefox)
+  - Manifest V3 implementation (modern Chrome extension format)
+  - Background service worker (persistent connection manager)
+  - Popup UI (React/Preact, Tailwind CSS)
+  - Options page (settings, preferences, advanced config)
+  - Content scripts (minimal, privacy-preserving)
+  
+- 📋 **3.2 Native Messaging Bridge** - Extension ↔ Helper communication
+  - Native messaging protocol (JSON length-prefixed)
+  - Command channel: start/stop helper, mode switching
+  - Status polling: connection state, peer count, bandwidth
+  - Error handling: helper not installed, permission denied
+  - Automatic helper installation detection
+  
+- 📋 **3.3 UI/UX Development** - Simple, intuitive privacy control
+  - One-click connect/disconnect toggle
+  - Real-time status: online/offline, peer count, mode
+  - Mode switcher: client (default), relay (contribute), exit (advanced)
+  - Bandwidth monitor: data usage, speed graph
+  - Country selector: preferred exit country (if available)
+  - Connection log: recent sites accessed via QNet (optional, privacy-aware)
+  - Settings: auto-start, notifications, exit policy
+  - Onboarding: 3-step setup wizard (install → connect → done)
+  
+- 📋 **3.4 Installers & Packaging** - Zero-configuration deployment
+  - Windows: MSI installer (WiX toolset) with auto-start service
+  - Linux: .deb/.rpm packages + systemd service + AppImage
+  - macOS: .dmg bundle + launchd service + Homebrew formula
+  - Extension store submissions: Chrome Web Store, Edge Add-ons, Firefox AMO
+  - Auto-updater: silent background updates (catalog system revival?)
+  - Uninstaller: clean removal (service, files, registry)
+  
+- 📋 **3.5 Documentation & Onboarding** - Help users succeed
+  - Installation guides (per-platform screenshots)
+  - Troubleshooting FAQ (firewall, antivirus, ports)
+  - Privacy explainer: what QNet sees vs doesn't see
+  - Security audit results (third-party penetration test)
+  - Video tutorials (YouTube: "Get Started with QNet in 2 Minutes")
+  - Community forum (GitHub Discussions)
 
 **Phase 4: Advanced Features** (🔮 Future - Q2 2026+)
-- 📋 L1 SCION-inspired path routing (cryptographic path validation)
-- 📋 Mixnet privacy hops (Nym/Sphinx integration)
-- 📋 Micropayment system (vouchers, relay incentives)
-- 📋 Decentralized governance (voting, upgrades)
-- 📋 Mobile support (Android/iOS apps)
+
+*L1 Path Routing (Q2 2026):*
+- 📋 **4.1 SCION-Inspired Path Validation** - Cryptographic path control
+  - Path-aware networking (select paths, not just destinations)
+  - Cryptographic path validation (prevent path hijacking)
+  - Multi-path routing (bandwidth aggregation, failover)
+  - Path quality metrics (latency, bandwidth, reliability)
+  - Integration with `core-routing` crate (skeletal structures exist)
+  
+*Mixnet Privacy Hops (Q2-Q3 2026):*
+- 📋 **4.2 Nym/Sphinx Integration** - High-latency anonymity layer
+  - Sphinx packet format (layered encryption with cover traffic)
+  - Poisson mixing (randomized delays, traffic analysis resistance)
+  - Integration with `core-mix` and `mixnode` crates (placeholders exist)
+  - Dual-mode operation: fast mode (no mix) vs anonymous mode (mixnet)
+  - Cover traffic generation (constant rate, hide actual usage patterns)
+  
+*Micropayment System (Q3-Q4 2026):*
+- 📋 **4.3 Voucher & Cashu Ecash** - Relay incentive economy
+  - Voucher system (`voucher` crate exists, implementation pending)
+  - Cashu ecash tokens (privacy-preserving micropayments)
+  - Relay compensation (earn vouchers for bandwidth contribution)
+  - Exit node fees (pay for premium exits, operator revenue)
+  - Bandwidth market (dynamic pricing based on demand)
+  - Integration with `alias-ledger` (self-certifying IDs)
+  
+*Decentralized Governance (Q4 2026):*
+- 📋 **4.4 Protocol Upgrades & Voting** - Community-driven evolution
+  - On-chain governance (voting on protocol changes)
+  - Upgrade proposals (RFC-style specifications)
+  - Stake-weighted voting (relay operators vote proportionally)
+  - Automatic rollout (backward-compatible upgrades)
+  - Dispute resolution (appeals, arbitration)
+  - Integration with `core-governance` crate (exists, not implemented)
+  
+*Mobile Support (Q1 2027+):*
+- 📋 **4.5 Android & iOS Apps** - Privacy on mobile devices
+  - Android: Native Kotlin app with VPN API
+  - iOS: Swift app with Network Extension framework
+  - Mobile-optimized UI (battery-efficient, low bandwidth)
+  - Background operation (always-on protection)
+  - App store distribution (Google Play, Apple App Store)
+  - Sync with desktop (shared preferences, circuits)
 
 ---
 

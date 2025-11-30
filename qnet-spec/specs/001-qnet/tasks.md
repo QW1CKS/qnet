@@ -83,7 +83,7 @@
 
 **Context**: Implement "super peer" mode for operator-run droplets that serve as bootstrap nodes, exit nodes, and relay nodes simultaneously. This enables the 6-droplet infrastructure model.
 
-**Status**: 📋 PENDING
+**Status**: 🚧 IN PROGRESS (Tasks 2.1.11.1-4 complete, 2.1.11.5-6 pending)
 
 ### 2.1.11 Super Peer Implementation
 **Goal**: Enable operator droplets to function as bootstrap+exit+relay nodes.
@@ -149,20 +149,22 @@
 - [x] Add unit tests (6 tests: from_str, runs_directory, sends_heartbeat, supports_exit, queries_directory, feature_description)
 - [x] Verify compilation and test pass (32 passed; 0 failed)
 
-#### 2.1.11.4 Integrate Directory with Super Peer Mode 📋 PENDING
-- [ ] Modify `spawn_status_server()` to conditionally enable directory endpoints
-  - [ ] Only enable `/api/relay/register` and `/api/relays/*` in `bootstrap` or `super` mode
-  - [ ] Return 404 for directory endpoints in other modes
-- [ ] Modify `spawn_heartbeat_loop()` to respect mode
-  - [ ] Spawn heartbeat in `relay`, `exit`, or `super` mode
-  - [ ] Skip heartbeat in `client` or `bootstrap` mode
-- [ ] Add background pruning task for directory (every 60 seconds)
-  - [ ] Only run in `bootstrap` or `super` mode
-  - [ ] Call `directory.prune_stale_peers()`
-  - [ ] Log count of pruned peers
-- [ ] Update `query_operator_directory()` to work in all modes
-  - [ ] Client mode: Query hardcoded operators
-  - [ ] Bootstrap/super mode: Can query self (localhost) for testing
+#### 2.1.11.4 Integrate Directory with Super Peer Mode ✅ COMPLETE
+- [x] Modify `spawn_status_server()` to conditionally enable directory endpoints
+  - [x] Only enable `/api/relay/register` and `/api/relays/*` in `bootstrap` or `super` mode
+  - [x] Return 404 for directory endpoints in other modes
+- [x] Modify `spawn_heartbeat_loop()` to respect mode
+  - [x] Spawn heartbeat in `relay`, `exit`, or `super` mode
+  - [x] Skip heartbeat in `client` or `bootstrap` mode
+- [x] Add background pruning task for directory (every 60 seconds)
+  - [x] Only run in `bootstrap` or `super` mode
+  - [x] Call `directory.prune_stale_peers()`
+  - [x] Log count of pruned peers
+- [x] Update `query_operator_directory()` to work in all modes
+  - [x] Client mode: Query hardcoded operators
+  - [x] Bootstrap/super mode: Can query self (localhost) for testing
+- [x] Add unit tests (5 tests for conditional endpoint access)
+- [x] Verify compilation and tests pass (37 passed; 0 failed)
 
 #### 2.1.11.5 Add Exit Node Integration 📋 PENDING
 **Prerequisite**: 2.1.11.2 complete (exit logic implemented)
