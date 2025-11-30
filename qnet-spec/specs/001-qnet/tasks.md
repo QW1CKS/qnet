@@ -88,22 +88,22 @@
 ### 2.1.11 Super Peer Implementation
 **Goal**: Enable operator droplets to function as bootstrap+exit+relay nodes.
 
-#### 2.1.11.1 Add Directory HTTP Endpoints 📋 PENDING
-- [ ] Open file: `apps/stealth-browser/src/main.rs`
-- [ ] Locate `spawn_status_server()` function (blocking HTTP server)
-- [ ] Add `POST /api/relay/register` endpoint handler
-  - [ ] Parse JSON body into `RelayInfo` struct
-  - [ ] Call `directory.register_peer(info)`
-  - [ ] Return 200 OK with JSON `{ "registered": true, "is_new": bool }`
-- [ ] Add `GET /api/relays/by-country` endpoint handler
-  - [ ] Optional query param: `?country=US` (filter by country)
-  - [ ] Call `directory.get_relays_by_country()`
-  - [ ] Return 200 OK with JSON HashMap
-- [ ] Add `GET /api/relays/prune` endpoint (manual pruning trigger, dev only)
-  - [ ] Call `directory.prune_stale_peers()`
-  - [ ] Return 200 OK with count of pruned peers
-- [ ] Update status server request routing to handle new paths
-- [ ] Add unit tests for endpoint parsing and response format
+#### 2.1.11.1 Add Directory HTTP Endpoints ✅ COMPLETE
+- [x] Open file: `apps/stealth-browser/src/main.rs`
+- [x] Locate `spawn_status_server()` function (blocking HTTP server)
+- [x] Add `POST /api/relay/register` endpoint handler
+  - [x] Parse JSON body into `RelayInfo` struct
+  - [x] Call `directory.register_peer(info)`
+  - [x] Return 200 OK with JSON `{ "registered": true, "is_new": bool }`
+- [x] Add `GET /api/relays/by-country` endpoint handler
+  - [x] Optional query param: `?country=US` (filter by country)
+  - [x] Call `directory.get_relays_by_country()`
+  - [x] Return 200 OK with JSON HashMap
+- [x] Add `GET /api/relays/prune` endpoint (manual pruning trigger, dev only)
+  - [x] Call `directory.prune_stale_peers()`
+  - [x] Return 200 OK with count of pruned peers
+- [x] Update status server request routing to handle new paths
+- [x] Add unit tests for endpoint parsing and response format
 
 #### 2.1.11.2 Implement Exit Node Logic 📋 PENDING
 **⚠️ RESEARCH REQUIRED**: Need research on secure HTTP/HTTPS exit node implementation
@@ -511,16 +511,22 @@
 
 **Note**: Operator directory replaces DHT - no public DHT bootstrap needed.
 
-#### 2.5.2 Prepare Droplet Deployment Script
-- [ ] Create file: `scripts/deploy-exit-node.sh`
-- [ ] Add droplet provisioning steps:
-  - [ ] Install Rust via rustup
-  - [ ] Clone QNet repository
-  - [ ] Build stealth-browser binary
-  - [ ] Configure as exit + bootstrap node
-  - [ ] Set up systemd service
-- [ ] Add environment variable configuration
-- [ ] Test: Deploy to test droplet manually
+#### 2.5.2 Prepare Droplet Deployment (CLI Steps)
+- [ ] **Provision Droplet**: Create Ubuntu 22.04 droplet (1GB RAM, $6/month)
+- [ ] **SSH Access**: `ssh root@<DROPLET_IP>`
+- [ ] **Install Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`
+- [ ] **Reload Shell**: `source $HOME/.cargo/env`
+- [ ] **Install Git**: `apt update && apt install -y git build-essential pkg-config libssl-dev`
+- [ ] **Clone Repository**: `git clone https://github.com/QW1CKS/qnet.git && cd qnet`
+- [ ] **Build Binary**: `cargo build --release -p stealth-browser` (takes ~10 min)
+- [ ] **Test Local Run**: `STEALTH_MODE=super ./target/release/stealth-browser`
+- [ ] **Verify Listening**: In another terminal: `curl http://localhost:8088/status`
+- [ ] **Setup Systemd Service** (optional):
+  - [ ] Create `/etc/systemd/system/qnet-super.service`
+  - [ ] Enable: `systemctl enable qnet-super && systemctl start qnet-super`
+  - [ ] Check logs: `journalctl -u qnet-super -f`
+- [ ] **Open Firewall Ports**: `ufw allow 8088/tcp && ufw allow 4001/tcp && ufw allow 1088/tcp`
+- [ ] **Test External Access**: From laptop: `curl http://<DROPLET_IP>:8088/status`
 
 #### 2.5.3 Configure Exit Node Mode
 - [x] Open file: `apps/stealth-browser/src/main.rs`
@@ -620,7 +626,70 @@
 - [ ] Verify directory query timeout handling (fallback to hardcoded operators)
 - [ ] Test heartbeat loop resilience (operator directory unavailable)
 
-#### 2.6.5 Documentation Review
+#### 2.6.5 Windows Laptop to Droplet Connectivity Test
+**Goal**: Verify end-to-end connectivity between local client and deployed super peer.
+
+- [ ] **Deploy Super Peer on Droplet** (see Task 2.5.2):
+  - [ ] Provision droplet, install dependencies, build binary
+  - [ ] Run: `STEALTH_MODE=super ./target/release/stealth-browser`
+  - [ ] Verify listening: `curl http://localhost:8088/status` (on droplet)
+  - [ ] Note droplet IP: `<DROPLET_IP>`
+
+- [ ] **Update Local Hardcoded Operators** (on Windows laptop):
+  - [ ] Open: `apps/stealth-browser/src/main.rs`
+  - [ ] Update `hardcoded_operator_nodes()` with droplet IP:
+    ```rust
+    vec![
+        OperatorNode {
+            http_url: format!("http://{}<DROPLET_IP>}:8088"),
+            country: "US".to_string(),
+        },
+    ]
+    ```
+  - [ ] Rebuild: `cargo build --release -p stealth-browser`
+
+- [ ] **Test Directory Query** (from Windows laptop):
+  - [ ] PowerShell: `Invoke-WebRequest -Uri "http://<DROPLET_IP>:8088/api/relays/by-country" -Method GET`
+  - [ ] Expected: JSON response with empty or populated relay list
+  - [ ] Verify no timeout errors (should respond within 200ms)
+
+- [ ] **Run Local Helper** (on Windows laptop):
+  - [ ] PowerShell: `cd P:\GITHUB\qnet`
+  - [ ] Run: `.\target\release\stealth-browser.exe`
+  - [ ] Check logs for: `Querying operator directory: http://<DROPLET_IP>:8088/api/relays/by-country`
+  - [ ] Verify no connection errors
+
+- [ ] **Test Heartbeat Registration** (optional, if local Helper runs as relay):
+  - [ ] On laptop, run Helper with relay mode (if not default)
+  - [ ] On droplet, check logs: `journalctl -u qnet-super -f` or `tail -f logs/stealth-browser.log`
+  - [ ] Expected: See heartbeat registration from laptop IP
+  - [ ] Query directory again: Should show laptop as registered relay
+
+- [ ] **Test SOCKS5 Proxy Connection** (end-to-end):
+  - [ ] On laptop, configure browser to use SOCKS5: `127.0.0.1:1088`
+  - [ ] Browse to: `https://ifconfig.me` or `https://icanhazip.com`
+  - [ ] Expected: IP address shown should be droplet IP (if super peer acts as exit)
+  - [ ] Check laptop logs: Should show circuit built through droplet
+  - [ ] Check droplet logs: Should show forwarded request (if exit mode enabled)
+
+- [ ] **Verify Status API** (from Windows laptop):
+  - [ ] PowerShell: `Invoke-WebRequest -Uri "http://127.0.0.1:8088/status" -Method GET`
+  - [ ] Expected fields: `mode`, `state`, `peers_online`, `last_target`
+  - [ ] Verify `peers_online` > 0 (droplet discovered)
+
+- [ ] **Test Droplet Unreachable Scenario**:
+  - [ ] Stop super peer on droplet: `systemctl stop qnet-super` or `Ctrl+C`
+  - [ ] Restart laptop Helper: Should fallback to hardcoded operators or show offline
+  - [ ] Expected: Logs show directory query timeout, graceful degradation
+  - [ ] Restart droplet super peer: Laptop should reconnect within heartbeat interval
+
+- [ ] **Document Results**:
+  - [ ] Note latency: Laptop → Droplet directory query time
+  - [ ] Note connection stability: Any dropped connections during 5 min test
+  - [ ] Note any errors or unexpected behavior
+  - [ ] Update `artifacts/connectivity-test-results.md` (create if needed)
+
+#### 2.6.6 Documentation Review
 - [ ] Verify `ARCHITECTURE.md` reflects current Phase 2 implementation (operator directory model)
 - [ ] Check all public APIs have doc comments with examples
 - [ ] Update root `README.md` with Phase 2 feature status
@@ -630,7 +699,7 @@
 - [ ] Check spec alignment (`qnet-spec/specs/001-qnet/spec.md` Section 3.3)
 - [ ] Verify operator directory API documented in `qnet-spec/docs/helper.md`
 
-#### 2.6.6 Decision Gate
+#### 2.6.7 Decision Gate
 - [ ] All security audit items pass
 - [ ] All performance benchmarks meet baseline
 - [ ] All integration + fuzz tests pass

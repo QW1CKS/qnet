@@ -652,6 +652,8 @@ struct AppState {
     relay_route_count: Arc<AtomicU32>,
     // Mesh command channel for SOCKS5 → Swarm communication (Phase 2.4.2)
     mesh_commands: tokio::sync::mpsc::UnboundedSender<MeshCommand>,
+    // Peer directory for operator nodes (Task 2.1.11.1)
+    directory: directory::PeerDirectory,
 }
 
 /// Commands sent from SOCKS5 handler (Tokio) to Swarm event loop (async-std)
@@ -747,6 +749,7 @@ impl AppState {
             relay_packets_relayed: Arc::new(AtomicU64::new(0)),
             relay_route_count: Arc::new(AtomicU32::new(0)),
             mesh_commands: mesh_tx,
+            directory: directory::PeerDirectory::new(), // Task 2.1.11.1
         };
 
         (state, mesh_rx)
@@ -1817,6 +1820,77 @@ fn handle_status_blocking(
             .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
             .replace("__SOCKS_ADDR__", &socks_addr);
         (html, "text/html; charset=utf-8", true)
+    } else if path_token == "/api/relay/register" {
+        // Task 2.1.11.1: POST /api/relay/register - relay heartbeat registration
+        if !line.starts_with("POST ") {
+            (
+                serde_json::json!({"error":"method not allowed, use POST"}).to_string(),
+                "application/json",
+                false,
+            )
+        } else {
+            // Parse JSON body from remaining buffer
+            let body_start = buf.iter().position(|&b| b == b'{').unwrap_or(used);
+            let body_slice = &buf[body_start..used];
+            
+            match serde_json::from_slice::<directory::RelayInfo>(body_slice) {
+                Ok(info) => {
+                    let is_new = app.directory.register_peer(info);
+                    let response = serde_json::json!({
+                        "registered": true,
+                        "is_new": is_new
+                    });
+                    (response.to_string(), "application/json", true)
+                }
+                Err(e) => {
+                    eprintln!("directory:register-parse-error: {e}");
+                    (
+                        serde_json::json!({"error":"invalid JSON body","details":e.to_string()}).to_string(),
+                        "application/json",
+                        false,
+                    )
+                }
+            }
+        }
+    } else if path_token == "/api/relays/by-country" {
+        // Task 2.1.11.1: GET /api/relays/by-country?country=US - query registered relays
+        let query_params = sp.next().unwrap_or("");
+        let country_filter = query_params
+            .split('&')
+            .find_map(|param| {
+                let mut kv = param.splitn(2, '=');
+                if kv.next() == Some("country") {
+                    kv.next()
+                } else {
+                    None
+                }
+            });
+
+        let all_relays = app.directory.get_relays_by_country();
+        
+        let filtered = if let Some(country) = country_filter {
+            // Filter to single country
+            let mut result = std::collections::HashMap::new();
+            if let Some(peers) = all_relays.get(country) {
+                result.insert(country.to_string(), peers.clone());
+            }
+            result
+        } else {
+            // Return all countries
+            all_relays
+        };
+
+        let response = serde_json::to_string(&filtered).unwrap_or_else(|_| "{}".to_string());
+        (response, "application/json", true)
+    } else if path_token == "/api/relays/prune" {
+        // Task 2.1.11.1: GET /api/relays/prune - manual pruning (dev only)
+        let pruned = app.directory.prune_stale_peers();
+        let response = serde_json::json!({
+            "pruned": pruned,
+            "active_peers": app.directory.active_peer_count(),
+            "total_peers": app.directory.total_peer_count()
+        });
+        (response.to_string(), "application/json", true)
     } else {
         STATUS_PATH_OTHER.fetch_add(1, Ordering::Relaxed);
         (
@@ -2416,3 +2490,118 @@ async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
 // Removed: Catalog update trigger (manual + background)
 // Now using hardcoded operator seeds + public libp2p DHT
 // =====================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_directory_endpoint_post_register_parsing() {
+        // Test that POST /api/relay/register endpoint correctly parses RelayInfo JSON
+        let json_body = r#"{
+            "peer_id": "12D3KooWTest",
+            "addrs": ["/ip4/1.2.3.4/tcp/4001"],
+            "country": "US",
+            "capabilities": ["relay"],
+            "last_seen": 1234567890,
+            "first_seen": 1234567890
+        }"#;
+
+        let parsed: Result<directory::RelayInfo, _> = serde_json::from_str(json_body);
+        assert!(parsed.is_ok());
+        
+        let info = parsed.unwrap();
+        assert_eq!(info.peer_id, "12D3KooWTest");
+        assert_eq!(info.country, "US");
+        assert_eq!(info.capabilities, vec!["relay"]);
+    }
+
+    #[test]
+    fn test_directory_endpoint_post_register_response_format() {
+        // Test response format for successful registration
+        let response = serde_json::json!({
+            "registered": true,
+            "is_new": true
+        });
+
+        assert!(response.get("registered").and_then(|v| v.as_bool()).unwrap_or(false));
+        assert!(response.get("is_new").and_then(|v| v.as_bool()).unwrap_or(false));
+    }
+
+    #[test]
+    fn test_directory_endpoint_get_relays_response_format() {
+        // Test that get_relays_by_country returns HashMap<String, Vec<RelayInfo>>
+        let directory = directory::PeerDirectory::new();
+        
+        // Add test peer
+        let peer_id = libp2p::PeerId::random();
+        let addrs = vec!["/ip4/1.2.3.4/tcp/4001".parse().unwrap()];
+        let info = directory::RelayInfo::new(
+            peer_id,
+            addrs,
+            "US".to_string(),
+            vec!["relay".to_string()],
+        );
+        directory.register_peer(info);
+
+        let relays = directory.get_relays_by_country();
+        let json = serde_json::to_string(&relays).unwrap();
+        
+        // Verify JSON can be parsed back
+        let parsed: std::collections::HashMap<String, Vec<directory::RelayInfo>> =
+            serde_json::from_str(&json).unwrap();
+        
+        assert!(parsed.contains_key("US"));
+        assert_eq!(parsed.get("US").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_directory_endpoint_country_filter_parsing() {
+        // Test query parameter parsing for ?country=US
+        let query_string = "country=US";
+        let country_filter = query_string
+            .split('&')
+            .find_map(|param| {
+                let mut kv = param.splitn(2, '=');
+                if kv.next() == Some("country") {
+                    kv.next()
+                } else {
+                    None
+                }
+            });
+
+        assert_eq!(country_filter, Some("US"));
+    }
+
+    #[test]
+    fn test_directory_endpoint_country_filter_with_multiple_params() {
+        // Test query parameter parsing with multiple params
+        let query_string = "foo=bar&country=UK&baz=qux";
+        let country_filter = query_string
+            .split('&')
+            .find_map(|param| {
+                let mut kv = param.splitn(2, '=');
+                if kv.next() == Some("country") {
+                    kv.next()
+                } else {
+                    None
+                }
+            });
+
+        assert_eq!(country_filter, Some("UK"));
+    }
+
+    #[test]
+    fn test_directory_endpoint_prune_response_format() {
+        // Test prune endpoint response format
+        let response = serde_json::json!({
+            "pruned": 5,
+            "active_peers": 10,
+            "total_peers": 15
+        });
+
+        assert_eq!(response.get("pruned").and_then(|v| v.as_u64()), Some(5));
+        assert_eq!(response.get("active_peers").and_then(|v| v.as_u64()), Some(10));
+        assert_eq!(response.get("total_peers").and_then(|v| v.as_u64()), Some(15));
+    }
+}

@@ -89,7 +89,7 @@ impl RelayInfo {
 }
 
 /// In-memory peer directory maintained by operator nodes.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PeerDirectory {
     /// Peers indexed by PeerId
     peers: Arc<Mutex<HashMap<String, RelayInfo>>>,
