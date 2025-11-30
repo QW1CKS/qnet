@@ -968,31 +968,101 @@
 
 ---
 
-## 🔮 Phase 4: Advanced Privacy (Future)
+## 🔮 Phase 4: Advanced Privacy & Obfuscation (Future)
 
-### 4.1 Mixnet Integration (Nym)
+### 4.1 Traffic Obfuscation Layer (Censorship Resistance)
+**Context**: Prioritize traffic obfuscation over destination masking to resist ML-based fingerprinting and protocol analysis.
+
+#### 4.1.1 QUIC/ECH Integration (Phase 2 Overlap)
+- [ ] Research: QUIC transport implementation in Rust (quinn crate)
+- [ ] Implement: QUIC transport option alongside TCP
+- [ ] Implement: Encrypted Client Hello (ECH) support in HTX
+- [ ] Test: QUIC vs TCP performance benchmarks
+- [ ] Test: ECH hides SNI from passive observers
+
+#### 4.1.2 HTX Template Expansion
+- [ ] Research: Collect JA3/JA4 fingerprints from tlsfingerprint.io
+- [ ] Collect: 50+ browser/application TLS profiles (Chrome, Firefox, Safari, mobile, apps)
+- [ ] Implement: Weighted random template selection
+- [ ] Implement: Regional template filtering (CN, RU, EU, US)
+- [ ] Test: JA3/JA4 hash diversity, no collisions
+
+#### 4.1.3 Bridge Discovery Protocol
+- [ ] Design: Bridge announcement format (signed, ephemeral)
+- [ ] Implement: HTTPS bridge endpoint (bridges.qnet.io revived)
+- [ ] Implement: DHT provider records as fallback
+- [ ] Implement: 24-hour TTL + automatic rotation
+- [ ] Test: Bridge fetch success rate >95%
+
+#### 4.1.4 Core Obfuscation Abstraction (Phase 3)
+- [ ] Create: `crates/core-obfuscation/` with PluggableTransport trait
+- [ ] Implement: PlainTransport (baseline)
+- [ ] Implement: HtxTransport (wrap existing HTX)
+- [ ] Design: TransportConfig + auto-selection logic
+- [ ] Test: Transport switching without connection drop
+
+#### 4.1.5 Obfs4 Pluggable Transport
+- [ ] Research: Obfs4 specification from Tor Project
+- [ ] Implement: Obfs4 handshake (X25519 + HKDF)
+- [ ] Implement: IAT (inter-arrival time) obfuscation
+- [ ] Implement: Probe resistance (stateful handshake)
+- [ ] Test: Interop with Tor bridges (lyrebird)
+- [ ] Test: Active probing resistance (GFW-style)
+
+#### 4.1.6 Shadowsocks Integration
+- [ ] Research: Shadowsocks AEAD specification
+- [ ] Evaluate: shadowsocks-rust crate (vendor vs reimplement)
+- [ ] Implement: Shadowsocks transport wrapper
+- [ ] Implement: AEAD cipher support (ChaCha20-Poly1305)
+- [ ] Test: Interop with shadowsocks-rust server
+- [ ] Test: Performance benchmarks vs plain TCP
+
+#### 4.1.7 Traffic Padding/Morphing (Phase 4+)
+- [ ] Research: NetShaper (differential privacy) paper
+- [ ] Research: GAN-based traffic morphing techniques
+- [ ] Implement: Basic traffic padding (constant-rate padding)
+- [ ] Implement: NetShaper-style DP noise addition
+- [ ] Test: Website fingerprinting accuracy <70% (with padding)
+- [ ] Test: Latency/throughput impact (<500ms, >60% baseline)
+
+#### 4.1.8 Cover Channel Fallbacks (Emergency Use)
+- [ ] Research: DNS tunneling (iodine, dnscat2 patterns)
+- [ ] Research: ICMP tunneling (ptunnel patterns)
+- [ ] Implement: DNS TXT record tunnel (low bandwidth)
+- [ ] Implement: CoverChannel trait abstraction
+- [ ] Test: Emergency bridge announcement delivery
+- [ ] Document: Legal considerations + detection risks
+
+### 4.2 Mixnet Integration (Nym)
 - [ ] Research: Integrate Nym SDK
 - [ ] Implement: Mixnet packet wrapping
 - [ ] Implement: Cover traffic generation
 - [ ] Test: Latency with 3-hop mixnet
 
-### 4.2 Self-Certifying IDs (Naming)
+### 4.3 Self-Certifying IDs (Naming)
 - [ ] Implement: PeerId -> Human-readable alias mapping
 - [ ] Implement: Alias ledger (2-of-3 finality)
 - [ ] Implement: DNS replacement
 - [ ] Test: Resolve `.qnet` names
 
-### 4.3 Payment System (Vouchers/Cashu)
+### 4.4 Payment System (Vouchers/Cashu)
 - [ ] Implement: Voucher generation
 - [ ] Implement: Payment verification
 - [ ] Implement: Relay incentives
 - [ ] Test: Pay for relayed traffic
 
-### 4.4 Governance
+### 4.5 Governance
 - [ ] Implement: Node uptime scoring
 - [ ] Implement: Voting power calculation
 - [ ] Implement: Protocol upgrade mechanism
 - [ ] Test: Upgrade flow
+
+### 4.6 Refraction Networking Partnership (Phase 5+)
+- [ ] Engage: UMich Refraction Networking research team
+- [ ] Identify: Partner ISP (Merit Network, regional ISPs)
+- [ ] Pilot: 100-1000 user deployment with ISP cooperation
+- [ ] Publish: Academic paper on results
+- [ ] Note: Only technique achieving true connection masking (requires ISP/backbone router cooperation)
 
 ---
 
@@ -1001,11 +1071,12 @@
 - Phase 1: Core Infrastructure → **100% Complete** ✅
 - Phase 2: P2P Mesh Network → **12.5% Complete** (Phase 2.1 ✅, 2.2-2.5 pending) 🚧
 - Phase 3: Browser Extension → **0% Complete** 🚧
-- Phase 4: Advanced Privacy → **0% Complete** 🔮
+- Phase 4: Advanced Privacy & Obfuscation → **0% Complete** 🔮
 
 **Production Readiness Checkpoints**:
 - 🔍 Checkpoint 1 (Phase 2.5): After mesh implementation, before extension
 - 🔍 Checkpoint 2 (Phase 3.5): After complete user delivery, before advanced features
 
-**Next Task**: Start Phase 2.2.1 (Create relay.rs file)
+**Next Task**: Start Phase 2.2.1 (Create relay.rs file) OR Phase 4.1.1 (QUIC/ECH research)
+
 

@@ -32,8 +32,15 @@ QNet implements a sophisticated **7-layer network architecture** designed to pro
 **Purpose**: Encrypted transport with traffic mimicry
 **Components**:
 - **HTX Protocol**: HTTP Tunneling Extension
-- **TLS Mirroring**: Origin fingerprint replication
+- **TLS Mirroring**: Origin fingerprint replication (JA3/JA4 cloning)
 - **Frame Handling**: AEAD-protected message framing
+
+**Current Implementation:**
+- HTX clones TLS fingerprints to appear as legitimate browsers
+- Connects directly to target hosts (no decoy routing)
+- Future: Pluggable transports (obfs4, Shadowsocks) for censorship resistance
+
+**Note on Connection Masking**: True decoy routing (making ISP see Site A while connecting to Site B) is physically impossible without ISP/backbone router cooperation. QNet's mesh architecture already provides destination hiding (ISP sees relay IPs, not final targets). HTX fingerprint cloning resists protocol analysis without requiring ISP cooperation.
 
 **Technical Details**:
 ```
