@@ -308,61 +308,37 @@
 
 ## 🚧 Phase 2: The P2P Mesh Network
 
-### 2.1 Peer Discovery (`core-mesh`)
-**Goal**: Allow Helpers to find each other automatically.
+### 2.1 Peer Discovery
+**Goal**: Allow Helpers to find each other via operator directory.
 
-#### 2.1.1 Setup Discovery Module
-- [x] Create file: `crates/core-mesh/src/discovery.rs`
-- [x] Add module declaration in `crates/core-mesh/src/lib.rs`
-- [x] Import libp2p Kademlia DHT dependencies in `Cargo.toml`
+---
 
-#### 2.1.2 Implement Bootstrap Logic
-- [x] Define bootstrap node struct `BootstrapNode { peer_id, multiaddr }`
-- [x] Create function: `load_bootstrap_nodes() -> Vec<BootstrapNode>`
-- [x] Load bootstrap nodes from catalog
-- [x] Add fallback to hardcoded seeds if catalog fails
+## ⚠️ ARCHIVED: Phase 2.1.1-2.1.8 - DHT-Based Peer Discovery (Superseded Nov 2025)
 
-#### 2.1.3 Implement Kademlia DHT
-- [x] Create Kademlia behavior: `let kademlia = Kademlia::new(peer_id, store)`
-- [x] Add bootstrap peers to Kademlia routing table
-- [x] Implement periodic DHT refresh (every 5 minutes)
-- [x] Add logging for DHT events (peer discovered, peer lost)
+> **STATUS**: These tasks were superseded by Task 2.1.10 (Operator Directory). Kademlia DHT-based peer discovery has been removed in favor of operator directory HTTP registry model.
 
-#### 2.1.4 Implement mDNS Local Discovery
-- [x] Create mDNS behavior: `let mdns = Mdns::new(MdnsConfig::default())`
-- [x] Listen for mDNS events (peer discovered on LAN)
-- [x] Add discovered peers to Kademlia
-- [x] Add logging for local peer discovery
+**Historical Context**: Originally implemented DHT-based discovery with Kademlia + mDNS. Removed in Nov 2025 due to bootstrap timeout issues on Windows/NAT. Replaced with lightweight operator directory (POST /api/relay/register, GET /api/relays/by-country).
 
-#### 2.1.5 Combine Discovery Mechanisms
-- [x] Create `DiscoveryBehavior` struct combining Kademlia + mDNS
-- [x] Implement `NetworkBehaviour` trait for `DiscoveryBehavior`
-- [x] Add method: `pub async fn discover_peers(&mut self) -> Result<Vec<PeerId>>`
-- [x] Add method: `pub fn peer_count(&self) -> usize`
+**Archived Tasks**:
+- ~~2.1.1 Setup Discovery Module~~ (replaced by directory.rs module)
+- ~~2.1.2 Implement Bootstrap Logic~~ (now queries operator directory)
+- ~~2.1.3 Implement Kademlia DHT~~ (removed entirely)
+- ~~2.1.4 Implement mDNS Local Discovery~~ (kept for LAN, removed DHT integration)
+- ~~2.1.5 Combine Discovery Mechanisms~~ (now directory-only)
+- ~~2.1.6 Integration with Helper~~ (now query_operator_directory() function)
+- ~~2.1.7 Testing~~ (disabled pending directory mock rewrite)
+- ~~2.1.8 Documentation~~ (updated for directory model in Task 2.1.10.6)
 
-#### 2.1.6 Integration with Helper
-- [x] Add `DiscoveryBehavior` to Helper's network stack
-- [x] Start discovery on Helper startup
-- [x] Log discovered peers to console
-- [x] Expose peer count via Status API (`/status` endpoint)
+**See**: Task 2.1.10 for current implementation details.
 
-#### 2.1.7 Testing
-- [x] Create file: `tests/integration/mesh_discovery.rs`
-- [x] Test: Start 3 Helpers, verify they discover each other (mDNS)
-- [x] Test: Start Helper with bootstrap nodes, verify DHT discovery
-- [x] Test: Verify peer count increases as nodes join
-- [x] Run test: `cargo test --test mesh_discovery`
-
-#### 2.1.8 Documentation
-- [x] Add doc comment to `discovery.rs` module
-- [x] Document `discover_peers()` function
-- [x] Update `qnet-spec/docs/ARCHITECTURE.md` with discovery flow
-- [x] Add example to `examples/mesh_discovery.rs`
+---
 
 ---
 
 ### 2.2 Relay Logic (`core-mesh`)
 **Goal**: Make Helpers forward packets for other peers.
+
+**Note**: Relay logic uses peers discovered via operator directory (Task 2.1.10), not DHT.
 
 #### 2.2.1 Setup Relay Module
 - [x] Create file: `crates/core-mesh/src/relay.rs`
@@ -387,10 +363,10 @@
 - [x] Implement method: `fn find_route(&self, dst: PeerId) -> Option<PeerId>`
 - [x] Implement method: `fn remove_route(&mut self, dst: PeerId)`
 
-#### 2.2.5 Integrate Relay with Discovery
-- [x] Update `DiscoveryBehavior` to populate `RoutingTable`
-- [x] When peer discovered, add route to routing table
-- [x] When peer lost, remove route from routing table
+#### 2.2.5 Integrate Relay with Directory-Based Discovery
+- [x] Populate `RoutingTable` from operator directory query results
+- [x] When peer discovered via directory, add route to routing table
+- [x] When peer heartbeat expires (stale), remove route from routing table
 - [x] Add method: `pub fn get_routing_table(&self) -> &RoutingTable`
 
 #### 2.2.6 Implement Packet Handler
@@ -435,11 +411,13 @@
 - [x] Add unit test for circuit creation
 
 #### 2.3.3 Implement Circuit Builder
-- [x] Create struct: `CircuitBuilder { discovery: Arc<DiscoveryBehavior> }`
+- [x] Create struct: `CircuitBuilder` with access to operator directory peer list
 - [x] Implement method: `async fn build_circuit(&self, dst: PeerId, num_hops: usize) -> Result<Circuit>`
-- [x] Select random intermediate peers from discovered peers
+- [x] Select random intermediate relay peers from directory query results
 - [x] Ensure no peer appears twice in the circuit
 - [x] Return constructed circuit
+
+**Note**: Circuit builder uses peers from operator directory (Task 2.1.10), not DHT discovery.
 
 #### 2.3.4 Integrate with Routing
 - [x] Update `RoutingTable` to store circuits
@@ -518,21 +496,20 @@
 
 ---
 
-### 2.5 Bootstrap & Exit Node Infrastructure
-**Goal**: Deploy minimal infrastructure for decentralized bootstrap and professional exits.
+### 2.5 Super Peer Infrastructure Deployment
+**Goal**: Deploy and configure super peer droplets (bootstrap + exit + relay).
 
-#### 2.5.1 Update Bootstrap Configuration
-- [x] Open file: `crates/core-mesh/src/discovery.rs`
-- [x] Update `public_libp2p_seeds()` function
-- [x] Add public IPFS bootstrap nodes:
-  - [x] `/dnsaddr/bootstrap.libp2p.io`
-  - [x] `/dnsaddr/ipfs.io`
-  - [x] Public libp2p multiaddrs from IPFS docs
-- [x] Update `qnet_operator_seeds()` with placeholder structure for 6 droplets
-- [x] Test: Verify Helper can bootstrap via public DHT
-- [x] Test: `cargo test -p core-mesh --lib bootstrap`
+**Note**: This phase focuses on **deploying super peers**, not implementing their logic (see Task 2.1.11 for implementation).
 
-**Note**: Catalog system removed - bootstrap now uses hardcoded operator exits + public libp2p DHT
+#### 2.5.1 Update Hardcoded Operator Nodes
+- [x] Open file: `apps/stealth-browser/src/main.rs`
+- [x] Update `hardcoded_operator_nodes()` function with actual droplet IPs
+- [x] Structure: `Vec<OperatorNode { http_url: String, country: String }>`
+- [x] Add 6 operator nodes (NYC, AMS, SIN, FRA, TOR, SYD)
+- [x] Test: Verify Helper queries directory endpoint successfully
+- [x] Test: `cargo run --bin stealth-browser` connects to operator
+
+**Note**: Operator directory replaces DHT - no public DHT bootstrap needed.
 
 #### 2.5.2 Prepare Droplet Deployment Script
 - [ ] Create file: `scripts/deploy-exit-node.sh`
@@ -574,12 +551,12 @@
   - [ ] `QNET_OPERATOR_SEEDS="ip1:4001,ip2:4001"`
 - [ ] Test: Connect local Helper to deployed droplets
 
-#### 2.5.6 Update Hardcoded Seeds
-- [ ] Open file: `crates/core-mesh/src/discovery.rs`
-- [ ] Update `qnet_official_seeds()` function
-- [ ] Add droplet IPs as secondary bootstrap (if deployed)
-- [ ] Keep public libp2p DHT as primary
-- [ ] Commit seed configuration
+#### 2.5.6 Update Operator Directory URLs
+- [ ] Open file: `apps/stealth-browser/src/main.rs`
+- [ ] Update `hardcoded_operator_nodes()` with deployed droplet IPs
+- [ ] Format: `http://<DROPLET_IP>:8088` for each droplet
+- [ ] Test: Query `/api/relays/by-country` returns peer list
+- [ ] Commit operator configuration
 
 #### 2.5.7 Documentation
 - [ ] Update `README.md` with infrastructure notes
@@ -589,16 +566,19 @@
 - [ ] Add legal disclaimer for exit node operators
 
 #### 2.5.8 Testing
-- [ ] Test bootstrap via public libp2p DHT only
-- [ ] Test bootstrap with droplets as fallback
-- [ ] Verify relay-only users cannot exit
-- [ ] Verify exit nodes make actual requests
-- [ ] Test exit node bandwidth limiting
+- [ ] Test directory query from client to super peer
+- [ ] Test heartbeat registration from relay to super peer
+- [ ] Verify relay-only users cannot exit (mode enforcement)
+- [ ] Verify super peer exit nodes make actual requests
+- [ ] Test exit node bandwidth limiting (if implemented)
+- [ ] Test directory pruning (stale peer removal after 120s)
 
 ---
 
 ### 2.6 Production-Readiness Checkpoint (Phase 2)
-**Goal**: Validate mesh network reliability before extension development.
+**Goal**: Validate super peer architecture and mesh network reliability before extension development.
+
+**Prerequisites**: Tasks 2.1.10 (Operator Directory) and 2.1.11 (Super Peer Implementation) complete.
 
 #### 2.6.1 Security Audit
 - [ ] Run `cargo clippy --workspace --all-targets -- -D warnings`
@@ -609,26 +589,27 @@
 - [ ] Verify nonce handling uses monotonic counters (no reuse)
 - [ ] Review HTX handshake maintains forward secrecy properties
 
-#### 2.5.2 Performance Validation
+#### 2.6.2 Performance Validation
 - [ ] Run benchmark suite: `cargo bench --workspace`
 - [ ] Verify AEAD throughput meets baseline (see `artifacts/perf-summary.md`)
 - [ ] Check HTX handshake latency < 500ms (median)
-- [ ] Verify peer discovery completes within 30s on LAN
+- [ ] Verify operator directory query latency < 200ms (median)
+- [ ] Verify peer discovery via directory completes within 5s (target: < 2s)
 - [ ] Measure relay overhead (should be < 10% vs direct connection)
 - [ ] Check frame encoding/decoding throughput acceptable
 - [ ] Document any performance regressions with justification
 
-#### 2.5.3 Reliability Testing
+#### 2.6.3 Reliability Testing
 - [ ] Run full integration test suite: `cargo test --workspace`
 - [ ] Run fuzz targets for 1 hour each: `cargo +nightly fuzz run <target>`
 - [ ] Verify all fuzz targets pass without crashes
 - [ ] Test Helper restart under load (with active SOCKS5 connections)
-- [ ] Test catalog update while Helper is running
-- [ ] Verify graceful degradation when mesh peers go offline
-- [ ] Test catalog signature rejection (tampered/expired)
+- [ ] Verify graceful degradation when operator directory unreachable (fallback to hardcoded)
+- [ ] Verify graceful degradation when mesh relay peers go offline
+- [ ] Test directory response parsing (malformed JSON rejection)
 - [ ] Verify frame decode rejects malformed packets
 
-#### 2.5.4 Operational Checks
+#### 2.6.4 Operational Checks
 - [ ] Verify status API returns valid JSON under all states (offline/connecting/connected)
 - [ ] Test Helper runs stable for 24 hours continuous
 - [ ] Check memory usage remains bounded (no leaks, use profiler)
@@ -636,18 +617,20 @@
 - [ ] Test Windows compatibility (if cross-platform targeted)
 - [ ] Test Linux compatibility (if cross-platform targeted)
 - [ ] Verify Helper handles partial/interrupted reads (Windows async)
-- [ ] Check catalog-first loading precedence (seeds only as fallback)
+- [ ] Verify directory query timeout handling (fallback to hardcoded operators)
+- [ ] Test heartbeat loop resilience (operator directory unavailable)
 
-#### 2.5.5 Documentation Review
-- [ ] Verify `ARCHITECTURE.md` reflects current Phase 2 implementation
+#### 2.6.5 Documentation Review
+- [ ] Verify `ARCHITECTURE.md` reflects current Phase 2 implementation (operator directory model)
 - [ ] Check all public APIs have doc comments with examples
 - [ ] Update root `README.md` with Phase 2 feature status
 - [ ] Review compliance with `memory/ai-guardrail.md`
 - [ ] Review compliance with `memory/testing-rules.md`
 - [ ] Verify all implemented tasks traced to `tasks.md`
-- [ ] Check spec alignment (`qnet-spec/specs/001-qnet/spec.md`)
+- [ ] Check spec alignment (`qnet-spec/specs/001-qnet/spec.md` Section 3.3)
+- [ ] Verify operator directory API documented in `qnet-spec/docs/helper.md`
 
-#### 2.5.6 Decision Gate
+#### 2.6.6 Decision Gate
 - [ ] All security audit items pass
 - [ ] All performance benchmarks meet baseline
 - [ ] All integration + fuzz tests pass
@@ -660,6 +643,8 @@
 ### 2.7 Enhanced UX: Geographic Routing & Visualization
 **Goal**: Improve user experience with intelligent relay selection and visual network map.
 
+**Prerequisites**: Task 2.1.11 (Super Peer Implementation) complete.
+
 #### 2.7.1 Smart 1-Hop Relay (Default Behavior)
 - [ ] Implement geographic peer selection algorithm
 - [ ] Add GeoIP lookup for user country detection
@@ -667,16 +652,16 @@
   - [ ] Same country (lowest latency)
   - [ ] Same continent (good latency)
   - [ ] Any available relay (privacy over speed)
-  - [ ] Fallback to direct exit if no relay available
-- [ ] Add peer country metadata to DHT
-- [ ] Update circuit builder to use geographic selection
-- [ ] Test: Verify relay selection chooses closest peer
-- [ ] Test: Verify fallback to direct exit when no relay
+  - [ ] Fallback to direct super peer exit if no relay available
+- [ ] Query operator directory `/api/relays/by-country?country=<USER_COUNTRY>`
+- [ ] Update circuit builder to use geographic selection from directory
+- [ ] Test: Verify relay selection chooses closest peer from directory
+- [ ] Test: Verify fallback to hardcoded super peer when directory empty
 
 #### 2.7.2 Map API & Backend
-- [ ] Create `/api/map` endpoint for status page
-- [ ] Create `/api/peers/by-country` - aggregated peer data
-- [ ] Create `/api/exits` - exit node list with coordinates
+- [ ] Extend existing `/api/relays/by-country` endpoint with GeoJSON support
+- [ ] Create `/api/map/peers` - aggregated peer data with coordinates
+- [ ] Create `/api/map/exits` - super peer exit node list with exact coordinates
 - [ ] Implement country-level anonymization (no city data)
 - [ ] Add current circuit path to API response
 - [ ] Test: Verify API returns valid GeoJSON
