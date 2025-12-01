@@ -204,13 +204,52 @@ build_binary() {
 }
 
 # =============================================================================
-# Step 6: Create Systemd Service
+# Step 6: Generate Persistent Keypair
+# =============================================================================
+
+generate_persistent_keypair() {
+    log_info "Step 6/8: Generating persistent keypair for stable peer ID..."
+    
+    KEYPAIR_DIR="$QNET_DIR/data"
+    KEYPAIR_PATH="$KEYPAIR_DIR/keypair.pb"
+    
+    # Create data directory
+    mkdir -p "$KEYPAIR_DIR"
+    chown -R "$QNET_USER:$QNET_USER" "$KEYPAIR_DIR"
+    
+    # Check if keypair already exists
+    if [[ -f "$KEYPAIR_PATH" ]]; then
+        log_warn "Keypair already exists at $KEYPAIR_PATH"
+        log_warn "To regenerate, delete the file and re-run deployment"
+    else
+        # Generate new keypair
+        cd "$QNET_DIR"
+        source "$HOME/.cargo/env" 2>/dev/null || true
+        
+        "$QNET_DIR/target/release/stealth-browser" --generate-keypair "$KEYPAIR_PATH"
+        
+        chown "$QNET_USER:$QNET_USER" "$KEYPAIR_PATH"
+        chmod 600 "$KEYPAIR_PATH"
+        
+        log_success "Persistent keypair generated at $KEYPAIR_PATH"
+    fi
+    
+    # Extract and display peer ID for operator configuration
+    PEER_ID=$("$QNET_DIR/target/release/stealth-browser" --generate-keypair /dev/null 2>&1 | grep -oP '12D3KooW[A-Za-z0-9]+' || echo "")
+    if [[ -z "$PEER_ID" ]]; then
+        log_warn "Could not extract peer ID - check logs after service starts"
+    fi
+}
+
+# =============================================================================
+# Step 7: Create Systemd Service
 # =============================================================================
 
 create_systemd_service() {
-    log_info "Step 6/7: Creating systemd service..."
+    log_info "Step 7/8: Creating systemd service..."
     
     PUBLIC_IP=$(get_public_ip)
+    KEYPAIR_PATH="$QNET_DIR/data/keypair.pb"
     
     cat > /etc/systemd/system/qnet-super.service << EOF
 [Unit]
@@ -231,6 +270,7 @@ Environment="STEALTH_SOCKS_PORT=$SOCKS_PORT"
 Environment="STEALTH_STATUS_PORT=$STATUS_PORT"
 Environment="QNET_STATUS_BIND=0.0.0.0"
 Environment="QNET_SOCKS_BIND=0.0.0.0"
+Environment="QNET_KEYPAIR_PATH=$KEYPAIR_PATH"
 Environment="RUST_LOG=info"
 Environment="RUST_BACKTRACE=1"
 
@@ -248,7 +288,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=$QNET_DIR/logs
+ReadWritePaths=$QNET_DIR/logs $QNET_DIR/data
 
 # Resource limits
 LimitNOFILE=65535
@@ -274,11 +314,11 @@ EOF
 }
 
 # =============================================================================
-# Step 7: Configure Firewall
+# Step 8: Configure Firewall
 # =============================================================================
 
 configure_firewall() {
-    log_info "Step 7/7: Configuring firewall..."
+    log_info "Step 8/8: Configuring firewall..."
     
     # Enable UFW if not already
     ufw --force enable
@@ -327,6 +367,14 @@ start_service() {
 
 print_summary() {
     PUBLIC_IP=$(get_public_ip)
+    KEYPAIR_PATH="$QNET_DIR/data/keypair.pb"
+    
+    # Get peer ID from the keypair file by running the binary briefly
+    PEER_ID=""
+    if [[ -f "$KEYPAIR_PATH" ]]; then
+        # Start the service briefly to capture peer ID from logs
+        PEER_ID=$(journalctl -u qnet-super --since "1 minute ago" 2>/dev/null | grep -oP '12D3KooW[A-Za-z0-9]+' | head -1 || echo "")
+    fi
     
     echo ""
     echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
@@ -336,12 +384,27 @@ print_summary() {
     echo -e "${BLUE}Server Information:${NC}"
     echo "  Public IP:     $PUBLIC_IP"
     echo "  Mode:          $STEALTH_MODE"
+    if [[ -n "$PEER_ID" ]]; then
+        echo "  Peer ID:       $PEER_ID"
+    fi
     echo ""
     echo -e "${BLUE}Endpoints:${NC}"
     echo "  Status API:    http://$PUBLIC_IP:$STATUS_PORT/status"
     echo "  Directory:     http://$PUBLIC_IP:$STATUS_PORT/api/relays/by-country"
     echo "  SOCKS5 Proxy:  $PUBLIC_IP:$SOCKS_PORT"
-    echo "  libp2p:        /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT"
+    if [[ -n "$PEER_ID" ]]; then
+        echo "  libp2p:        /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT/p2p/$PEER_ID"
+    else
+        echo "  libp2p:        /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT/p2p/<PEER_ID>"
+    fi
+    echo ""
+    echo -e "${BLUE}Persistent Identity:${NC}"
+    echo "  Keypair file:  $KEYPAIR_PATH"
+    if [[ -n "$PEER_ID" ]]; then
+        echo "  Peer ID:       $PEER_ID (stable across restarts)"
+    else
+        echo "  Get Peer ID:   journalctl -u qnet-super | grep 'local_peer_id'"
+    fi
     echo ""
     echo -e "${BLUE}Useful Commands:${NC}"
     echo "  View logs:     journalctl -u qnet-super -f"
@@ -358,13 +421,20 @@ print_summary() {
     echo "  Your IP ($PUBLIC_IP) will be visible to destination websites."
     echo "  Ensure compliance with local laws and DigitalOcean ToS."
     echo ""
-    echo -e "${GREEN}Next Steps:${NC}"
-    echo "  1. Update hardcoded_operator_nodes() in your local code with:"
-    echo "     /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT/p2p/<PEER_ID>"
-    echo ""
-    echo "  2. Get the peer ID from logs:"
-    echo "     journalctl -u qnet-super | grep 'local_peer_id'"
-    echo ""
+    if [[ -n "$PEER_ID" ]]; then
+        echo -e "${GREEN}Next Steps:${NC}"
+        echo "  Update hardcoded_operator_nodes() in crates/core-mesh/src/discovery.rs:"
+        echo "     /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT/p2p/$PEER_ID"
+        echo ""
+    else
+        echo -e "${GREEN}Next Steps:${NC}"
+        echo "  1. Get the stable peer ID from logs:"
+        echo "     journalctl -u qnet-super | grep 'local_peer_id'"
+        echo ""
+        echo "  2. Update hardcoded_operator_nodes() in your local code with:"
+        echo "     /ip4/$PUBLIC_IP/tcp/$LIBP2P_PORT/p2p/<PEER_ID>"
+        echo ""
+    fi
 }
 
 # =============================================================================
@@ -384,6 +454,7 @@ main() {
     create_qnet_user
     clone_repository
     build_binary
+    generate_persistent_keypair
     create_systemd_service
     configure_firewall
     start_service
