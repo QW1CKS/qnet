@@ -410,7 +410,10 @@ mod tests {
 
         // Initiator will fail to decrypt m2 because transcript differs
         let result = init.next(Some(&m2));
-        assert!(result.is_err(), "Tampered m1 should cause m2 decryption failure");
+        assert!(
+            result.is_err(),
+            "Tampered m1 should cause m2 decryption failure"
+        );
     }
 
     #[test]
@@ -431,7 +434,10 @@ mod tests {
         }
 
         let result = init.next(Some(&m2));
-        assert!(result.is_err(), "Tampered m2 should cause AEAD decryption failure");
+        assert!(
+            result.is_err(),
+            "Tampered m2 should cause AEAD decryption failure"
+        );
     }
 
     #[test]
@@ -451,7 +457,10 @@ mod tests {
         m3[last] ^= 1;
 
         let result = resp.next(Some(&m3));
-        assert!(result.is_err(), "Tampered m3 should cause AEAD decryption failure");
+        assert!(
+            result.is_err(),
+            "Tampered m3 should cause AEAD decryption failure"
+        );
     }
 
     #[test]
@@ -469,7 +478,10 @@ mod tests {
 
         // Initiator should fail to decrypt m2 because ee/es will be wrong
         let result = init.next(Some(&m2));
-        assert!(result.is_err(), "Wrong responder static key should cause decryption failure");
+        assert!(
+            result.is_err(),
+            "Wrong responder static key should cause decryption failure"
+        );
     }
 
     #[test]
@@ -499,9 +511,15 @@ mod tests {
         let exp2_resp = resp2.exporter(b"channel-binding").unwrap();
 
         // Both parties should have matching exporters
-        assert_eq!(exp1_init, exp1_resp, "Initiator and responder exporters must match");
+        assert_eq!(
+            exp1_init, exp1_resp,
+            "Initiator and responder exporters must match"
+        );
         // Same static keys produce same exporter (deterministic)
-        assert_eq!(exp1_init, exp2_init, "Same keys should produce same exporter");
+        assert_eq!(
+            exp1_init, exp2_init,
+            "Same keys should produce same exporter"
+        );
     }
 
     #[test]
@@ -519,7 +537,10 @@ mod tests {
         let exp_a = init.exporter(b"label-a").unwrap();
         let exp_b = init.exporter(b"label-b").unwrap();
 
-        assert_ne!(exp_a, exp_b, "Different labels must produce different exporters");
+        assert_ne!(
+            exp_a, exp_b,
+            "Different labels must produce different exporters"
+        );
     }
 
     #[test]

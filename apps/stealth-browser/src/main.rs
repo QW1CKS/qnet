@@ -188,7 +188,11 @@ async fn main() -> Result<()> {
                         match HelperMode::from_str(&v) {
                             Ok(mode) => {
                                 cfg.helper_mode = mode;
-                                eprintln!("cli-override: helper_mode={:?} ({})", mode, mode.feature_description());
+                                eprintln!(
+                                    "cli-override: helper_mode={:?} ({})",
+                                    mode,
+                                    mode.feature_description()
+                                );
                                 if mode.supports_exit() {
                                     eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
                                     eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
@@ -206,7 +210,11 @@ async fn main() -> Result<()> {
                     match HelperMode::from_str(v) {
                         Ok(mode) => {
                             cfg.helper_mode = mode;
-                            eprintln!("cli-override: helper_mode={:?} ({})", mode, mode.feature_description());
+                            eprintln!(
+                                "cli-override: helper_mode={:?} ({})",
+                                mode,
+                                mode.feature_description()
+                            );
                             if mode.supports_exit() {
                                 eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI");
                                 eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
@@ -226,7 +234,9 @@ async fn main() -> Result<()> {
                 "--exit-node" => {
                     cfg.helper_mode = HelperMode::Exit;
                     eprintln!("⚠️  EXIT NODE MODE ENABLED via CLI (legacy alias --exit-node)");
-                    eprintln!("⚠️  You will make web requests for other users. Legal liability applies!");
+                    eprintln!(
+                        "⚠️  You will make web requests for other users. Legal liability applies!"
+                    );
                 }
                 "--bootstrap" => {
                     cfg.helper_mode = HelperMode::Bootstrap;
@@ -531,7 +541,10 @@ impl HelperMode {
             // Legacy aliases for backward compatibility
             "relay-only" => Ok(HelperMode::Relay),
             "exit-node" => Ok(HelperMode::Exit),
-            _ => Err(anyhow!("Invalid helper mode: '{}'. Valid modes: client, relay, bootstrap, exit, super", s)),
+            _ => Err(anyhow!(
+                "Invalid helper mode: '{}'. Valid modes: client, relay, bootstrap, exit, super",
+                s
+            )),
         }
     }
 
@@ -542,7 +555,10 @@ impl HelperMode {
 
     /// Check if mode sends heartbeats (registers with directory)
     pub fn sends_heartbeat(&self) -> bool {
-        matches!(self, HelperMode::Relay | HelperMode::Exit | HelperMode::Super)
+        matches!(
+            self,
+            HelperMode::Relay | HelperMode::Exit | HelperMode::Super
+        )
     }
 
     /// Check if mode supports exit functionality
@@ -603,10 +619,10 @@ impl Default for Config {
             status_port: 8088,
             disable_bootstrap: true,
             helper_mode: HelperMode::Client, // Task 2.1.11.3: client mode by default
-            mesh_enabled: true,                 // Phase 2.4: mesh network enabled
-            mesh_max_circuits: 10,              // Phase 2.4.4: circuit limit
-            mesh_build_circuits: true,          // Phase 2.4.4: enable circuit building
-            expected_peer_ip: None,             // No expected peer by default
+            mesh_enabled: true,              // Phase 2.4: mesh network enabled
+            mesh_max_circuits: 10,           // Phase 2.4.4: circuit limit
+            mesh_build_circuits: true,       // Phase 2.4.4: enable circuit building
+            expected_peer_ip: None,          // No expected peer by default
         }
     }
 }
@@ -676,7 +692,9 @@ impl Config {
                     cfg.helper_mode = mode;
                     if mode.supports_exit() {
                         eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
-                        eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
+                        eprintln!(
+                            "⚠️  Legal liability: Your IP will be visible to destination websites."
+                        );
                     }
                 }
                 Err(e) => {
@@ -851,7 +869,7 @@ impl AppState {
             relay_route_count: Arc::new(AtomicU32::new(0)),
             mesh_commands: mesh_tx,
             directory: directory::PeerDirectory::new(), // Task 2.1.11.1
-            helper_mode: cfg.helper_mode, // Task 2.1.11.3
+            helper_mode: cfg.helper_mode,               // Task 2.1.11.3
             // Exit node statistics (Task 2.1.11.5)
             exit_requests_total: Arc::new(AtomicU64::new(0)),
             exit_requests_success: Arc::new(AtomicU64::new(0)),
@@ -1099,7 +1117,10 @@ fn spawn_heartbeat_loop(
     helper_mode: HelperMode,
 ) {
     if !helper_mode.sends_heartbeat() {
-        info!("heartbeat: Skipping registration (mode doesn't send heartbeat: {:?})", helper_mode);
+        info!(
+            "heartbeat: Skipping registration (mode doesn't send heartbeat: {:?})",
+            helper_mode
+        );
         return;
     }
 
@@ -1154,7 +1175,10 @@ fn spawn_heartbeat_loop(
 /// Other modes skip this task as they don't maintain a directory.
 fn spawn_directory_pruning_task(state: Arc<AppState>) {
     if !state.helper_mode.runs_directory() {
-        info!("directory-pruning: Skipping (mode doesn't run directory: {:?})", state.helper_mode);
+        info!(
+            "directory-pruning: Skipping (mode doesn't run directory: {:?})",
+            state.helper_mode
+        );
         return;
     }
 
@@ -1263,7 +1287,10 @@ fn spawn_mesh_discovery(
 
             // Initialize NAT manager for reachability tracking
             let mut nat_manager = core_mesh::nat::NatManager::new();
-            info!("mesh: NAT manager initialized (status: {})", nat_manager.status());
+            info!(
+                "mesh: NAT manager initialized (status: {})",
+                nat_manager.status()
+            );
 
             // Listen on all interfaces with fixed port 4001 for direct peering
             // Changed from tcp/0 (dynamic) to tcp/4001 (fixed) for reliable bootstrap
@@ -1354,8 +1381,10 @@ fn spawn_mesh_discovery(
                     String,
                 >,
             >;
-            let mut pending_streams: std::collections::HashMap<u64, (libp2p::PeerId, StreamResponse)> =
-                std::collections::HashMap::new();
+            let mut pending_streams: std::collections::HashMap<
+                u64,
+                (libp2p::PeerId, StreamResponse),
+            > = std::collections::HashMap::new();
 
             info!("mesh: Swarm event loop starting");
 
@@ -1405,13 +1434,17 @@ fn spawn_mesh_discovery(
                             // Request a stream via the stream protocol
                             match swarm.behaviour_mut().stream.open_stream(peer_id) {
                                 Ok(request_id) => {
-                                    info!("mesh: Requested stream to peer {} (request_id={})", peer_id, request_id);
+                                    info!(
+                                        "mesh: Requested stream to peer {} (request_id={})",
+                                        peer_id, request_id
+                                    );
                                     // Store the response channel to fulfill when OutboundStream event fires
                                     pending_streams.insert(request_id, (peer_id, response));
                                 }
                                 Err(e) => {
                                     warn!("mesh: Failed to request stream to {}: {}", peer_id, e);
-                                    let _ = response.send(Err(format!("Stream request failed: {}", e)));
+                                    let _ =
+                                        response.send(Err(format!("Stream request failed: {}", e)));
                                 }
                             }
                         }
@@ -1832,7 +1865,7 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         HelperMode::Exit => "exit",
         HelperMode::Super => "super",
     });
-    
+
     // Task 2.1.11.5: Exit node statistics (only included if mode supports exit)
     if app.helper_mode.supports_exit() {
         json["exit_stats"] = serde_json::json!({
@@ -1842,7 +1875,7 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
             "bandwidth_bytes": app.exit_bandwidth_bytes.load(Ordering::Relaxed),
         });
     }
-    
+
     json["mesh_enabled"] = serde_json::json!(true); // Always enabled (Phase 2.4)
 
     // Distinguish bootstrap peers (IPFS) from QNet mesh peers
@@ -2039,7 +2072,7 @@ fn handle_status_blocking(
             // Parse JSON body from remaining buffer
             let body_start = buf.iter().position(|&b| b == b'{').unwrap_or(used);
             let body_slice = &buf[body_start..used];
-            
+
             match serde_json::from_slice::<directory::RelayInfo>(body_slice) {
                 Ok(info) => {
                     let is_new = app.directory.register_peer(info);
@@ -2052,7 +2085,8 @@ fn handle_status_blocking(
                 Err(e) => {
                     eprintln!("directory:register-parse-error: {e}");
                     (
-                        serde_json::json!({"error":"invalid JSON body","details":e.to_string()}).to_string(),
+                        serde_json::json!({"error":"invalid JSON body","details":e.to_string()})
+                            .to_string(),
                         "application/json",
                         false,
                     )
@@ -2069,33 +2103,31 @@ fn handle_status_blocking(
             )
         } else {
             let query_params = sp.next().unwrap_or("");
-            let country_filter = query_params
-                .split('&')
-                .find_map(|param| {
-                    let mut kv = param.splitn(2, '=');
-                    if kv.next() == Some("country") {
-                        kv.next()
-                    } else {
-                        None
-                    }
-                });
+            let country_filter = query_params.split('&').find_map(|param| {
+                let mut kv = param.splitn(2, '=');
+                if kv.next() == Some("country") {
+                    kv.next()
+                } else {
+                    None
+                }
+            });
 
-        let all_relays = app.directory.get_relays_by_country();
-        
-        let filtered = if let Some(country) = country_filter {
-            // Filter to single country
-            let mut result = std::collections::HashMap::new();
-            if let Some(peers) = all_relays.get(country) {
-                result.insert(country.to_string(), peers.clone());
-            }
-            result
-        } else {
-            // Return all countries
-            all_relays
-        };
+            let all_relays = app.directory.get_relays_by_country();
 
-        let response = serde_json::to_string(&filtered).unwrap_or_else(|_| "{}".to_string());
-        (response, "application/json", true)
+            let filtered = if let Some(country) = country_filter {
+                // Filter to single country
+                let mut result = std::collections::HashMap::new();
+                if let Some(peers) = all_relays.get(country) {
+                    result.insert(country.to_string(), peers.clone());
+                }
+                result
+            } else {
+                // Return all countries
+                all_relays
+            };
+
+            let response = serde_json::to_string(&filtered).unwrap_or_else(|_| "{}".to_string());
+            (response, "application/json", true)
         }
     } else if path_token == "/api/relays/prune" {
         // Task 2.1.11.1: GET /api/relays/prune - manual pruning (dev only)
@@ -2384,10 +2416,10 @@ async fn handle_client(
         if app.helper_mode.supports_exit() && !target.contains(".qnet") {
             // Parse host:port for exit validation
             let (host, port) = parse_host_port(&target)?;
-            
+
             // Increment total request counter
             app.exit_requests_total.fetch_add(1, Ordering::Relaxed);
-            
+
             // Validate destination against exit policy (SSRF prevention, port restrictions)
             let exit_config = exit::ExitConfig::default();
             if let Err(e) = exit::validate_destination(&host, port, &exit_config) {
@@ -2396,19 +2428,20 @@ async fn handle_client(
                 send_reply(stream, 0x02).await?; // Connection not allowed
                 bail!("exit blocked: {}", e);
             }
-            
+
             // Connect to destination
             info!(target=%target, "exit: forwarding to internet");
             match TcpStream::connect(&target).await {
                 Ok(mut outbound) => {
                     // Success reply
                     send_reply(stream, 0x00).await?;
-                    
+
                     // Bridge bidirectionally and track bandwidth
                     match tokio::io::copy_bidirectional(stream, &mut outbound).await {
                         Ok((to_dest, from_dest)) => {
                             let total_bytes = to_dest + from_dest;
-                            app.exit_bandwidth_bytes.fetch_add(total_bytes, Ordering::Relaxed);
+                            app.exit_bandwidth_bytes
+                                .fetch_add(total_bytes, Ordering::Relaxed);
                             app.exit_requests_success.fetch_add(1, Ordering::Relaxed);
                             info!(target=%target, bytes=total_bytes, "exit: connection completed");
                         }
@@ -2573,8 +2606,7 @@ async fn handle_client(
                 }
                 eprintln!(
                     "state-transition:connected mode=masked target={}:{}",
-                    host,
-                    port
+                    host, port
                 );
                 if let Ok(mut ms) = app.masked_stats.lock() {
                     ms.successes = ms.successes.saturating_add(1);
@@ -2760,7 +2792,7 @@ mod tests {
 
         let parsed: Result<directory::RelayInfo, _> = serde_json::from_str(json_body);
         assert!(parsed.is_ok());
-        
+
         let info = parsed.unwrap();
         assert_eq!(info.peer_id, "12D3KooWTest");
         assert_eq!(info.country, "US");
@@ -2775,33 +2807,35 @@ mod tests {
             "is_new": true
         });
 
-        assert!(response.get("registered").and_then(|v| v.as_bool()).unwrap_or(false));
-        assert!(response.get("is_new").and_then(|v| v.as_bool()).unwrap_or(false));
+        assert!(response
+            .get("registered")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false));
+        assert!(response
+            .get("is_new")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false));
     }
 
     #[test]
     fn test_directory_endpoint_get_relays_response_format() {
         // Test that get_relays_by_country returns HashMap<String, Vec<RelayInfo>>
         let directory = directory::PeerDirectory::new();
-        
+
         // Add test peer
         let peer_id = libp2p::PeerId::random();
         let addrs = vec!["/ip4/1.2.3.4/tcp/4001".parse().unwrap()];
-        let info = directory::RelayInfo::new(
-            peer_id,
-            addrs,
-            "US".to_string(),
-            vec!["relay".to_string()],
-        );
+        let info =
+            directory::RelayInfo::new(peer_id, addrs, "US".to_string(), vec!["relay".to_string()]);
         directory.register_peer(info);
 
         let relays = directory.get_relays_by_country();
         let json = serde_json::to_string(&relays).unwrap();
-        
+
         // Verify JSON can be parsed back
         let parsed: std::collections::HashMap<String, Vec<directory::RelayInfo>> =
             serde_json::from_str(&json).unwrap();
-        
+
         assert!(parsed.contains_key("US"));
         assert_eq!(parsed.get("US").unwrap().len(), 1);
     }
@@ -2810,16 +2844,14 @@ mod tests {
     fn test_directory_endpoint_country_filter_parsing() {
         // Test query parameter parsing for ?country=US
         let query_string = "country=US";
-        let country_filter = query_string
-            .split('&')
-            .find_map(|param| {
-                let mut kv = param.splitn(2, '=');
-                if kv.next() == Some("country") {
-                    kv.next()
-                } else {
-                    None
-                }
-            });
+        let country_filter = query_string.split('&').find_map(|param| {
+            let mut kv = param.splitn(2, '=');
+            if kv.next() == Some("country") {
+                kv.next()
+            } else {
+                None
+            }
+        });
 
         assert_eq!(country_filter, Some("US"));
     }
@@ -2828,16 +2860,14 @@ mod tests {
     fn test_directory_endpoint_country_filter_with_multiple_params() {
         // Test query parameter parsing with multiple params
         let query_string = "foo=bar&country=UK&baz=qux";
-        let country_filter = query_string
-            .split('&')
-            .find_map(|param| {
-                let mut kv = param.splitn(2, '=');
-                if kv.next() == Some("country") {
-                    kv.next()
-                } else {
-                    None
-                }
-            });
+        let country_filter = query_string.split('&').find_map(|param| {
+            let mut kv = param.splitn(2, '=');
+            if kv.next() == Some("country") {
+                kv.next()
+            } else {
+                None
+            }
+        });
 
         assert_eq!(country_filter, Some("UK"));
     }
@@ -2852,8 +2882,14 @@ mod tests {
         });
 
         assert_eq!(response.get("pruned").and_then(|v| v.as_u64()), Some(5));
-        assert_eq!(response.get("active_peers").and_then(|v| v.as_u64()), Some(10));
-        assert_eq!(response.get("total_peers").and_then(|v| v.as_u64()), Some(15));
+        assert_eq!(
+            response.get("active_peers").and_then(|v| v.as_u64()),
+            Some(10)
+        );
+        assert_eq!(
+            response.get("total_peers").and_then(|v| v.as_u64()),
+            Some(15)
+        );
     }
 
     // Task 2.1.11.3: Helper mode tests
@@ -2861,7 +2897,10 @@ mod tests {
     fn test_helper_mode_from_str() {
         assert_eq!(HelperMode::from_str("client").unwrap(), HelperMode::Client);
         assert_eq!(HelperMode::from_str("relay").unwrap(), HelperMode::Relay);
-        assert_eq!(HelperMode::from_str("bootstrap").unwrap(), HelperMode::Bootstrap);
+        assert_eq!(
+            HelperMode::from_str("bootstrap").unwrap(),
+            HelperMode::Bootstrap
+        );
         assert_eq!(HelperMode::from_str("exit").unwrap(), HelperMode::Exit);
         assert_eq!(HelperMode::from_str("super").unwrap(), HelperMode::Super);
 
@@ -2870,7 +2909,10 @@ mod tests {
         assert_eq!(HelperMode::from_str("Super").unwrap(), HelperMode::Super);
 
         // Legacy aliases
-        assert_eq!(HelperMode::from_str("relay-only").unwrap(), HelperMode::Relay);
+        assert_eq!(
+            HelperMode::from_str("relay-only").unwrap(),
+            HelperMode::Relay
+        );
         assert_eq!(HelperMode::from_str("exit-node").unwrap(), HelperMode::Exit);
 
         // Invalid mode
@@ -2915,11 +2957,26 @@ mod tests {
 
     #[test]
     fn test_helper_mode_feature_description() {
-        assert_eq!(HelperMode::Client.feature_description(), "query directory, no registration, no exit");
-        assert_eq!(HelperMode::Relay.feature_description(), "register with directory, relay traffic, no exit");
-        assert_eq!(HelperMode::Bootstrap.feature_description(), "run directory service, relay traffic, no exit");
-        assert_eq!(HelperMode::Exit.feature_description(), "relay + exit to internet, no directory service");
-        assert_eq!(HelperMode::Super.feature_description(), "all features (bootstrap + relay + exit)");
+        assert_eq!(
+            HelperMode::Client.feature_description(),
+            "query directory, no registration, no exit"
+        );
+        assert_eq!(
+            HelperMode::Relay.feature_description(),
+            "register with directory, relay traffic, no exit"
+        );
+        assert_eq!(
+            HelperMode::Bootstrap.feature_description(),
+            "run directory service, relay traffic, no exit"
+        );
+        assert_eq!(
+            HelperMode::Exit.feature_description(),
+            "relay + exit to internet, no directory service"
+        );
+        assert_eq!(
+            HelperMode::Super.feature_description(),
+            "all features (bootstrap + relay + exit)"
+        );
     }
 
     // Task 2.1.11.4: Test directory endpoint conditional access
@@ -2954,4 +3011,3 @@ mod tests {
         assert!(!HelperMode::Exit.runs_directory());
     }
 }
-

@@ -135,8 +135,9 @@ impl CircuitRequest {
     pub fn get_ephemeral_pubkey(&self) -> Result<Option<[u8; 32]>, CircuitError> {
         match &self.ephemeral_pubkey {
             Some(hex_str) => {
-                let bytes = hex::decode(hex_str)
-                    .map_err(|e| CircuitError::DecodeFailed(format!("Invalid pubkey hex: {}", e)))?;
+                let bytes = hex::decode(hex_str).map_err(|e| {
+                    CircuitError::DecodeFailed(format!("Invalid pubkey hex: {}", e))
+                })?;
                 if bytes.len() != 32 {
                     return Err(CircuitError::DecodeFailed(format!(
                         "Invalid pubkey length: expected 32, got {}",
@@ -205,8 +206,9 @@ impl CircuitReady {
     pub fn get_ephemeral_pubkey(&self) -> Result<Option<[u8; 32]>, CircuitError> {
         match &self.ephemeral_pubkey {
             Some(hex_str) => {
-                let bytes = hex::decode(hex_str)
-                    .map_err(|e| CircuitError::DecodeFailed(format!("Invalid pubkey hex: {}", e)))?;
+                let bytes = hex::decode(hex_str).map_err(|e| {
+                    CircuitError::DecodeFailed(format!("Invalid pubkey hex: {}", e))
+                })?;
                 if bytes.len() != 32 {
                     return Err(CircuitError::DecodeFailed(format!(
                         "Invalid pubkey length: expected 32, got {}",
@@ -769,7 +771,11 @@ pub fn encrypt_layer(key: &[u8; 32], counter: u64, plaintext: &[u8]) -> Vec<u8> 
 /// # Returns
 ///
 /// Plaintext if decryption succeeds, error otherwise.
-pub fn decrypt_layer(key: &[u8; 32], counter: u64, ciphertext: &[u8]) -> Result<Vec<u8>, CircuitError> {
+pub fn decrypt_layer(
+    key: &[u8; 32],
+    counter: u64,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, CircuitError> {
     use core_crypto::aead;
     let nonce = build_nonce(counter);
     aead::open(key, &nonce, &[], ciphertext)
@@ -815,7 +821,10 @@ pub fn encrypt_for_circuit(circuit_state: &mut CircuitState, data: &[u8]) -> Vec
 /// # Returns
 ///
 /// Plaintext if all layers decrypt successfully.
-pub fn decrypt_from_circuit(circuit_state: &mut CircuitState, ciphertext: &[u8]) -> Result<Vec<u8>, CircuitError> {
+pub fn decrypt_from_circuit(
+    circuit_state: &mut CircuitState,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, CircuitError> {
     let mut decrypted = ciphertext.to_vec();
 
     // Decrypt from first hop to last hop (forward order)
@@ -976,7 +985,7 @@ impl CircuitBuilder {
         available.shuffle(&mut rng);
 
         let mut hops: Vec<PeerId> = available.into_iter().take(num_hops).collect();
-        
+
         // Add destination as final hop
         hops.push(dst);
 
@@ -1057,17 +1066,17 @@ mod tests {
     fn test_derive_relay_keys() {
         let secret = [42u8; 32];
         let keys = derive_relay_keys(&secret);
-        
+
         // Keys should be non-zero
         assert!(keys.kf.iter().any(|&b| b != 0));
         assert!(keys.kb.iter().any(|&b| b != 0));
         assert!(keys.df.iter().any(|&b| b != 0));
         assert!(keys.db.iter().any(|&b| b != 0));
-        
+
         // Forward and backward keys should be different
         assert_ne!(keys.kf, keys.kb);
         assert_ne!(keys.df, keys.db);
-        
+
         // Derivation should be deterministic
         let keys2 = derive_relay_keys(&secret);
         assert_eq!(keys.kf, keys2.kf);
@@ -1078,12 +1087,12 @@ mod tests {
     fn test_encrypt_decrypt_layer() {
         let key = [1u8; 32];
         let plaintext = b"hello onion routing";
-        
+
         let ciphertext = encrypt_layer(&key, 0, plaintext);
-        
+
         // Ciphertext should be larger (includes 16-byte auth tag)
         assert_eq!(ciphertext.len(), plaintext.len() + 16);
-        
+
         // Decrypt should recover plaintext
         let decrypted = decrypt_layer(&key, 0, &ciphertext).expect("decrypt");
         assert_eq!(decrypted, plaintext);
@@ -1093,9 +1102,9 @@ mod tests {
     fn test_decrypt_layer_wrong_counter() {
         let key = [1u8; 32];
         let plaintext = b"test data";
-        
+
         let ciphertext = encrypt_layer(&key, 0, plaintext);
-        
+
         // Decrypting with wrong counter should fail
         let result = decrypt_layer(&key, 1, &ciphertext);
         assert!(result.is_err());
@@ -1106,9 +1115,9 @@ mod tests {
         let key1 = [1u8; 32];
         let key2 = [2u8; 32];
         let plaintext = b"secret message";
-        
+
         let ciphertext = encrypt_layer(&key1, 0, plaintext);
-        
+
         // Decrypting with wrong key should fail
         let result = decrypt_layer(&key2, 0, &ciphertext);
         assert!(result.is_err());
@@ -1119,55 +1128,51 @@ mod tests {
         let peer1 = PeerId::random();
         let peer2 = PeerId::random();
         let peer3 = PeerId::random();
-        
+
         // Create circuit state with 3 hops
         let mut circuit = CircuitState::new(generate_circuit_id());
         circuit.add_hop(HopState::new(peer1, derive_relay_keys(&[1u8; 32])));
         circuit.add_hop(HopState::new(peer2, derive_relay_keys(&[2u8; 32])));
         circuit.add_hop(HopState::new(peer3, derive_relay_keys(&[3u8; 32])));
-        
+
         assert_eq!(circuit.len(), 3);
         assert!(!circuit.is_empty());
-        
+
         let plaintext = b"multi-hop encrypted message";
-        
+
         // Encrypt through all hops
         let encrypted = encrypt_for_circuit(&mut circuit, plaintext);
-        
+
         // Should be 3 layers of encryption (3 x 16-byte tags)
         assert_eq!(encrypted.len(), plaintext.len() + 48);
-        
+
         // Reset counters for decryption
         for hop in circuit.hops.iter_mut() {
             hop.counter_f = 0;
             hop.counter_b = 0;
         }
-        
+
         // Simulate relay processing: decrypt layer by layer
         // Note: This tests the relay_decrypt_layer function in sequence
         let mut data = encrypted.clone();
-        
+
         // Hop 1 decrypts
         data = decrypt_layer(&circuit.hops[0].keys.kf, 0, &data).expect("hop1 decrypt");
         // Hop 2 decrypts
         data = decrypt_layer(&circuit.hops[1].keys.kf, 0, &data).expect("hop2 decrypt");
         // Hop 3 decrypts
         data = decrypt_layer(&circuit.hops[2].keys.kf, 0, &data).expect("hop3 decrypt");
-        
+
         assert_eq!(data, plaintext);
     }
 
     #[test]
     fn test_onion_packet_encode_decode() {
-        let packet = OnionPacket::new(
-            12345,
-            OnionCommand::Data,
-            b"test payload".to_vec(),
-        );
-        
+        let packet = OnionPacket::new(12345, OnionCommand::Data, b"test payload".to_vec());
+
         let encoded = packet.encode();
         let decoded = OnionPacket::decode(&encoded).expect("decode");
-        
+
         assert_eq!(decoded.circuit_id, 12345);
         assert_eq!(decoded.command, OnionCommand::Data);
         assert_eq!(decoded.body, b"test payload");
@@ -1188,10 +1193,10 @@ mod tests {
     fn test_relay_cell_body_encode_decode() {
         let body = RelayCellBody::new(42, b"hello world".to_vec());
         let encoded = body.encode();
-        
+
         // Should be fixed 509-byte size
         assert_eq!(encoded.len(), 509);
-        
+
         let decoded = RelayCellBody::decode(&encoded).expect("decode");
         assert_eq!(decoded.stream_id, 42);
         assert_eq!(decoded.data, b"hello world");
@@ -1202,13 +1207,13 @@ mod tests {
     fn test_circuit_request_with_ephemeral_key() {
         let peer = PeerId::random();
         let pubkey = [99u8; 32];
-        
+
         let req = CircuitRequest::with_ephemeral_key(123, peer, &pubkey);
-        
+
         // Encode and decode
         let encoded = req.encode().expect("encode");
         let decoded = CircuitRequest::decode(&encoded).expect("decode");
-        
+
         assert_eq!(decoded.circuit_id, 123);
         assert_eq!(decoded.next_hop_peer_id().unwrap(), peer);
         assert_eq!(decoded.get_ephemeral_pubkey().unwrap(), Some(pubkey));
@@ -1217,12 +1222,12 @@ mod tests {
     #[test]
     fn test_circuit_ready_with_ephemeral_key() {
         let pubkey = [88u8; 32];
-        
+
         let ready = CircuitReady::with_ephemeral_key(456, &pubkey);
-        
+
         let encoded = ready.encode().expect("encode");
         let decoded = CircuitReady::decode(&encoded).expect("decode");
-        
+
         assert_eq!(decoded.circuit_id, 456);
         assert_eq!(decoded.get_ephemeral_pubkey().unwrap(), Some(pubkey));
     }
@@ -1232,10 +1237,10 @@ mod tests {
         // Old-style request without ephemeral key
         let peer = PeerId::random();
         let old_req = CircuitRequest::new(789, peer);
-        
+
         let encoded = old_req.encode().expect("encode");
         let decoded = CircuitRequest::decode(&encoded).expect("decode");
-        
+
         assert_eq!(decoded.circuit_id, 789);
         assert!(decoded.ephemeral_pubkey.is_none());
         assert_eq!(decoded.get_ephemeral_pubkey().unwrap(), None);

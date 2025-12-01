@@ -27,12 +27,14 @@ where
     let idle_timeout = Duration::from_secs(idle_timeout_secs);
 
     // Use tokio's copy_bidirectional with timeout
-    match timeout(idle_timeout, tokio::io::copy_bidirectional(stream1, stream2)).await {
+    match timeout(
+        idle_timeout,
+        tokio::io::copy_bidirectional(stream1, stream2),
+    )
+    .await
+    {
         Ok(Ok((bytes_to_dest, bytes_from_dest))) => {
-            debug!(
-                bytes_to_dest,
-                bytes_from_dest, "Connection closed normally"
-            );
+            debug!(bytes_to_dest, bytes_from_dest, "Connection closed normally");
             Ok((bytes_to_dest, bytes_from_dest))
         }
         Ok(Err(e)) => {

@@ -417,7 +417,10 @@ impl ConnectionHandler for QNetStreamHandler {
 #[derive(Debug)]
 pub enum QNetStreamBehaviourEvent {
     /// Inbound stream from a peer
-    InboundStream { peer_id: PeerId, stream: LibP2PStream },
+    InboundStream {
+        peer_id: PeerId,
+        stream: LibP2PStream,
+    },
     /// Outbound stream to a peer established
     OutboundStream {
         peer_id: PeerId,

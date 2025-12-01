@@ -36,9 +36,7 @@ pub fn parse_connect_request(buffer: &[u8]) -> Result<(String, u16)> {
 
     // Check if we have a complete request
     if parse_result.is_partial() {
-        return Err(ExitError::InvalidConnect(
-            "Incomplete request".to_string(),
-        ));
+        return Err(ExitError::InvalidConnect("Incomplete request".to_string()));
     }
 
     // Verify method is CONNECT
@@ -77,9 +75,9 @@ pub fn parse_host_port(target: &str) -> Result<(String, u16)> {
     let host = parts[1];
 
     // Parse port
-    let port: u16 = port_str.parse().map_err(|_| {
-        ExitError::InvalidConnect(format!("Invalid port number: '{}'", port_str))
-    })?;
+    let port: u16 = port_str
+        .parse()
+        .map_err(|_| ExitError::InvalidConnect(format!("Invalid port number: '{}'", port_str)))?;
 
     // Validate host isn't empty
     if host.is_empty() {
