@@ -193,10 +193,15 @@ Unit tests cover all super peer functionality:
 - [x] `test_prune_stale_peers` - Verifies pruning removes stale entries
 - [x] `test_stale_peer_detection` - Verifies stale detection after 120s
 
-Manual integration testing (run processes, wait for heartbeats) deferred to user discretion:
-- [ ] Manual: Run Helper in `super` mode and verify endpoints live
-- [ ] Manual: Run second Helper in `client` mode, verify discovery
-- [ ] Manual: Wait 120s for pruning verification
+**Manual Testing Procedures**: See `qnet-spec/docs/manual-testing.md` for detailed step-by-step instructions covering:
+- Test 1: Super Peer Mode Startup
+- Test 2: Directory Service Endpoints
+- Test 3: Directory Pruning (Stale Peer Removal)
+- Test 4: Heartbeat Registration (Relay Mode)
+- Test 5: All Helper Modes Verification
+- Test 6: Exit Node Functionality
+- Test 7: Graceful Shutdown
+- Test 8: Load Testing Directory Endpoints
 
 #### 2.1.11.7 Testing - Droplet Deployment 📋 PENDING
 **Prerequisite**: Access to 1 DigitalOcean droplet ($6/month)
