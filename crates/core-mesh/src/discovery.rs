@@ -138,10 +138,10 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     // Once connected, both nodes can bootstrap via each other
     vec![
         BootstrapNode::new(
-            "12D3KooWB5Tb2ejzRAbj7HKEHeMTxMc8uE7gj5XFoYod9hWEuzer"
+            "12D3KooWHQgjat3MaVsArYHupRKEnkfMdC1AVp154v3PARergcbN"
                 .parse()
-                .unwrap(), // Droplet peer ID (FRA1 region, Dec 2025)
-            "/ip4/165.232.73.134/tcp/4001".parse().unwrap(),
+                .unwrap(), // Droplet peer ID (NYC3 region, Dec 2025) - STABLE via persistent keypair
+            "/ip4/104.248.22.27/tcp/4001".parse().unwrap(),
         ),
         // Note: Windows peer removed from seeds because it's not publicly reachable
         // Windows will connect to droplet, then both discover each other via DHT provider records
