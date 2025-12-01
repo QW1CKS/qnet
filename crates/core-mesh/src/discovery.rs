@@ -186,6 +186,8 @@ pub struct DiscoveryBehavior {
     pub dcutr: libp2p::dcutr::Behaviour,
     /// QNet stream protocol for bidirectional tunneling
     pub stream: crate::stream_protocol::QNetStreamBehaviour,
+    /// Ping protocol for connection keepalive (Task 2.1.12)
+    pub ping: libp2p::ping::Behaviour,
 }
 
 /// Manages routing table populated from peer discovery events.
@@ -312,6 +314,12 @@ impl DiscoveryBehavior {
         // Initialize QNet stream protocol for bidirectional tunneling
         let stream = crate::stream_protocol::QNetStreamBehaviour::new();
 
+        // Task 2.1.12: Initialize ping protocol for connection keepalive
+        // Ping every 30 seconds to prevent idle connection timeout (default is ~60s)
+        let ping = libp2p::ping::Behaviour::new(
+            libp2p::ping::Config::new().with_interval(std::time::Duration::from_secs(30)),
+        );
+
         log::info!(
             "state-transition: Discovery initialized for peer {} with NAT traversal support",
             peer_id
@@ -326,6 +334,7 @@ impl DiscoveryBehavior {
                 relay_client,
                 dcutr,
                 stream,
+                ping,
             },
         ))
     }

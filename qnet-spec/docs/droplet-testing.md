@@ -653,6 +653,27 @@ rm /swapfile
 ### Issues Found
 - [Issue description]
 
+### Documented Issues from Dec 2025 Testing
+
+**Issue 1: KeepAliveTimeout after ~1 minute idle**
+- **Symptom**: libp2p connections drop after ~60 seconds of inactivity
+- **Log**: `Disconnected from peer ... (cause: Some(KeepAliveTimeout))`
+- **Impact**: `peers_online` drops to 0; state may still show "connected" (SOCKS5 state, not mesh)
+- **Resolution**: Task 2.1.12 (Connection Maintenance) - Add keepalive pings and auto-reconnection
+- **Workaround**: Restart Helper when connection drops
+
+**Issue 2: Droplet heartbeat to stale IP**
+- **Symptom**: Droplet tries to register with old/invalid bootstrap IP
+- **Log**: `Failed to POST: http://<OLD_IP>:8088/api/relay/register`
+- **Impact**: Heartbeat fails; droplet not visible in directory
+- **Resolution**: Run `git pull` on droplet to update hardcoded IPs in `discovery.rs`, then `systemctl restart qnet-super`
+
+**Issue 3: State display confusion**
+- **Symptom**: `/status` shows `state: "connected"` even when mesh has 0 peers
+- **Explanation**: `state` reflects SOCKS5 connection state (connected to internet), not mesh peer count
+- **Impact**: Can be misleading when checking mesh health
+- **Resolution**: Task 2.1.12.4 - Add separate `mesh_state` field to `/status`
+
 ### Sign-off
 - Tester: [NAME]
 - Date: [DATE]

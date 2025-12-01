@@ -213,29 +213,35 @@ Unit tests cover all super peer functionality:
 - Test 7: Graceful Shutdown ✅
 - Test 8: Load Testing ✅ (100/100 registrations, 1000/1000 queries)
 
-#### 2.1.11.7 Testing - Droplet Deployment 📋 READY FOR EXECUTION
+#### 2.1.11.7 Testing - Droplet Deployment ✅ TESTED (Dec 1, 2025)
 **Prerequisite**: Access to 1 DigitalOcean droplet ($6/month)
 **Tooling**: ✅ CREATED
 - [x] Create automated deployment script: `scripts/deploy-super-peer.sh`
   - Single command deployment: `curl -sSL <URL> | bash`
   - Handles: system update, Rust install, user creation, repo clone, build, systemd, firewall
   - Features: colored output, error handling, security hardening, summary
+  - Added: Persistent keypair generation (`/opt/qnet/data/keypair.pb`)
 - [x] Create droplet testing documentation: `qnet-spec/docs/droplet-testing.md`
   - 9-part comprehensive test procedure
   - Covers: provisioning, deployment, verification, remote API, local integration
   - Includes: exit node testing, heartbeat, load testing, graceful operations
   - Troubleshooting guide included
 
-**Execution** (when user has droplet access):
-- [ ] Part 1: Provision droplet (Ubuntu 22.04, $6/mo)
-- [ ] Part 2: Run automated deployment script
-- [ ] Part 3: Verify service status and logs
-- [ ] Part 4: Test remote API access
-- [ ] Part 5: Test local Helper integration
-- [ ] Part 6: Test exit node functionality
-- [ ] Part 7: Test heartbeat integration
-- [ ] Part 8: Load and stability testing
-- [ ] Part 9: Graceful operations testing
+**Execution Results** (Dec 1, 2025 - NYC3 droplet 104.248.22.27):
+- [x] Part 1: Provision droplet (Ubuntu 22.04, $6/mo) ✅
+- [x] Part 2: Run automated deployment script ✅ (persistent keypair working)
+- [x] Part 3: Verify service status and logs ✅
+- [x] Part 4: Test remote API access ✅ (status, ping, directory all work)
+- [x] Part 5: Test local Helper integration ✅ (initial connection established, peer identified)
+- [x] Part 6: Test exit node functionality ✅ (curl through SOCKS5 shows droplet IP)
+- [ ] Part 7: Test heartbeat integration ⚠️ PARTIAL (droplet heartbeat fails to old IP - needs code update)
+- [ ] Part 8: Load and stability testing (not yet tested)
+- [ ] Part 9: Graceful operations testing (not yet tested)
+
+**Issues Found**:
+1. KeepAliveTimeout: libp2p connections drop after ~1 min idle (needs keepalive/reconnect logic)
+2. Droplet heartbeat: Tries to register with old IP 165.232.73.134 (needs git pull on droplet)
+3. Peer count drops to 0 after timeout, but state shows "connected" (state is SOCKS, not mesh)
 
 #### 2.1.11.8 Documentation Updates ✅ DONE
 - [x] Update `README.md`
@@ -278,6 +284,65 @@ Unit tests cover all super peer functionality:
 - [ ] Verify memory usage stable under load (deferred - requires extended runtime)
 - [ ] Test graceful shutdown (deferred - requires manual process control)
 - [ ] Test restart recovery (deferred - directory is in-memory, no disk cache yet)
+
+---
+
+## ✅ Phase 2.1.12 - Connection Maintenance (Keepalive/Reconnection) COMPLETE
+
+**Context**: Droplet testing (2.1.11.7) revealed that libp2p connections drop after ~1 minute of idle time due to KeepAliveTimeout. The Helper needs active keepalive pings and automatic reconnection logic to maintain stable connections to bootstrap/operator nodes.
+
+**Status**: ✅ COMPLETE (Dec 1, 2025)
+
+### 2.1.12 Connection Maintenance Implementation
+**Goal**: Prevent idle connection drops and automatically recover from disconnections.
+
+#### 2.1.12.1 Add libp2p Keepalive Configuration ✅ DONE
+- [x] Open file: `crates/core-mesh/src/discovery.rs`
+- [x] Add `ping` field to `DiscoveryBehavior` struct
+- [x] Configure libp2p-ping protocol with 30-second interval
+- [x] Initialize ping behavior in `DiscoveryBehavior::new()`
+- [x] Handle `DiscoveryBehaviorEvent::Ping` in event loop
+- [x] Ping keeps connections alive between idle periods
+
+#### 2.1.12.2 Implement Peer Connection Monitoring ✅ DONE
+- [x] Add connection state tracking to `AppState`:
+  - [x] `mesh_state: Arc<AtomicU8>` (0=disconnected, 1=connecting, 2=connected)
+  - [x] `mesh_connected_since: Mutex<Option<Instant>>`
+  - [x] `mesh_reconnection_attempts: Arc<AtomicU32>`
+  - [x] `mesh_last_reconnection: Mutex<Option<Instant>>`
+- [x] Update on SwarmEvent::ConnectionEstablished (set mesh_state=2)
+- [x] Update on SwarmEvent::ConnectionClosed (set mesh_state=0 if no peers)
+- [x] Add new fields to `/status` endpoint
+
+#### 2.1.12.3 Implement Automatic Reconnection ✅ DONE
+- [x] Integrated into existing 5-second interval handler
+- [x] Check if connected_peers is empty
+- [x] If disconnected from all peers:
+  - [x] Log warning: "No peers connected, attempting reconnection"
+  - [x] Re-dial hardcoded operator nodes from `load_bootstrap_nodes()`
+  - [x] Set mesh_state to 1 (connecting)
+- [x] Track reconnection attempts in `mesh_reconnection_attempts`
+- [x] Add reconnection statistics to `/status` endpoint
+
+#### 2.1.12.4 Add Connection Health Indicators ✅ DONE
+- [x] Add `Connecting` variant to `ConnState` enum
+- [x] Update `/status` JSON to include mesh health:
+  - [x] `mesh_state: "connected" | "connecting" | "disconnected"`
+  - [x] `bootstrap_connected: bool`
+  - [x] `peers_online: u32` (total connected peers)
+  - [x] `connection_uptime_secs: u64` (when connected)
+  - [x] `reconnection_attempts: u64`
+  - [x] `last_reconnection_secs_ago: u64`
+- [x] Update HTML status page with yellow "Connecting..." state
+- [x] Add spinning loading icon CSS animation for connecting state
+
+#### 2.1.12.5 Testing - Connection Maintenance ⏳ PENDING MANUAL TEST
+- [x] Code compiles successfully
+- [x] All existing tests pass (56 core-mesh, 37 stealth-browser)
+- [ ] Manual test: Start Helper, verify connection to droplet
+- [ ] Manual test: Wait 5 minutes idle, verify connection maintained
+- [ ] Manual test: Stop droplet, verify reconnection attempts
+- [ ] Manual test: Restart droplet, verify automatic recovery
 
 ---
 

@@ -310,6 +310,36 @@ STEALTH_MODE=super stealth-browser
 
 ---
 
+### Connection Behavior and Limitations
+
+#### Current Behavior (Dec 2025)
+
+**libp2p Connection Management**:
+- Helper uses libp2p (TCP + Noise + yamux) for peer-to-peer connections
+- Connections are established to bootstrap nodes on startup
+- Default idle timeout: ~60 seconds (libp2p KeepAliveTimeout)
+
+**Known Limitation - Idle Disconnects**:
+The current implementation may disconnect from peers after ~1 minute of idle time due to libp2p's default keepalive behavior. This manifests as:
+- Status shows `peers_online: 0` after period of inactivity
+- Logs show: `Disconnected from peer ... (cause: Some(KeepAliveTimeout))`
+- SOCKS5 traffic still works via direct HTX if connected
+
+**Planned Improvements** (Task 2.1.12):
+1. **Keepalive Pings**: Configure libp2p ping protocol with 30-second intervals
+2. **Automatic Reconnection**: Reconnect loop to re-dial bootstrap nodes when disconnected
+3. **Connection Health Indicators**: New `/status` fields for mesh health
+
+#### Troubleshooting Connection Issues
+
+If `/status` shows `peers_online: 0`:
+1. **Check bootstrap node availability**: `curl http://104.248.22.27:8088/ping`
+2. **Check logs**: Look for `KeepAliveTimeout` or connection errors in `logs/stealth-browser*.log`
+3. **Force reconnection**: Restart the Helper (`Ctrl+C` then re-run)
+4. **Verify network**: Ensure outbound TCP port 4001 is not blocked
+
+---
+
 ### Environment Variables
 
 - `STEALTH_MODE` - Helper mode (overrides CLI flag): `client`, `relay`, `bootstrap`, `exit`, `super`

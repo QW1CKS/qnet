@@ -669,8 +669,12 @@ impl Config {
             if let Ok(helper_mode) = HelperMode::from_str(&m_lower) {
                 cfg.helper_mode = helper_mode;
                 if helper_mode.supports_exit() {
-                    eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
-                    eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
+                    eprintln!(
+                        "⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!"
+                    );
+                    eprintln!(
+                        "⚠️  Legal liability: Your IP will be visible to destination websites."
+                    );
                 }
             } else {
                 // Otherwise, treat as connection mode (direct/masked/htx-http-echo)
@@ -743,6 +747,7 @@ fn apply_mode(cfg: &mut Config, raw: &str) {
 #[serde(rename_all = "kebab-case")]
 enum ConnState {
     Offline,
+    Connecting, // Task 2.1.12: Initial state during mesh connection establishment
     Calibrating,
     Connected,
 }
@@ -791,6 +796,11 @@ struct AppState {
     exit_requests_success: Arc<AtomicU64>,
     exit_requests_blocked: Arc<AtomicU64>,
     exit_bandwidth_bytes: Arc<AtomicU64>,
+    // Task 2.1.12: Mesh connection state tracking
+    mesh_state: Arc<std::sync::atomic::AtomicU8>, // 0=disconnected, 1=connecting, 2=connected
+    mesh_connected_since: Mutex<Option<StdInstant>>,
+    mesh_reconnection_attempts: Arc<AtomicU32>,
+    mesh_last_reconnection: Mutex<Option<StdInstant>>,
 }
 
 /// Commands sent from SOCKS5 handler (Tokio) to Swarm event loop (async-std)
@@ -852,12 +862,17 @@ struct MaskedStats {
 
 impl AppState {
     fn new(cfg: Config) -> (Self, tokio::sync::mpsc::UnboundedReceiver<MeshCommand>) {
+        // Task 2.1.12: Initial state is Connecting when mesh is enabled
+        let initial_state = if cfg.mesh_enabled {
+            ConnState::Connecting
+        } else if cfg.bootstrap {
+            ConnState::Calibrating
+        } else {
+            ConnState::Offline
+        };
+
         let snap = StatusSnapshot {
-            state: if cfg.bootstrap {
-                ConnState::Calibrating
-            } else {
-                ConnState::Offline
-            },
+            state: initial_state,
             last_seed: None,
             last_checked_ms_ago: None,
             last_target: None,
@@ -890,6 +905,11 @@ impl AppState {
             exit_requests_success: Arc::new(AtomicU64::new(0)),
             exit_requests_blocked: Arc::new(AtomicU64::new(0)),
             exit_bandwidth_bytes: Arc::new(AtomicU64::new(0)),
+            // Task 2.1.12: Mesh connection state tracking
+            mesh_state: Arc::new(std::sync::atomic::AtomicU8::new(1)), // 1=connecting (initial)
+            mesh_connected_since: Mutex::new(None),
+            mesh_reconnection_attempts: Arc::new(AtomicU32::new(0)),
+            mesh_last_reconnection: Mutex::new(None),
         };
 
         (state, mesh_rx)
@@ -1057,40 +1077,38 @@ async fn query_operator_directory() -> Vec<(libp2p::PeerId, Vec<libp2p::Multiadd
                 Ok(resp) => resp.text().ok(),
                 Err(_) => None,
             }
-        }).await;
+        })
+        .await;
 
         match response {
             Some(body) => {
                 match serde_json::from_str::<
                     std::collections::HashMap<String, Vec<directory::RelayInfo>>,
                 >(&body)
-                    {
-                        Ok(by_country) => {
-                            let mut peers = Vec::new();
-                            for (_country, infos) in by_country {
-                                for info in infos {
-                                    if let Ok(peer_id) = info.peer_id.parse::<libp2p::PeerId>() {
-                                        let addrs: Vec<libp2p::Multiaddr> = info
-                                            .addrs
-                                            .iter()
-                                            .filter_map(|s| s.parse().ok())
-                                            .collect();
-                                        peers.push((peer_id, addrs, info.country.clone()));
-                                    }
+                {
+                    Ok(by_country) => {
+                        let mut peers = Vec::new();
+                        for (_country, infos) in by_country {
+                            for info in infos {
+                                if let Ok(peer_id) = info.peer_id.parse::<libp2p::PeerId>() {
+                                    let addrs: Vec<libp2p::Multiaddr> =
+                                        info.addrs.iter().filter_map(|s| s.parse().ok()).collect();
+                                    peers.push((peer_id, addrs, info.country.clone()));
                                 }
                             }
-
-                            if !peers.is_empty() {
-                                info!(
-                                    "directory: Retrieved {} peers from operator directory",
-                                    peers.len()
-                                );
-                                return peers;
-                            }
                         }
-                        Err(e) => warn!("directory: Failed to parse JSON: {}", e),
+
+                        if !peers.is_empty() {
+                            info!(
+                                "directory: Retrieved {} peers from operator directory",
+                                peers.len()
+                            );
+                            return peers;
+                        }
                     }
+                    Err(e) => warn!("directory: Failed to parse JSON: {}", e),
                 }
+            }
             None => warn!("directory: Query failed for {}", endpoint),
         }
     }
@@ -1150,7 +1168,7 @@ fn spawn_heartbeat_loop(
     // Use async-std spawn instead of tokio::spawn (we're in async-std context)
     async_std::task::spawn(async move {
         let operator_nodes = core_mesh::discovery::load_bootstrap_nodes();
-        
+
         loop {
             // Wait 30 seconds between heartbeats
             async_std::task::sleep(std::time::Duration::from_secs(30)).await;
@@ -1172,12 +1190,13 @@ fn spawn_heartbeat_loop(
 
                 let endpoint = format!("{}/api/relay/register", url);
                 let reg_clone = registration.clone();
-                
+
                 // Use blocking client in spawn_blocking to avoid runtime conflict
                 let result = async_std::task::spawn_blocking(move || {
                     let client = reqwest::blocking::Client::new();
                     client.post(&endpoint).json(&reg_clone).send()
-                }).await;
+                })
+                .await;
 
                 match result {
                     Ok(response) => {
@@ -1681,6 +1700,17 @@ fn spawn_mesh_discovery(
                                             }
                                         }
                                     }
+                                    // Task 2.1.12: Handle ping events for connection keepalive
+                                    DiscoveryBehaviorEvent::Ping(ping_event) => {
+                                        match &ping_event.result {
+                                            Ok(rtt) => {
+                                                debug!("mesh: Ping to {} succeeded (RTT: {:?})", ping_event.peer, rtt);
+                                            }
+                                            Err(e) => {
+                                                debug!("mesh: Ping to {} failed: {:?}", ping_event.peer, e);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             SwarmEvent::ConnectionEstablished { peer_id, endpoint, connection_id, .. } => {
@@ -1717,10 +1747,42 @@ fn spawn_mesh_discovery(
                                     // To distinguish QNet nodes, we need libp2p Identify protocol (future enhancement)
                                     debug!("mesh: Connected to DHT peer {} at {} (conn: {:?})", peer_id, remote_addr, connection_id);
                                 }
+
+                                // Task 2.1.12: Update mesh state to connected on first peer connection
+                                let prev_state = state.mesh_state.swap(2, Ordering::Relaxed);
+                                if prev_state != 2 {
+                                    info!("state-transition: mesh_state {} -> connected",
+                                          if prev_state == 1 { "connecting" } else { "disconnected" });
+                                    // Record connection time
+                                    if let Ok(mut guard) = state.mesh_connected_since.lock() {
+                                        *guard = Some(StdInstant::now());
+                                    }
+                                    // Update UI state to Connected
+                                    if let Ok(mut guard) = state.status.lock() {
+                                        guard.0.state = ConnState::Connected;
+                                    }
+                                }
                             }
                             SwarmEvent::ConnectionClosed { peer_id, cause, connection_id, .. } => {
                                 if !bootstrap_peer_ids.contains(&peer_id) {
                                     info!("mesh: Disconnected from peer {} (cause: {:?}, conn: {:?})", peer_id, cause, connection_id);
+                                }
+
+                                // Task 2.1.12: Check if this was last peer, update mesh state
+                                let remaining_peers = swarm.connected_peers().count();
+                                if remaining_peers == 0 {
+                                    let prev_state = state.mesh_state.swap(0, Ordering::Relaxed);
+                                    if prev_state == 2 {
+                                        warn!("state-transition: mesh_state connected -> disconnected (no peers remaining)");
+                                        // Clear connection time
+                                        if let Ok(mut guard) = state.mesh_connected_since.lock() {
+                                            *guard = None;
+                                        }
+                                        // Update UI state - set to Connecting (will attempt reconnect)
+                                        if let Ok(mut guard) = state.status.lock() {
+                                            guard.0.state = ConnState::Connecting;
+                                        }
+                                    }
                                 }
                             }
                             SwarmEvent::IncomingConnection { local_addr, send_back_addr, .. } => {
@@ -1767,6 +1829,48 @@ fn spawn_mesh_discovery(
                                 if !matches!(guard.0.state, ConnState::Connected) {
                                     info!("state-transition: Mesh network ready ({} peers) → connected", total_count);
                                     guard.0.state = ConnState::Connected;
+                                }
+                            }
+                        }
+
+                        // Task 2.1.12: Automatic reconnection when disconnected
+                        if total_count == 0 {
+                            let current_mesh_state = state.mesh_state.load(Ordering::Relaxed);
+                            if current_mesh_state != 1 {
+                                // Not already in connecting state, transition to connecting
+                                state.mesh_state.store(1, Ordering::Relaxed);
+                                info!("state-transition: mesh_state -> connecting (attempting reconnection)");
+                            }
+
+                            // Increment reconnection attempt counter
+                            let attempts = state.mesh_reconnection_attempts.fetch_add(1, Ordering::Relaxed) + 1;
+
+                            // Record reconnection time
+                            if let Ok(mut guard) = state.mesh_last_reconnection.lock() {
+                                *guard = Some(StdInstant::now());
+                            }
+
+                            // Update UI state to Connecting
+                            if let Ok(mut guard) = state.status.lock() {
+                                if !matches!(guard.0.state, ConnState::Connecting) {
+                                    guard.0.state = ConnState::Connecting;
+                                }
+                            }
+
+                            // Re-dial operator seeds
+                            let reconnect_seeds = core_mesh::discovery::load_bootstrap_nodes();
+                            if !reconnect_seeds.is_empty() {
+                                warn!("mesh: No peers connected, attempting reconnection (attempt #{})", attempts);
+                                for seed in reconnect_seeds.iter().take(3) { // Limit to avoid spam
+                                    info!("mesh:   → Reconnecting to {} at {}", seed.peer_id, seed.multiaddr);
+                                    match swarm.dial(seed.multiaddr.clone()) {
+                                        Ok(_) => {
+                                            debug!("mesh:     ✅ Reconnect dial initiated");
+                                        }
+                                        Err(e) => {
+                                            debug!("mesh:     ❌ Reconnect dial failed: {:?}", e);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1835,10 +1939,19 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
     // Read current mesh peer count from atomic (updated by discovery thread)
     let mesh_peers = app.mesh_peer_count.load(Ordering::Relaxed);
+
+    // Task 2.1.12: Include Connecting state in status
+    let state_str = match snap.state {
+        ConnState::Offline => "offline",
+        ConnState::Connecting => "connecting", // New state
+        ConnState::Calibrating => "calibrating",
+        ConnState::Connected => "connected",
+    };
+
     let mut json = serde_json::json!({
         "socks_addr": socks_addr,
         "mode": match app.cfg.mode { Mode::Direct => "direct", Mode::HtxHttpEcho => "htx-http-echo", Mode::Masked => "masked" },
-        "state": match snap.state { ConnState::Offline => "offline", ConnState::Calibrating => "calibrating", ConnState::Connected => "connected" },
+        "state": state_str,
     });
     if matches!(app.cfg.mode, Mode::Masked) {
         json["masked"] = serde_json::json!(true);
@@ -1923,6 +2036,36 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     json["qnet_peers"] = serde_json::json!(qnet_peers);
     json["peers_total"] = serde_json::json!(mesh_peers);
     json["mesh_peer_count"] = serde_json::json!(mesh_peers); // Task 2.1.6 - field name for operator guide
+
+    // Task 2.1.12: Mesh connection health indicators
+    let mesh_state_val = app.mesh_state.load(Ordering::Relaxed);
+    let mesh_state_str = match mesh_state_val {
+        0 => "disconnected",
+        1 => "connecting",
+        2 => "connected",
+        _ => "unknown",
+    };
+    json["mesh_state"] = serde_json::json!(mesh_state_str);
+    json["bootstrap_connected"] = serde_json::json!(mesh_peers > 0);
+
+    // Connection uptime (seconds since last connection established)
+    if let Ok(guard) = app.mesh_connected_since.lock() {
+        if let Some(connected_since) = *guard {
+            json["connection_uptime_secs"] = serde_json::json!(connected_since.elapsed().as_secs());
+        }
+    }
+
+    // Reconnection statistics
+    let reconnect_attempts = app.mesh_reconnection_attempts.load(Ordering::Relaxed);
+    if reconnect_attempts > 0 {
+        json["reconnection_attempts"] = serde_json::json!(reconnect_attempts);
+        if let Ok(guard) = app.mesh_last_reconnection.lock() {
+            if let Some(last_reconnect) = *guard {
+                json["last_reconnection_secs_ago"] =
+                    serde_json::json!(last_reconnect.elapsed().as_secs());
+            }
+        }
+    }
 
     // Removed: last catalog update info (catalog system removed)
     json
@@ -2060,10 +2203,16 @@ fn handle_status_blocking(
             .get("state")
             .and_then(|v| v.as_str())
             .unwrap_or("offline");
-        let helper_mode = js.get("helper_mode").and_then(|v| v.as_str()).unwrap_or("client");
+        let helper_mode = js
+            .get("helper_mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("client");
         let init_json = js.to_string();
-        let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("127.0.0.1:1088");
-        
+        let socks_addr = js
+            .get("socks_addr")
+            .and_then(|v| v.as_str())
+            .unwrap_or("127.0.0.1:1088");
+
         let html_template = r##"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2209,12 +2358,27 @@ fn handle_status_blocking(
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
         .status-offline { background: rgba(231,76,60,0.2); color: #e74c3c; }
         .status-offline .status-dot { background: #e74c3c; }
         .status-connected { background: rgba(46,204,113,0.2); color: #2ecc71; }
         .status-connected .status-dot { background: #2ecc71; }
         .status-calibrating { background: rgba(241,196,15,0.2); color: #f1c40f; }
         .status-calibrating .status-dot { background: #f1c40f; }
+        /* Task 2.1.12: Connecting state with orange color and rotating icon */
+        .status-connecting { background: rgba(243,156,18,0.2); color: #f39c12; }
+        .status-connecting .status-dot { 
+            background: #f39c12; 
+            animation: spin 1s linear infinite;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            border-top-color: #f39c12;
+            border-right-color: #f39c12;
+            background: transparent;
+        }
         
         /* Mode Badge */
         .mode-badge {
@@ -2458,11 +2622,18 @@ fn handle_status_blocking(
         }
         
         function updateUI(j) {
-            // Status
+            // Status - Task 2.1.12: Handle connecting state with special display
             const statusBadge = document.getElementById('status-badge');
             const statusText = document.getElementById('status-text');
             statusBadge.className = 'status-indicator status-' + j.state;
-            statusText.textContent = j.state.charAt(0).toUpperCase() + j.state.slice(1);
+            // Show "Connecting..." with ellipsis for connecting state
+            const stateNames = {
+                'offline': 'Disconnected',
+                'connecting': 'Connecting...',
+                'calibrating': 'Calibrating',
+                'connected': 'Connected'
+            };
+            statusText.textContent = stateNames[j.state] || j.state.charAt(0).toUpperCase() + j.state.slice(1);
             
             // Counts
             document.getElementById('peer-count').textContent = j.mesh_peer_count || j.peers_online || 0;
