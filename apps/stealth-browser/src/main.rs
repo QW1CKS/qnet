@@ -393,7 +393,11 @@ async fn main() -> Result<()> {
     // Removed: decoy catalog env setup (catalog system removed)
 
     // Start SOCKS5 server and wait for shutdown
-    let addr = format!("127.0.0.1:{}", cfg.socks_port);
+    // Bind address controlled by QNET_SOCKS_BIND env var (default: 127.0.0.1)
+    // Set to "0.0.0.0" on droplets for remote access (use with caution - exit traffic!)
+    let socks_bind_ip =
+        std::env::var("QNET_SOCKS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let addr = format!("{}:{}", socks_bind_ip, cfg.socks_port);
     info!(%addr, mode = ?cfg.mode, "starting SOCKS5 server");
     #[cfg(feature = "with-tauri")]
     {
@@ -1818,7 +1822,9 @@ fn start_status_server(
 
 // Unified status JSON builder (used by /status, /, and /status.txt) to avoid drift.
 fn build_status_json(app: &AppState) -> serde_json::Value {
-    let socks_addr = format!("127.0.0.1:{}", app.cfg.socks_port);
+    let socks_bind_ip =
+        std::env::var("QNET_SOCKS_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let socks_addr = format!("{}:{}", socks_bind_ip, app.cfg.socks_port);
     let (snap, since_opt) = {
         let g = app.status.lock().unwrap();
         (g.0.clone(), g.1)

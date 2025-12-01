@@ -229,6 +229,8 @@ WorkingDirectory=$QNET_DIR
 Environment="STEALTH_MODE=$STEALTH_MODE"
 Environment="STEALTH_SOCKS_PORT=$SOCKS_PORT"
 Environment="STEALTH_STATUS_PORT=$STATUS_PORT"
+Environment="QNET_STATUS_BIND=0.0.0.0"
+Environment="QNET_SOCKS_BIND=0.0.0.0"
 Environment="RUST_LOG=info"
 Environment="RUST_BACKTRACE=1"
 
