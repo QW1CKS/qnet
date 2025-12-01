@@ -158,16 +158,19 @@ clone_repository() {
     if [[ -d "$QNET_DIR/.git" ]]; then
         log_warn "Repository already exists, pulling latest..."
         cd "$QNET_DIR"
-        sudo -u "$QNET_USER" git fetch origin
-        sudo -u "$QNET_USER" git checkout "$QNET_BRANCH"
-        sudo -u "$QNET_USER" git pull origin "$QNET_BRANCH"
+        git fetch origin
+        git checkout "$QNET_BRANCH"
+        git pull origin "$QNET_BRANCH"
     else
-        # Fresh clone
+        # Fresh clone - clone as root first, then chown
         rm -rf "$QNET_DIR"
-        sudo -u "$QNET_USER" git clone "$QNET_REPO" "$QNET_DIR"
+        git clone "$QNET_REPO" "$QNET_DIR"
         cd "$QNET_DIR"
-        sudo -u "$QNET_USER" git checkout "$QNET_BRANCH"
+        git checkout "$QNET_BRANCH"
     fi
+    
+    # Ensure qnet user owns the directory
+    chown -R "$QNET_USER:$QNET_USER" "$QNET_DIR"
     
     log_success "Repository cloned to $QNET_DIR"
 }
@@ -181,11 +184,14 @@ build_binary() {
     
     cd "$QNET_DIR"
     
-    # Ensure cargo is available
+    # Ensure cargo is available (installed for root)
     source "$HOME/.cargo/env" 2>/dev/null || true
     
-    # Build release binary
-    sudo -u "$QNET_USER" -i bash -c "cd $QNET_DIR && source ~/.cargo/env && cargo build --release -p stealth-browser"
+    # Build release binary as root (faster, avoids Rust install for qnet user)
+    cargo build --release -p stealth-browser
+    
+    # Ensure qnet user owns the built artifacts
+    chown -R "$QNET_USER:$QNET_USER" "$QNET_DIR"
     
     # Verify binary exists
     if [[ -f "$QNET_DIR/target/release/stealth-browser" ]]; then
