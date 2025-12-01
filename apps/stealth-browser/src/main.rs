@@ -1112,20 +1112,22 @@ async fn query_operator_directory() -> Vec<(libp2p::PeerId, Vec<libp2p::Multiadd
         .collect()
 }
 
-/// Extract HTTP URL from libp2p multiaddr (e.g., /ip4/1.2.3.4/tcp/8088 → http://1.2.3.4:8088)
+/// Extract HTTP URL from libp2p multiaddr for directory API queries.
+/// Always uses port 8088 (directory API) regardless of the multiaddr port (which is typically 4001 for libp2p).
 fn extract_http_url_from_multiaddr(addr: &libp2p::Multiaddr) -> Option<String> {
     let mut ip = None;
-    let mut port = 8088u16; // Default operator directory port
+    let directory_port = 8088u16; // Directory API port (separate from libp2p port 4001)
 
     for proto in addr.iter() {
         match proto {
             libp2p::multiaddr::Protocol::Ip4(addr) => ip = Some(format!("{}", addr)),
-            libp2p::multiaddr::Protocol::Tcp(p) => port = p,
+            // Note: We intentionally ignore the TCP port from multiaddr since directory API
+            // runs on port 8088, not the libp2p port (4001)
             _ => {}
         }
     }
 
-    ip.map(|ip_str| format!("http://{}:{}", ip_str, port))
+    ip.map(|ip_str| format!("http://{}:{}", ip_str, directory_port))
 }
 
 /// Spawn heartbeat loop for relay/exit/super modes.
