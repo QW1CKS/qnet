@@ -60,8 +60,8 @@ print_banner() {
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║           QNet Super Peer Deployment Script                   ║"
     echo "║                                                               ║"
-    echo "║  This will install and configure a QNet super peer node      ║"
-    echo "║  Mode: Bootstrap + Relay + Exit                              ║"
+    echo "║  This will install and configure a QNet super peer node       ║"
+    echo "║  Mode: Bootstrap + Relay + Exit                               ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
