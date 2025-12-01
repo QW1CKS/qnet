@@ -80,37 +80,42 @@ This document provides step-by-step procedures for deploying and testing a QNet 
 
 3. **Watch the deployment progress**. You should see:
    ```
-   [INFO] Step 1/7: Updating system and installing dependencies...
+   [INFO] Step 1/8: Updating system and installing dependencies...
    [SUCCESS] System dependencies installed
-   [INFO] Step 2/7: Installing Rust toolchain...
+   [INFO] Step 2/8: Installing Rust toolchain...
    [SUCCESS] Rust installed: rustc 1.xx.x
-   [INFO] Step 3/7: Creating qnet system user...
+   [INFO] Step 3/8: Creating qnet system user...
    [SUCCESS] User 'qnet' created
-   [INFO] Step 4/7: Cloning QNet repository...
+   [INFO] Step 4/8: Cloning QNet repository...
    [SUCCESS] Repository cloned to /opt/qnet
-   [INFO] Step 5/7: Building QNet binary (this may take 5-10 minutes)...
+   [INFO] Step 5/8: Building QNet binary (this may take 5-10 minutes)...
    [SUCCESS] Binary built: /opt/qnet/target/release/stealth-browser
-   [INFO] Step 6/7: Creating systemd service...
+   [INFO] Step 6/8: Generating persistent keypair for stable peer ID...
+   [SUCCESS] Persistent keypair generated at /opt/qnet/data/keypair.pb
+   [INFO] Step 7/8: Creating systemd service...
    [SUCCESS] Systemd service created: qnet-super.service
-   [INFO] Step 7/7: Configuring firewall...
+   [INFO] Step 8/8: Configuring firewall...
    [SUCCESS] Firewall configured
    ```
 
 4. **Note the peer ID** from the summary output or logs:
    ```bash
-   journalctl -u qnet-super | grep 'local_peer_id'
+   journalctl -u qnet-super | grep -E '(Loaded persistent keypair|local_peer_id)'
    ```
 
    Example output:
    ```
-   local_peer_id=12D3KooWNcvVLoDYXo6oFfJ4ENCcVGE61SPpsXxSc18N165oQqbw
+   mesh: Loaded persistent keypair from file path=/opt/qnet/data/keypair.pb peer_id=12D3KooWNcvVLoDYXo6oFfJ4ENCcVGE61SPpsXxSc18N165oQqbw
    ```
+
+   **Note**: The peer ID is now persistent across restarts (stored in `/opt/qnet/data/keypair.pb`).
 
 ### Pass Criteria
 - [ ] Script completes without errors
 - [ ] Service status shows "active (running)"
-- [ ] Peer ID is logged
+- [ ] Peer ID is logged (persistent keypair loaded)
 - [ ] Firewall rules configured
+- [ ] Keypair file exists at `/opt/qnet/data/keypair.pb`
 
 **Record peer ID**: ________________
 
@@ -275,9 +280,9 @@ This document provides step-by-step procedures for deploying and testing a QNet 
 
 1. **Update hardcoded operator nodes** (local machine):
    
-   Edit `apps/stealth-browser/src/main.rs`, find `hardcoded_operator_nodes()` function and update:
+   Edit `crates/core-mesh/src/discovery.rs`, find `hardcoded_operator_nodes()` function and update:
    ```rust
-   fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
+   pub fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
        vec![
            OperatorNode {
                peer_id: "<DROPLET_PEER_ID>".to_string(),
@@ -288,6 +293,8 @@ This document provides step-by-step procedures for deploying and testing a QNet 
    ```
 
    Replace `<DROPLET_PEER_ID>` and `<DROPLET_IP>` with actual values.
+   
+   **Note**: Since the peer ID is now persistent (via `/opt/qnet/data/keypair.pb`), you only need to update this once per droplet - the peer ID will remain stable across restarts.
 
 2. **Build local Helper**:
    ```powershell
