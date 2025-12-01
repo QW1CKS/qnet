@@ -22,7 +22,8 @@ sysinfo = { version = "0.30", default-features = false, features=["multithread"]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal", "fs"] }
 
 # HTTP client used by the Tauri command to fetch via SOCKS
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "socks", "json"] }
+# Note: "blocking" feature needed for directory queries in async-std context
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "socks", "json", "blocking"] }
 
 # HTTP CONNECT parsing for exit node (task 2.1.11.2)
 httparse = "1.8"

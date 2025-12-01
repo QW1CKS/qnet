@@ -79,10 +79,12 @@ The Helper binary will be at: `target\release\stealth-browser.exe`
 5. **Stop Helper**: Press `Ctrl+C` in Terminal 1.
 
 ### Pass Criteria
-- [ ] Helper starts without errors
-- [ ] `/status` returns JSON with `mode: "super"`
-- [ ] `/ping` returns `ok: true`
-- [ ] No crash on shutdown
+- [x] Helper starts without errors
+- [x] `/status` returns JSON with `helper_mode: "super"`
+- [x] `/ping` returns `ok: true`
+- [x] No crash on shutdown
+
+**Status: ✅ PASSED** (2025-12-01)
 
 ---
 
@@ -175,11 +177,13 @@ The Helper binary will be at: `target\release\stealth-browser.exe`
 7. **Stop Helper**: Press `Ctrl+C`.
 
 ### Pass Criteria
-- [ ] POST /api/relay/register accepts valid JSON and returns `registered: true`
-- [ ] First registration returns `is_new: true`
-- [ ] Update registration returns `is_new: false`
-- [ ] GET /api/relays/by-country returns all registered peers
-- [ ] Country filter parameter works correctly
+- [x] POST /api/relay/register accepts valid JSON and returns `registered: true`
+- [x] First registration returns `is_new: true`
+- [x] Update registration returns `is_new: false`
+- [x] GET /api/relays/by-country returns all registered peers
+- [x] Country filter parameter works correctly
+
+**Status: ✅ PASSED** (2025-12-01)
 
 ---
 
@@ -201,7 +205,7 @@ The Helper binary will be at: `target\release\stealth-browser.exe`
 2. **Register a peer with OLD timestamp** (Terminal 2):
    ```powershell
    # Timestamp from 5 minutes ago (will be immediately stale)
-   $oldTimestamp = [int][double]::Parse((Get-Date).AddMinutes(-5).ToString("yyyy-MM-ddTHH:mm:ss") | Get-Date -UFormat %s)
+   $oldTimestamp = [int][double]::Parse((Get-Date (Get-Date).AddMinutes(-5) -UFormat %s))
    
    $stalePeer = @{
        peer_id = "12D3KooWStalePeerToBeRemoved12345"
@@ -248,10 +252,12 @@ The Helper binary will be at: `target\release\stealth-browser.exe`
 7. **Stop Helper**: Press `Ctrl+C`.
 
 ### Pass Criteria
-- [ ] Peer with old timestamp is registered successfully
-- [ ] After pruning cycle (60s), peer with `last_seen` > 120s ago is removed
-- [ ] Manual prune endpoint returns count of pruned peers
-- [ ] Fresh peers (recent `last_seen`) are NOT pruned
+- [x] Peer with old timestamp is registered successfully
+- [x] After pruning cycle (60s), peer with `last_seen` > 120s ago is removed
+- [x] Manual prune endpoint returns count of pruned peers
+- [x] Fresh peers (recent `last_seen`) are NOT pruned
+
+**Status: ✅ PASSED** (2025-12-01)
 
 ---
 
@@ -316,10 +322,15 @@ The Helper binary will be at: `target\release\stealth-browser.exe`
 9. **Stop bootstrap Helper**: Press `Ctrl+C`.
 
 ### Pass Criteria
-- [ ] Relay mode sends POST /api/relay/register on startup
-- [ ] Heartbeat repeats every ~30 seconds (check logs)
-- [ ] Directory shows peer with updating `last_seen`
-- [ ] After relay stops, peer is eventually pruned (120s TTL)
+- [x] Relay mode sends POST /api/relay/register on startup (to hardcoded operator)
+- [x] Heartbeat repeats every ~30 seconds (check logs)
+- [ ] Directory shows peer with updating `last_seen` (N/A - requires operator URL override)
+- [ ] After relay stops, peer is eventually pruned (N/A - requires operator URL override)
+
+**Status: ⚠️ PARTIAL PASS** (2025-12-01)
+- Heartbeat mechanism verified working (sends to remote operator)
+- Local registration test requires `STEALTH_OPERATOR_URL` env var (not yet implemented)
+- Bonus: libp2p mDNS peer discovery between local instances works!
 
 ---
 

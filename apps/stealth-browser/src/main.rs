@@ -660,15 +660,26 @@ impl Config {
             }
         }
         if let Ok(m) = std::env::var("STEALTH_MODE") {
-            cfg.mode = match m.to_ascii_lowercase().as_str() {
-                "direct" => Mode::Direct,
-                "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
-                "masked" | "qnet" | "stealth" => Mode::Masked,
-                other => {
-                    warn!(%other, "unknown STEALTH_MODE; defaulting to direct");
-                    Mode::Direct
+            let m_lower = m.to_ascii_lowercase();
+            // First, check if it's a helper mode (client/relay/bootstrap/exit/super)
+            if let Ok(helper_mode) = HelperMode::from_str(&m_lower) {
+                cfg.helper_mode = helper_mode;
+                if helper_mode.supports_exit() {
+                    eprintln!("⚠️  EXIT NODE MODE ENABLED - You will make web requests for other users!");
+                    eprintln!("⚠️  Legal liability: Your IP will be visible to destination websites.");
                 }
-            };
+            } else {
+                // Otherwise, treat as connection mode (direct/masked/htx-http-echo)
+                cfg.mode = match m_lower.as_str() {
+                    "direct" => Mode::Direct,
+                    "htx-http-echo" | "htx_echo_http" | "htx-echo-http" => Mode::HtxHttpEcho,
+                    "masked" | "qnet" | "stealth" => Mode::Masked,
+                    other => {
+                        warn!(%other, "unknown STEALTH_MODE; defaulting to direct");
+                        Mode::Direct
+                    }
+                };
+            }
         }
         if let Ok(b) = std::env::var("STEALTH_BOOTSTRAP") {
             cfg.bootstrap = b == "1" || b.eq_ignore_ascii_case("true");
@@ -1035,12 +1046,20 @@ async fn query_operator_directory() -> Vec<(libp2p::PeerId, Vec<libp2p::Multiadd
         let endpoint = format!("{}/api/relays/by-country", url);
         info!("directory: Querying operator node {}", endpoint);
 
-        match reqwest::get(&endpoint).await {
-            Ok(response) => match response.text().await {
-                Ok(body) => {
-                    match serde_json::from_str::<
-                        std::collections::HashMap<String, Vec<directory::RelayInfo>>,
-                    >(&body)
+        // Use blocking HTTP client to avoid Tokio runtime conflict in async-std context
+        let endpoint_clone = endpoint.clone();
+        let response = async_std::task::spawn_blocking(move || {
+            match reqwest::blocking::get(&endpoint_clone) {
+                Ok(resp) => resp.text().ok(),
+                Err(_) => None,
+            }
+        }).await;
+
+        match response {
+            Some(body) => {
+                match serde_json::from_str::<
+                    std::collections::HashMap<String, Vec<directory::RelayInfo>>,
+                >(&body)
                     {
                         Ok(by_country) => {
                             let mut peers = Vec::new();
@@ -1068,9 +1087,7 @@ async fn query_operator_directory() -> Vec<(libp2p::PeerId, Vec<libp2p::Multiadd
                         Err(e) => warn!("directory: Failed to parse JSON: {}", e),
                     }
                 }
-                Err(e) => warn!("directory: Failed to read response body: {}", e),
-            },
-            Err(e) => warn!("directory: Query failed for {}: {}", endpoint, e),
+            None => warn!("directory: Query failed for {}", endpoint),
         }
     }
 
@@ -1124,13 +1141,13 @@ fn spawn_heartbeat_loop(
         return;
     }
 
-    tokio::spawn(async move {
+    // Use async-std spawn instead of tokio::spawn (we're in async-std context)
+    async_std::task::spawn(async move {
         let operator_nodes = core_mesh::discovery::load_bootstrap_nodes();
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-        let client = reqwest::Client::new();
-
+        
         loop {
-            interval.tick().await;
+            // Wait 30 seconds between heartbeats
+            async_std::task::sleep(std::time::Duration::from_secs(30)).await;
 
             // Build registration payload
             let registration = directory::RelayInfo::new(
@@ -1140,7 +1157,7 @@ fn spawn_heartbeat_loop(
                 vec!["relay".to_string()],
             );
 
-            // Try each operator node until one succeeds
+            // Try each operator node until one succeeds (using blocking HTTP)
             for node in operator_nodes.iter().take(3) {
                 let url = match extract_http_url_from_multiaddr(&node.multiaddr) {
                     Some(url) => url,
@@ -1148,11 +1165,18 @@ fn spawn_heartbeat_loop(
                 };
 
                 let endpoint = format!("{}/api/relay/register", url);
+                let reg_clone = registration.clone();
+                
+                // Use blocking client in spawn_blocking to avoid runtime conflict
+                let result = async_std::task::spawn_blocking(move || {
+                    let client = reqwest::blocking::Client::new();
+                    client.post(&endpoint).json(&reg_clone).send()
+                }).await;
 
-                match client.post(&endpoint).json(&registration).send().await {
+                match result {
                     Ok(response) => {
                         if response.status().is_success() {
-                            info!("heartbeat: Registered with {}", endpoint);
+                            info!("heartbeat: Registered with operator directory");
                             break;
                         } else {
                             warn!(
@@ -1161,7 +1185,7 @@ fn spawn_heartbeat_loop(
                             );
                         }
                     }
-                    Err(e) => warn!("heartbeat: Failed to POST to {}: {}", endpoint, e),
+                    Err(e) => warn!("heartbeat: Failed to POST: {}", e),
                 }
             }
         }
@@ -2028,31 +2052,493 @@ fn handle_status_blocking(
             .get("state")
             .and_then(|v| v.as_str())
             .unwrap_or("offline");
-        let mut pre_hdr_lines = Vec::new();
-        if let Some(v) = js.get("state").and_then(|v| v.as_str()) {
-            pre_hdr_lines.push(format!("State: {}", v));
-        }
-        if let Some(v) = js.get("mode").and_then(|v| v.as_str()) {
-            pre_hdr_lines.push(format!("Mode: {}", v));
-        }
-        if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) {
-            pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?")));
-        }
-        if let Some(v) = js.get("peers_online") {
-            pre_hdr_lines.push(format!("Peers online: {}", v));
-        }
-        if let Some(v) = js.get("last_masked_error").and_then(|v| v.as_str()) {
-            pre_hdr_lines.push(format!("Last masked error: {}", v));
-        }
-        let pre_hdr = pre_hdr_lines.join("\n");
+        let helper_mode = js.get("helper_mode").and_then(|v| v.as_str()).unwrap_or("client");
         let init_json = js.to_string();
-        let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
-        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
+        let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("127.0.0.1:1088");
+        
+        let html_template = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QNet Status Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e4e4e4;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+        .logo { display: flex; align-items: center; gap: 12px; }
+        .logo h1 { font-size: 24px; font-weight: 600; color: #fff; }
+        .logo .mode-badge-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .mode-badge-header .mode-icon {
+            font-size: 18px;
+        }
+        .mode-client-header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+        .mode-relay-header { 
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #fff;
+        }
+        .mode-bootstrap-header { 
+            background: linear-gradient(135deg, #8e2de2 0%, #4a00e0 100%);
+            color: #fff;
+        }
+        .mode-exit-header { 
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+            color: #fff;
+        }
+        .mode-super-header { 
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: #fff;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        @keyframes glow {
+            from { box-shadow: 0 4px 15px rgba(240,147,251,0.4); }
+            to { box-shadow: 0 4px 25px rgba(245,87,108,0.6); }
+        }
+        .header-actions { display: flex; gap: 10px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+        .btn-primary { background: #667eea; color: #fff; }
+        .btn-primary:hover { background: #5a6fd6; transform: translateY(-1px); }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        
+        /* Status Cards Grid */
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 14px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .card-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .card-subtitle { font-size: 13px; color: #666; }
+        
+        /* Status Indicator */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .status-offline { background: rgba(231,76,60,0.2); color: #e74c3c; }
+        .status-offline .status-dot { background: #e74c3c; }
+        .status-connected { background: rgba(46,204,113,0.2); color: #2ecc71; }
+        .status-connected .status-dot { background: #2ecc71; }
+        .status-calibrating { background: rgba(241,196,15,0.2); color: #f1c40f; }
+        .status-calibrating .status-dot { background: #f1c40f; }
+        
+        /* Mode Badge */
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .mode-super { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: #fff; }
+        .mode-client { background: rgba(102,126,234,0.3); color: #667eea; }
+        .mode-relay { background: rgba(46,204,113,0.3); color: #2ecc71; }
+        .mode-bootstrap { background: rgba(155,89,182,0.3); color: #9b59b6; }
+        .mode-exit { background: rgba(231,76,60,0.3); color: #e74c3c; }
+        
+        /* Stats Section */
+        .stats-section {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .stats-section h3 {
+            font-size: 16px;
+            color: #888;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+        }
+        .stat-item { text-align: center; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #fff; }
+        .stat-label { font-size: 12px; color: #666; margin-top: 4px; }
+        
+        /* Quick Links */
+        .quick-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .quick-link {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #888;
+            text-decoration: none;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .quick-link:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        
+        /* JSON Panel */
+        .json-panel {
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .json-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: rgba(255,255,255,0.05);
+            cursor: pointer;
+        }
+        .json-header h4 { font-size: 14px; color: #888; }
+        .json-content {
+            padding: 16px;
+            max-height: 400px;
+            overflow: auto;
+            display: none;
+        }
+        .json-content.expanded { display: block; }
+        .json-content pre {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            color: #7fdbca;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        /* Log Panel */
+        .log-panel {
+            margin-top: 20px;
+            font-size: 11px;
+            color: #555;
+            max-height: 100px;
+            overflow: auto;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            font-family: monospace;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header { flex-direction: column; gap: 15px; text-align: center; }
+            .cards-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <h1>🛡️ QNet Status</h1>
+                <div class="mode-badge-header mode-__HELPER_MODE__-header" id="helper-mode-badge">
+                    <span class="mode-icon">__MODE_ICON__</span>
+                    <span>__HELPER_MODE_DISPLAY__</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="location.reload()">🔄 Refresh</button>
+                <button class="btn btn-danger" onclick="terminateHelper()">🛑 Terminate</button>
+            </div>
+        </header>
+        
+        <div class="cards-grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Connection Status</span>
+                    <div class="card-icon" style="background: rgba(102,126,234,0.2);">🌐</div>
+                </div>
+                <div id="status-badge" class="status-indicator status-__STATE_CLASS__">
+                    <span class="status-dot"></span>
+                    <span id="status-text">__STATE__</span>
+                </div>
+                <p class="card-subtitle" style="margin-top: 12px;">SOCKS5 Proxy: <code style="color:#667eea">__SOCKS_ADDR__</code></p>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Mesh Network</span>
+                    <div class="card-icon" style="background: rgba(46,204,113,0.2);">🔗</div>
+                </div>
+                <div class="card-value" id="peer-count">0</div>
+                <p class="card-subtitle">Connected Peers</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Active Circuits</span>
+                    <div class="card-icon" style="background: rgba(155,89,182,0.2);">⚡</div>
+                </div>
+                <div class="card-value" id="circuit-count">0</div>
+                <p class="card-subtitle">Relay Circuits</p>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Exit Stats</span>
+                    <div class="card-icon" style="background: rgba(241,196,15,0.2);">📊</div>
+                </div>
+                <div class="card-value" id="exit-requests">0</div>
+                <p class="card-subtitle" id="exit-subtitle">Total Requests</p>
+            </div>
+        </div>
+        
+        <div class="stats-section">
+            <h3>📈 Network Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-value" id="bootstrap-peers">0</div>
+                    <div class="stat-label">Bootstrap Peers</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="qnet-peers">0</div>
+                    <div class="stat-label">QNet Peers</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="relay-packets">0</div>
+                    <div class="stat-label">Packets Relayed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="masked-attempts">0</div>
+                    <div class="stat-label">Masked Attempts</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="masked-success">0</div>
+                    <div class="stat-label">Masked Success</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="bandwidth">0 B</div>
+                    <div class="stat-label">Exit Bandwidth</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="quick-links">
+            <a href="/status" class="quick-link">📄 /status (JSON)</a>
+            <a href="/status.txt" class="quick-link">📝 /status.txt</a>
+            <a href="/ping" class="quick-link">🏓 /ping</a>
+            <a href="/config" class="quick-link">⚙️ /config</a>
+            <a href="/api/relays/by-country" class="quick-link">🌍 /api/relays</a>
+        </div>
+        
+        <div class="json-panel">
+            <div class="json-header" onclick="toggleJson()">
+                <h4>🔍 Raw JSON Response</h4>
+                <span id="json-toggle">▼ Expand</span>
+            </div>
+            <div class="json-content" id="json-content">
+                <pre id="json-output">(loading...)</pre>
+            </div>
+        </div>
+        
+        <div class="log-panel" id="log-panel"></div>
+    </div>
+    
+    <script id="init-json" type="application/json">__INIT_JSON__</script>
+    <script>
+    (function() {
+        const initEl = document.getElementById('init-json');
+        let data = {};
+        try { data = JSON.parse(initEl.textContent); } catch(e) {}
+        
+        const logPanel = document.getElementById('log-panel');
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logPanel.innerHTML += `<div>[${time}] ${msg}</div>`;
+            logPanel.scrollTop = logPanel.scrollHeight;
+        }
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+        
+        function updateUI(j) {
+            // Status
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+            statusBadge.className = 'status-indicator status-' + j.state;
+            statusText.textContent = j.state.charAt(0).toUpperCase() + j.state.slice(1);
+            
+            // Counts
+            document.getElementById('peer-count').textContent = j.mesh_peer_count || j.peers_online || 0;
+            document.getElementById('circuit-count').textContent = j.active_circuits || 0;
+            document.getElementById('bootstrap-peers').textContent = j.bootstrap_peers || 0;
+            document.getElementById('qnet-peers').textContent = j.qnet_peers || 0;
+            document.getElementById('relay-packets').textContent = j.relay_packets_relayed || 0;
+            document.getElementById('masked-attempts').textContent = j.masked_attempts || 0;
+            document.getElementById('masked-success').textContent = j.masked_successes || 0;
+            
+            // Exit stats
+            if (j.exit_stats) {
+                document.getElementById('exit-requests').textContent = j.exit_stats.requests_total || 0;
+                document.getElementById('bandwidth').textContent = formatBytes(j.exit_stats.bandwidth_bytes || 0);
+                const success = j.exit_stats.requests_success || 0;
+                const blocked = j.exit_stats.requests_blocked || 0;
+                document.getElementById('exit-subtitle').textContent = `✓ ${success} success, ✗ ${blocked} blocked`;
+            }
+            
+            // Helper mode badge
+            const modeBadge = document.getElementById('helper-mode-badge');
+            const mode = j.helper_mode || 'client';
+            const modeIcons = { client: '👤', relay: '🔄', bootstrap: '🌐', exit: '🚪', super: '⚡' };
+            const modeNames = { client: 'Client', relay: 'Relay', bootstrap: 'Bootstrap', exit: 'Exit', super: 'Super' };
+            modeBadge.className = 'mode-badge-header mode-' + mode + '-header';
+            modeBadge.innerHTML = '<span class="mode-icon">' + (modeIcons[mode] || '❓') + '</span><span>' + (modeNames[mode] || mode.toUpperCase()) + '</span>';
+            
+            // JSON
+            document.getElementById('json-output').textContent = JSON.stringify(j, null, 2);
+        }
+        
+        updateUI(data);
+        log('Dashboard initialized');
+        
+        async function poll() {
+            try {
+                const r = await fetch('/status?ts=' + Date.now(), { cache: 'no-store' });
+                if (r.ok) {
+                    const j = await r.json();
+                    updateUI(j);
+                    log('Status updated');
+                }
+            } catch(e) {
+                log('Error: ' + e.message);
+            }
+        }
+        
+        setInterval(poll, 2000);
+        setTimeout(poll, 500);
+        
+        window.toggleJson = function() {
+            const content = document.getElementById('json-content');
+            const toggle = document.getElementById('json-toggle');
+            content.classList.toggle('expanded');
+            toggle.textContent = content.classList.contains('expanded') ? '▲ Collapse' : '▼ Expand';
+        };
+        
+        window.terminateHelper = function() {
+            if (!confirm('Are you sure you want to terminate the helper process?')) return;
+            fetch('/terminate?ts=' + Date.now(), { cache: 'no-store' })
+                .then(() => { log('Terminate requested'); alert('Helper is shutting down...'); })
+                .catch(e => log('Terminate error: ' + e.message));
+        };
+    })();
+    </script>
+</body>
+</html>"##;
+        // Mode icon and display name mapping
+        let (mode_icon, mode_display) = match helper_mode {
+            "client" => ("👤", "Client"),
+            "relay" => ("🔄", "Relay"),
+            "bootstrap" => ("🌐", "Bootstrap"),
+            "exit" => ("🚪", "Exit"),
+            "super" => ("⚡", "Super"),
+            _ => ("❓", helper_mode),
+        };
         let html = html_template
             .replace("__STATE_CLASS__", state_cls)
-            .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
+            .replace("__STATE__", state_cls)
+            .replace("__HELPER_MODE__", helper_mode)
+            .replace("__HELPER_MODE_DISPLAY__", mode_display)
+            .replace("__MODE_ICON__", mode_icon)
             .replace("__INIT_JSON__", &html_escape::encode_text(&init_json))
-            .replace("__SOCKS_ADDR__", &socks_addr);
+            .replace("__SOCKS_ADDR__", socks_addr);
         (html, "text/html; charset=utf-8", true)
     } else if path_token == "/api/relay/register" {
         // Task 2.1.11.4: POST /api/relay/register - only available in bootstrap/super modes
