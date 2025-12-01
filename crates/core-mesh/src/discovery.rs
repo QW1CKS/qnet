@@ -170,7 +170,8 @@ fn hardcoded_seed_nodes() -> Vec<BootstrapNode> {
 ///
 /// This struct implements the `NetworkBehaviour` trait and can be integrated
 /// into a libp2p `Swarm`. It manages both wide-area (operator directory) and
-/// local (mDNS) peer discovery.
+/// local (mDNS) peer discovery, as well as the QNet stream protocol for
+/// bidirectional data transfer.
 #[derive(libp2p::swarm::NetworkBehaviour)]
 pub struct DiscoveryBehavior {
     /// mDNS for local network peer discovery
@@ -181,6 +182,10 @@ pub struct DiscoveryBehavior {
     pub autonat: libp2p::autonat::Behaviour,
     /// Relay client for NAT traversal via relay nodes
     pub relay_client: libp2p::relay::client::Behaviour,
+    /// DCUtR for direct connection upgrade through relay (hole punching)
+    pub dcutr: libp2p::dcutr::Behaviour,
+    /// QNet stream protocol for bidirectional tunneling
+    pub stream: crate::stream_protocol::QNetStreamBehaviour,
 }
 
 /// Manages routing table populated from peer discovery events.
@@ -300,6 +305,13 @@ impl DiscoveryBehavior {
         // Returns (Transport, Behaviour) - transport MUST be composed with base transport
         let (relay_transport, relay_client) = libp2p::relay::client::new(peer_id);
 
+        // Initialize DCUtR for direct connection upgrade through relay (hole punching)
+        // DCUtR coordinates with relay_client to establish direct connections
+        let dcutr = libp2p::dcutr::Behaviour::new(peer_id);
+
+        // Initialize QNet stream protocol for bidirectional tunneling
+        let stream = crate::stream_protocol::QNetStreamBehaviour::new();
+
         log::info!(
             "state-transition: Discovery initialized for peer {} with NAT traversal support",
             peer_id
@@ -312,6 +324,8 @@ impl DiscoveryBehavior {
                 identify,
                 autonat,
                 relay_client,
+                dcutr,
+                stream,
             },
         ))
     }

@@ -1,4 +1,7 @@
 //! Exit node error types.
+//!
+//! Note: Variants reserved for production error handling (Task 2.1.11.6).
+#![allow(dead_code)]
 
 use thiserror::Error;
 

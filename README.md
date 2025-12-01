@@ -36,7 +36,7 @@
 
 ## What is QNet?
 
-QNet is a **next-generation decentralized overlay network** engineered to provide censorship-resistant, privacy-preserving internet access from anywhere in the world. Unlike traditional VPNs or proxies, QNet uses advanced traffic masking techniques to make your connections completely indistinguishable from normal HTTPS traffic to popular websites.
+QNet is a **next-generation decentralized overlay network** engineered to provide censorship-resistant, privacy-preserving internet access from anywhere in the world. Unlike traditional VPNs or proxies, QNet uses advanced traffic obfuscation techniques to make your connections resistant to ML-based fingerprinting and protocol analysis.
 
 ### The Core Problem We Solve
 
@@ -58,16 +58,16 @@ In countries with internet censorship:
 | **Decentralized** | No | Yes | No | **Yes** |
 | **Censorship Resistant** | Easy to block | Can be blocked | Easy to block | **Unblockable** |
 | **Performance** | Fast | Slow | Fast | **Fast** |
-| **Traffic Masking** | Obvious VPN pattern | Detectable | Detectable | **Perfect disguise** |
+| **Traffic Analysis Resistance** | Obvious VPN pattern | Detectable | Detectable | **ML-resistant obfuscation** |
 | **No Single Point of Failure** | Central servers | Distributed | Central proxy | **P2P mesh** |
 | **Privacy** | Trust required | High | Low | **High** |
 
 ### Key Advantages
 
-1. **Perfect Traffic Disguise (HTX Protocol)**
-   - Clones TLS fingerprints of popular sites (JA3, ALPN, cipher suites)
-   - Traffic analysis shows normal HTTPS to trusted domains
-   - Impossible to distinguish from legitimate traffic without breaking TLS
+1. **Traffic Obfuscation (HTX Protocol)**
+   - Uses common TLS fingerprints to blend with normal traffic (JA3, ALPN, cipher suites)
+   - Traffic analysis resistant through padding and timing jitter
+   - Difficult to fingerprint using ML-based classification
 
 2. **Truly Decentralized**
    - No central servers to shut down
@@ -188,7 +188,7 @@ sequenceDiagram
 ```
 
 **HTX Security Properties:**
-- **TLS Fingerprint Cloning**: JA3, ALPN, cipher suites match decoy exactly
+- **TLS Fingerprint Resistance**: JA3, ALPN, cipher suites use common browser patterns
 - **Inner Noise XK**: Mutual authentication + ephemeral keys
 - **AEAD Framing**: ChaCha20-Poly1305 with monotonic nonces
 - **Forward Secrecy**: Keys rotate, no persistent state compromise
@@ -248,14 +248,14 @@ graph TB
 
 ## Key Features
 
-### 1. Perfect Traffic Disguise
+### 1. Traffic Obfuscation
 
 **HTX (Hypertext Transport Extension)** is QNet's secret weapon:
 
 ```mermaid
 graph LR
     subgraph "What ISP Sees"
-        A[Your Computer] -->|HTTPS TLS 1.3| B[Popular CDN]
+        A[Your Computer] -->|HTTPS TLS 1.3| B[Internet]
         B -->|Normal Response| A
     end
     
@@ -270,11 +270,11 @@ graph LR
 ```
 
 **Technical Implementation:**
-- Clones TLS ClientHello fingerprint to blend with normal traffic
+- Uses common browser TLS ClientHello fingerprint to blend with traffic
 - Matches JA3, cipher suites, extensions, ALPN of legitimate browsers
-- Traffic timing and padding profiles mimic real usage patterns
+- Traffic timing and padding resist ML-based fingerprinting
 - Inner Noise XK handshake provides actual encryption
-- No single decoy—traffic blends naturally with HTTPS ecosystem
+- P2P mesh hides true destination (ISP sees relay IP, not target)
 
 ### 2. Decentralized Peer Discovery
 
@@ -482,7 +482,7 @@ QNet uses a hybrid approach balancing centralized discovery with decentralized o
 ```mermaid
 graph TB
     subgraph "Security Layers"
-        L1[TLS 1.3 Outer Layer<br/>Decoy Fingerprint]
+        L1[TLS 1.3 Outer Layer<br/>Common Browser Fingerprint]
         L2[Noise XK Handshake<br/>Mutual Authentication]
         L3[AEAD Framing<br/>ChaCha20-Poly1305]
         L4[Ed25519 Signatures<br/>Peer Identity]
@@ -532,7 +532,7 @@ graph TB
     end
     
     subgraph "QNet Crates"
-        HTX[htx<br/>Traffic Masking]
+        HTX[htx<br/>Traffic Obfuscation]
         Framing[core-framing<br/>AEAD Protocol]
         Crypto[core-crypto<br/>Primitives]
         Mesh[core-mesh<br/>P2P Logic]
@@ -767,7 +767,7 @@ Calibrating → Connected:
 # Check Helper status
 Invoke-WebRequest -Uri http://127.0.0.1:8088/status | ConvertFrom-Json
 
-# Test masked connection (any target site disguised via decoy)
+# Test obfuscated connection (traffic routed through mesh)
 pwsh ./scripts/test-masked-connect.ps1 -Target example.com
 
 # Run full test suite
@@ -871,7 +871,7 @@ graph TB
     subgraph "QNet Defenses"
         D1[TLS Fingerprint Cloning<br/>Indistinguishable Traffic]
         D2[Inner Noise XK Protocol<br/>Mutual Authentication]
-        D3[Decoy Host Diversity<br/>Trusted Domains]
+        D3[TLS Fingerprint Diversity<br/>Common Browser Patterns]
         D4[P2P Mesh Routing<br/>No Fixed Infrastructure]
     end
     
@@ -898,7 +898,7 @@ graph TB
 | **Integrity** | AEAD tags + Ed25519 signatures | Tamper-detection tests |
 | **Forward Secrecy** | Ephemeral X25519 keys (Noise XK) | Key rotation tests |
 | **Replay Protection** | Monotonic nonces | Nonce uniqueness tests |
-| **Traffic Masking** | TLS fingerprint cloning | DPI capture validation |
+| **Traffic Analysis Resistance** | TLS fingerprint + padding/jitter | ML classifier evasion tests |
 
 ### Security Best Practices
 
@@ -1134,8 +1134,8 @@ gantt
 <summary><b>Phase 1: Core Infrastructure</b> ( 100% Complete)</summary>
 
 -  **HTX Protocol Implementation** (`htx/` crate)
-  - TLS 1.3 fingerprint mirroring (ClientHello templates from real browsers)
-  - Origin-aware handshake (mimic target site's TLS characteristics)
+  - TLS 1.3 fingerprint resistance (ClientHello templates from real browsers)
+  - Origin-aware handshake (common browser TLS characteristics)
   - Noise XK handshake derivative (Ed25519 static key verification)
   - Ephemeral X25519 key exchange (forward secrecy per connection)
   - ChaCha20-Poly1305 AEAD for post-handshake encryption
@@ -1153,7 +1153,7 @@ gantt
   - Criterion benchmarks (throughput: ~1.2 GB/s on modern CPU)
   
 -  **Cryptographic Primitives** (`core-crypto/` crate)
-  - Ed25519 signatures (identity, catalog signing)
+  - Ed25519 signatures (peer identity, signed artifacts)
   - X25519 ECDH (ephemeral key exchange)
   - ChaCha20-Poly1305 AEAD (symmetric encryption)
   - HKDF-SHA256 (key derivation function)
@@ -1162,7 +1162,7 @@ gantt
   - No raw crypto calls outside this crate (centralized, auditable)
   
 - NO **Catalog System** (removed Oct 25, 2025 - replaced by hardcoded bootstrap)
-  - Originally: Signed JSON catalog with decoy sites + operator nodes
+  - Originally: Signed JSON catalog with operator nodes
   - DET-CBOR canonical encoding (for Ed25519 signature verification)
   - Expiration TTL with grace period (staleness detection)
   - Version monotonicity (prevent rollback attacks)
@@ -1173,10 +1173,10 @@ gantt
 -  **Deterministic CBOR Encoding** (`core-cbor/` crate)
   - DET-CBOR implementation (RFC 8949 + deterministic rules)
   - Canonical ordering (map keys sorted lexicographically)
-  - Used for signed payloads (catalog was primary use case)
+  - Used for signed payloads (signed artifacts, protocol upgrades)
   - No ambiguous encoding (exactly one representation per value)
   - Integration with `serde` (derive macros for structs)
-  - Still used for future signed artifacts (protocol upgrades, governance votes)
+  - Used for future signed artifacts (protocol upgrades, governance votes)
 
 </details>
 
@@ -1726,7 +1726,7 @@ impl HelperMode {
   - [ ] Pass review (address policy violations if any)
 
 **Auto-Updater** (future - Phase 4):
-- Mechanism: Check catalog for new version (same signed catalog system)
+- Mechanism: Check operator directory for new version (signed update manifest)
 - Silent updates: Download .msi/.deb/.dmg, install in background, restart service
 - Rollback: Keep previous version, rollback on crash loop
 

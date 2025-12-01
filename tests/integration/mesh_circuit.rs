@@ -7,7 +7,7 @@
 //! and circuit lifecycle management using Kademlia DHT peer lists.
 
 // Disabled - awaiting rewrite for operator directory model
-#[cfg(disabled)]
+#[cfg(any())]
 mod disabled_tests {
 use core_mesh::circuit::{Circuit, CircuitBuilder, CircuitClose, CircuitReady, CircuitRequest};
 use core_mesh::discovery::DiscoveryBehavior;

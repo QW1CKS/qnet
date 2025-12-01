@@ -107,6 +107,8 @@ impl PeerDirectory {
     }
 
     /// Creates a peer directory with custom TTL.
+    /// Note: Reserved for configurable TTL in production.
+    #[allow(dead_code)]
     pub fn with_ttl(ttl_seconds: u64) -> Self {
         Self {
             peers: Arc::new(Mutex::new(HashMap::new())),
@@ -215,6 +217,8 @@ impl PeerDirectory {
     /// Spawns a background pruning task (runs every 60 seconds).
     ///
     /// Returns a join handle that can be awaited or detached.
+    /// Note: Reserved for production directory service.
+    #[allow(dead_code)]
     pub fn spawn_pruning_task(self) -> async_std::task::JoinHandle<()> {
         async_std::task::spawn(async move {
             loop {

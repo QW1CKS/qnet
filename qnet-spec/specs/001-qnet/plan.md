@@ -2,7 +2,7 @@
 
 ## Strategy: "Build the Helper, Grow the Mesh"
 
-Our strategy is to deploy a **fully decentralized network** disguised as a simple **browser extension**.
+Our strategy is to deploy a **fully decentralized network** delivered as a simple **browser extension**.
 
 1.  **The Trojan Horse**: Users install a "VPN Extension" for free access.
 2.  **The Hidden Node**: The extension installs a local "Helper" service.
@@ -13,16 +13,15 @@ Our strategy is to deploy a **fully decentralized network** disguised as a simpl
 ### Phase 1: Core Infrastructure (Completed) ✅
 *Building the engine.*
 We have built the foundational Rust crates:
-- **`htx`**: The masking transport layer that mimics TLS fingerprints.
+- **`htx`**: The transport layer with TLS fingerprint resistance.
 - **`core-crypto`**: The cryptographic primitives.
 - **`core-framing`**: The secure wire protocol.
-- **Catalog System**: The secure update mechanism.
 
 ### Phase 2: The Helper Node (Current) 🚧
 *Turning the engine into a car.*
 We are currently integrating the core crates into the `stealth-browser` binary (the Helper).
 - **Goal**: A standalone binary that runs a SOCKS5 proxy and connects to the QNet mesh.
-- **Key Tech**: `libp2p` for mesh networking, `htx` for masking.
+- **Key Tech**: `libp2p` for mesh networking, `htx` for obfuscation.
 
 ### Phase 3: User Experience (Current) 🚧
 *Giving the car a steering wheel.*

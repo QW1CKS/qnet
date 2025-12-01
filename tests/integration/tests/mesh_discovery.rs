@@ -9,7 +9,7 @@
 //! - Peer count updates as nodes join/leave (needs operator directory mock)
 
 // Disabled - awaiting rewrite for operator directory model
-#[cfg(disabled)]
+#[cfg(any())]
 mod disabled_tests {
 use async_std::task;
 use core_mesh::discovery::{BootstrapNode, DiscoveryBehavior};

@@ -1,4 +1,7 @@
 //! Exit node connection handler.
+//!
+//! Note: Implemented for Task 2.1.11.5, will be wired in Task 2.1.11.6.
+#![allow(dead_code)]
 
 use super::config::ExitConfig;
 use super::errors::{ExitError, Result};
@@ -111,6 +114,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
     use tokio::io::DuplexStream;
 
     #[tokio::test]

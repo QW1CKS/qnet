@@ -472,9 +472,9 @@ After reading this research, a developer should be able to:
 
 ### 5. Traffic Shaping & ML-Based Fingerprinting Resistance
 
-**Current Status**: Spec mentions "padding and timing jitter to match decoy behavior" but no implementation exists.
+**Current Status**: No traffic shaping implementation exists. ML classifiers can fingerprint traffic patterns.
 
-**Impact**: Without traffic shaping, ML classifiers can detect QNet traffic despite TLS mirroring.
+**Impact**: Without traffic shaping, ML classifiers can detect QNet traffic despite TLS fingerprint resistance.
 
 #### Super-Prompt: Traffic Shaping & Anti-Fingerprinting
 
@@ -515,10 +515,10 @@ potentially identify QNet traffic by timing, packet sizes, and flow patterns.
 18. What ML models should defenses be tested against?
 19. What is an acceptable accuracy reduction (>90% → <70%)?
 
-### Decoy Mimicry (QNet-specific)
-20. How do you capture traffic patterns from a real decoy site?
-21. How do you replay/mimic those patterns in real-time?
-22. What timing precision is needed for convincing mimicry?
+### Traffic Obfuscation (QNet-specific)
+20. How do you generate realistic HTTPS-like traffic patterns?
+21. How do you vary timing to avoid statistical fingerprinting?
+22. What entropy sources are needed for convincing randomization?
 23. How do you handle interactive content (WebSockets, streaming)?
 
 ## Research Scope
@@ -552,7 +552,7 @@ Create markdown files in `/research/traffic-shaping/`:
 ### 2. `traffic-shaping-implementation.md`
 - Code pattern: Constant-rate padding
 - Code pattern: Adaptive padding (WTF-PAD style)
-- Code pattern: Traffic morphing to mimic decoy
+- Code pattern: Traffic obfuscation for ML resistance
 - Integration points in QNet architecture
 
 ### 3. `traffic-shaping-qnet-gaps.md`
@@ -616,7 +616,7 @@ the TLS handshake. QUIC + ECH would provide:
 16. How would QUIC replace TCP in HTX?
 17. Can QUIC and TCP coexist (transport selection)?
 18. How does QUIC affect TLS fingerprinting (different fingerprints)?
-19. How does ECH interact with HTX's decoy mimicry?
+19. How does ECH interact with HTX's traffic obfuscation?
 20. What are the performance differences (latency, throughput)?
 
 ### Censorship Resistance
@@ -1110,18 +1110,27 @@ After reading this research, a developer should be able to:
 
 ## 📋 Research Tracking
 
-| # | Topic | Priority | Status | Researcher | Findings Location |
-|---|-------|----------|--------|------------|-------------------|
-| 1 | libp2p Stream Protocols | 🔴 Critical | ⏳ Pending | - | `/research/libp2p-streams/` |
-| 2 | Onion Routing Crypto | 🔴 Critical | ⏳ Pending | - | `/research/onion-routing/` |
-| 3 | NAT Traversal | 🔴 Priority 2 | ⏳ Pending | - | `/research/nat-traversal/` |
-| 4 | Noise XK Verification | 🔴 Priority 2 | ⏳ Pending | - | `/research/noise-xk/` |
-| 5 | Traffic Shaping | 🟡 Priority 3 | ⏳ Pending | - | `/research/traffic-shaping/` |
-| 6 | QUIC & ECH | 🟡 Priority 3 | ⏳ Pending | - | `/research/quic-ech/` |
-| 7 | Obfs4 | 🟡 Priority 3 | ⏳ Pending | - | `/research/obfs4/` |
-| 8 | Shadowsocks | 🟡 Priority 3 | ⏳ Pending | - | `/research/shadowsocks/` |
-| 9 | Nym Mixnet | 🟡 Priority 3 | ⏳ Pending | - | `/research/nym-mixnet/` |
-| 10 | Native Messaging | 🟡 Priority 3 | ⏳ Pending | - | `/research/native-messaging/` |
+### 🔴 Priority 1: Critical (Blocks Current Work)
+- [x] **libp2p Custom Stream Protocol** — `/research/findings/libp2p Custom Stream Protocol Implementation/`
+- [x] **Onion Routing Circuit Cryptography** — `/research/findings/Onion Routing Circuit Cryptography/`
+
+### 🔴 Priority 2: Needed for Phase 2 Completion
+- [x] **NAT Traversal (AutoNAT, Circuit Relay, Hole Punching)** — `/research/findings/NAT Traversal with libp2p (AutoNAT, Circuit Relay, Hole Punching)/`
+- [x] **HTX Noise XK Handshake Verification** — `/research/findings/HTX Noise XK Handshake Verification/`
+
+### 🟡 Priority 3: Phase 4 Preparation
+- [x] **Traffic Shaping & ML Fingerprinting Resistance** — `/research/findings/Traffic Shaping & ML-Based Fingerprinting Resistance/`
+- [x] **QUIC Transport & ECH** — `/research/findings/QUIC Transport & Encrypted Client Hello (ECH)/`
+- [x] **Obfs4 Pluggable Transport** — `/research/findings/Obfs4 Pluggable Transport/`
+- [x] **Shadowsocks AEAD Integration** — `/research/findings/Shadowsocks AEAD Integration/`
+- [x] **Nym Mixnet Integration** — `/research/findings/Nym Mixnet Integration/`
+- [x] **Native Messaging (Extension ↔ Helper)** — `/research/findings/Native Messaging (Browser Extension ↔ Helper)/`
+
+### 🟢 Priority 4: Future Phases (Not Yet Researched)
+- [ ] **Self-Certifying IDs / Alias Ledger** — Petname system, 2-of-3 finality, DNS replacement
+- [ ] **Voucher/Cashu Payment System** — Ecash tokens, blind signatures, relay incentives
+- [ ] **Governance & Voting** — Node reputation, protocol upgrades
+- [ ] **Refraction Networking Partnership** — ISP cooperation, tagging protocols
 
 ---
 

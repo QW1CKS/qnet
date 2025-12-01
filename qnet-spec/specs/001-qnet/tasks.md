@@ -302,11 +302,21 @@
 - [x] Add traffic shaping (jitter, padding)
 - [x] Implement stream multiplexing
 
-### 1.5 Catalog System
-- [x] Define catalog schema (JSON + signature)
-- [x] Create `crates/catalog-signer/` tool
-- [x] Implement signature verification
-- [x] Add catalog loader to Helper
+---
+
+## ⚠️ ARCHIVED: Section 1.5 - Catalog System (Removed Oct 2025)
+
+> **STATUS**: The catalog system was removed in Oct 2025. Decoy routing and signed catalog distribution were deemed unnecessary for MVP. Replaced by hardcoded operator bootstrap nodes and operator directory discovery.
+
+**Historical Context**: Originally implemented signed JSON catalogs with decoy sites and update URLs. Removed to simplify architecture. Peer discovery now uses operator directory HTTP API.
+
+**Archived Tasks**:
+- ~~1.5.1 Define catalog schema (JSON + signature)~~ (schema files removed)
+- ~~1.5.2 Create `crates/catalog-signer/` tool~~ (crate archived, signing unused)
+- ~~1.5.3 Implement signature verification~~ (removed from Helper)
+- ~~1.5.4 Add catalog loader to Helper~~ (replaced by directory query)
+
+**See**: Task 2.1.10 (Operator Directory) for current peer discovery implementation.
 
 ---
 
@@ -910,7 +920,6 @@
 #### 3.5.1 End-to-End Security Validation
 - [ ] Verify extension permissions are minimal (no unnecessary access)
 - [ ] Test native messaging channel security (localhost only)
-- [ ] Verify catalog updates propagate to extension UI correctly
 - [ ] Check no sensitive data persists in extension storage
 - [ ] Test proxy settings revert on extension disable/uninstall
 - [ ] Verify SOCKS5 → HTX → Mesh path maintains confidentiality
@@ -937,7 +946,6 @@
 #### 3.5.4 Reliability & Recovery
 - [ ] Test Helper crash recovery (extension detects and shows error)
 - [ ] Test network interruption handling (WiFi disconnect/reconnect)
-- [ ] Verify catalog update doesn't disrupt active connections
 - [ ] Test concurrent tabs loading through proxy (no conflicts)
 - [ ] Check memory usage with extension active for 24 hours
 - [ ] Test upgrade path (old version → new version)
@@ -946,7 +954,6 @@
 - [ ] Verify MSI/DEB/PKG installs all components correctly
 - [ ] Check native messaging manifest registered properly
 - [ ] Test uninstall removes all components (no orphans)
-- [ ] Verify signed catalog loaded correctly on first run
 - [ ] Check default config values are production-appropriate
 - [ ] Test installer on systems without admin rights (if supported)
 
@@ -1078,5 +1085,60 @@
 - 🔍 Checkpoint 2 (Phase 3.5): After complete user delivery, before advanced features
 
 **Next Task**: Start Phase 2.2.1 (Create relay.rs file) OR Phase 4.1.1 (QUIC/ECH research)
+
+---
+
+## 🧹 Phase 5: Deprecated Content Cleanup
+
+**Context**: The catalog system and decoy routing architecture were removed in Nov 2025. Many files still contain deprecated references that should be cleaned up for clarity.
+
+**Status**: ✅ **COMPLETED** (Dec 1, 2025)
+
+### 5.1 Documentation Cleanup
+
+#### 5.1.1 Core Spec Documents
+- [x] Update `qnet-spec/specs/001-qnet/spec.md` - Removed "disguise as decoy", updated to traffic obfuscation focus ✅
+- [x] Update `qnet-spec/specs/001-qnet/plan.md` - Removed "Catalog System", updated to relay/directory ✅
+- [x] Update `qnet-spec/docs/ARCHITECTURE.md` - Removed "Catalog Lookup", "Decoy Node", updated discovery ✅
+- [x] Update `qnet-spec/specs/001-qnet/research-requirements.md` - Removed "Decoy Mimicry" section ✅
+
+#### 5.1.2 Project Documentation
+- [x] Update `README.md` - Replaced "traffic masking/disguise" with "obfuscation" ✅
+- [x] Update `docs/ARCHITECTURE.md` - Removed decoy routing references ✅
+
+#### 5.1.3 Archive Historical Documents
+- [x] Move `docs/MIGRATION_CATALOG_REMOVAL.md` to `docs/archive/` ✅
+- [x] File `currently-required-edits1.md` already removed ✅
+
+### 5.2 Code Cleanup
+
+#### 5.2.1 Helper Status API (`apps/stealth-browser/src/main.rs`)
+- [x] Remove `last_decoy` field from StatusSnapshot ✅
+- [x] Remove `decoy_count` field from StatusSnapshot ✅
+- [x] Remove `last_decoy_ip` from AppState ✅
+- [x] Update `build_status_json()` - Removed decoy-related JSON fields ✅
+- [x] Update HTML template - Removed decoy JavaScript references ✅
+
+### 5.3 Tasks File Cleanup
+
+#### 5.3.1 Mark Catalog Tasks as Archived
+- [x] Update Section 1.5 "Catalog System" - Marked as ARCHIVED ✅
+- [x] Remove catalog-related verification tasks from Phase 3.5 ✅
+
+---
+
+## 📝 Terminology Reference
+
+**REMOVED (Nov 2025)**:
+- ❌ **Catalog System** - Signed JSON catalog with decoy sites
+- ❌ **Decoy Routing** - Making traffic look like visits to microsoft.com
+- ❌ **Traffic Masking** - Disguising as specific decoy sites
+- ❌ **Decoy Mimicry** - Timing patterns matching real decoy sites
+
+**CURRENT Architecture**:
+- ✅ **Traffic Obfuscation** - Resist ML fingerprinting through padding/jitter
+- ✅ **P2P Mesh** - Destination hiding (ISP sees relay IPs, not final destination)
+- ✅ **Operator Directory** - HTTP registry for relay discovery
+- ✅ **Hardcoded Bootstrap** - Initial operators for network bootstrap
 
 

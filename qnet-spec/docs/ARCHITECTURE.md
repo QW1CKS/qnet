@@ -30,11 +30,11 @@ The extension (via PAC script or Proxy API) redirects the request to the local S
 
 ### 3. Helper Processing
 The Helper receives the SOCKS5 request for `amazon.com`.
-1.  **Catalog Lookup**: Checks the signed catalog for a valid **Decoy Node** (Entry Node).
-2.  **Path Selection**: Determines the route (Direct to Decoy, or via Mesh Peers).
+1.  **Peer Selection**: Queries operator directory for available relay/exit nodes.
+2.  **Path Selection**: Determines the route (Direct, or via Mesh Peers).
 3.  **HTX Encapsulation**:
-    - Generates a ClientHello matching the Decoy's fingerprint (e.g., Microsoft).
-    - Establishes a TLS connection to the Decoy.
+    - Generates a ClientHello with common browser fingerprint.
+    - Establishes a TLS connection to the selected peer.
     - Performs an inner Noise XK handshake.
 
 ### 4. Mesh Routing
@@ -53,16 +53,15 @@ The response follows the reverse path, encrypted at each step, until it reaches 
 - `extension/`: The Browser Extension (JS).
 
 ### `crates/` (Core Logic)
-- `htx/`: The masking transport layer.
+- `htx/`: The obfuscated transport layer.
 - `core-crypto/`: Cryptographic primitives.
 - `core-framing/`: Wire protocol definitions.
 - `core-mesh/`: P2P networking logic.
-- `catalog-signer/`: Tooling for the update system.
 
 ## Security Model
 
 - **Trust**: We do NOT trust the ISP. We do NOT trust individual peers with metadata (onion routing).
-- **Updates**: All updates (catalogs, binaries) must be signed by the developer keys.
+- **Updates**: All updates (binaries) must be signed by the developer keys.
 - **Fingerprinting**: We assume the ISP performs Deep Packet Inspection (DPI) and matches TLS fingerprints against known browsers.
 
 ---
@@ -73,14 +72,18 @@ The QNet mesh network uses a two-tiered discovery system to enable Helpers to fi
 
 ### Discovery Mechanisms
 
-1. **Kademlia DHT (Wide-Area Discovery)**
-   - Structured peer-to-peer distributed hash table
-   - Bootstrap nodes loaded from signed catalog (catalog-first priority)
-   - Enables discovery across the internet
-   - Periodic refresh every 5 minutes maintains routing table freshness
-   - Fallback to hardcoded seeds only if catalog unavailable
+1. **Operator Directory (Primary)**
+   - HTTP-based peer registry maintained by operator nodes
+   - Relay nodes register via heartbeat (POST /api/relay/register every 30s)
+   - Client nodes query directory on startup (GET /api/relays/by-country)
+   - Lightweight JSON API (no blockchain/DHT complexity)
 
-2. **mDNS (Local Network Discovery)**
+2. **Hardcoded Operators (Fallback)**
+   - 6 hardcoded bootstrap nodes (DigitalOcean droplets across regions)
+   - Used if directory query fails or returns no peers
+   - Always available for initial mesh entry
+
+3. **mDNS (Local Network Discovery)**
    - Multicast DNS for LAN peer discovery
    - Zero-configuration discovery on local networks
    - No bootstrap infrastructure required
@@ -93,25 +96,24 @@ The QNet mesh network uses a two-tiered discovery system to enable Helpers to fi
 │ Helper Startup                                                   │
 │                                                                   │
 │ 1. Generate Ed25519 peer identity                                │
-│ 2. Load bootstrap nodes (catalog → seeds fallback)               │
-│ 3. Initialize DiscoveryBehavior (Kademlia + mDNS)                │
-│ 4. Spawn dedicated async-std discovery thread                    │
+│ 2. Query operator directory for available peers                  │
+│ 3. Fall back to hardcoded operators if directory unavailable     │
+│ 4. Spawn dedicated async discovery thread                        │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ Discovery Thread (async-std runtime, isolated from tokio)        │
+│ Discovery Thread (dedicated runtime)                             │
 │                                                                   │
-│ Every 5 seconds:                                                 │
-│   • Query peer_count() from Kademlia routing table               │
+│ Every 30 seconds:                                                │
+│   • Query operator directory for peer updates                    │
 │   • Update AppState.mesh_peer_count (AtomicU32)                  │
 │   • Log discovered peers (state-transition markers)              │
 │                                                                   │
 │ Concurrent Events:                                               │
 │   • mDNS announces local peer presence                           │
 │   • mDNS listens for other peers on LAN                          │
-│   • Kademlia DHT processes bootstrap connections                 │
-│   • Kademlia DHT maintains routing table                         │
+│   • Directory heartbeat for relay registration                   │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                ▼
@@ -130,40 +132,33 @@ The QNet mesh network uses a two-tiered discovery system to enable Helpers to fi
 
 ### Implementation Details
 
-**Module**: `crates/core-mesh/src/discovery.rs`
+**Module**: `apps/stealth-browser/src/directory.rs`
 
 **Key Types**:
-- `BootstrapNode`: Peer ID + Multiaddr for DHT seeding
-- `DiscoveryBehavior`: libp2p NetworkBehaviour combining Kademlia + mDNS
-- `load_bootstrap_nodes()`: Catalog-first loader (returns empty without catalog)
+- `OperatorInfo`: Peer ID + address + capabilities for directory entries
+- `DirectoryClient`: HTTP client for operator directory queries
+- `query_operator_directory()`: Fetches available relays by country/region
 
 **Helper Integration** (`apps/stealth-browser/src/main.rs`):
-- `spawn_mesh_discovery()`: Dedicated std::thread running async-std runtime
+- `spawn_mesh_discovery()`: Dedicated thread for peer discovery
 - `AppState.mesh_peer_count`: Arc<AtomicU32> for thread-safe peer count
-- Runtime bridging: async-std (libp2p) isolated from tokio (Helper main)
+- `AppState.relay_info`: Current relay/exit node information
 
 **Status Exposure**:
 - `build_status_json()` reads `mesh_peer_count.load(Ordering::Relaxed)`
 - Populates `peers_online` field in status response
 - Browser extension can display live peer count
 
-### Catalog-First Priority
-
-Per QNet architecture, peer discovery prioritizes the signed catalog:
-1. Attempt to load bootstrap nodes from verified catalog
-2. Only fall back to hardcoded seeds if catalog unavailable/invalid
-3. Log `catalog-first:` warnings when falling back to seeds
-
 ### Testing
 
-**Unit Tests** (`crates/core-mesh/src/discovery.rs`):
-- Bootstrap node creation and validation
-- DiscoveryBehavior initialization
-- peer_count() and discover_peers() API contracts
+**Unit Tests** (`apps/stealth-browser/src/directory.rs`):
+- Directory client HTTP request/response handling
+- Relay info parsing and validation
+- Fallback to hardcoded operators
 
 **Integration Tests** (`tests/integration/tests/mesh_discovery.rs`):
 - Multi-node discovery scenarios (structure validation)
-- Bootstrap DHT configuration
+- Directory registration and query
 - Peer count consistency checks
 - API performance contracts (non-blocking guarantees)
 
@@ -226,14 +221,6 @@ Small DigitalOcean droplets ($4-6/month) serve dual purpose:
 - 3 droplets @ $6/month = $18/month (global coverage)
 
 **Regions**: NYC (Americas), Amsterdam (Europe), Singapore (Asia)
-
-### Catalog-Based Updates
-
-Bootstrap node lists can be dynamically updated via signed catalogs:
-- Operator can add new droplets without code changes
-- Community volunteers can contribute seed nodes
-- Smooth migration path as network grows
-- Catalog verification ensures trust
 
 ---
 

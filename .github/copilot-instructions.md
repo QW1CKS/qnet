@@ -3,17 +3,18 @@
 Concise, project-specific guidance to help AI agents contribute effectively. Focus on actual patterns in this repo (Rust workspace + helper app) rather than generic advice.
 
 ## 1. Mission & Scope
-QNet is a layered decentralized networking stack + a pragmatic current user delivery model (browser extension + local Helper `stealth-browser`). Near-term focus: reliability of L2 (HTX cover transport), catalog-first masking, and incremental mesh (L3) + routing (L1) development. Avoid inventing future systems—implement what specs & tasks already define.
+QNet is a layered decentralized networking stack + a pragmatic current user delivery model (browser extension + local Helper `stealth-browser`). Near-term focus: reliability of L2 (HTX cover transport), traffic obfuscation (ML-resistant padding/jitter), and incremental mesh (L3) + routing (L1) development. Avoid inventing future systems—implement what specs & tasks already define.
 
 Extended context:
-- Architecture spans a planned 7-layer model (L0–L7) where current production emphasis is L2 (HTX cover transport + framing) and transitional enablement of L1 (path selection prototypes) & catalog-first configuration (signed decoy catalog). Higher layers (mixnet, payments, alias ledger) are roadmap items—do not prematurely implement non-specified features.
-- Security posture: censorship resistance, forward secrecy, integrity of signed configuration artifacts (catalog + seeds), and deterministic serialization invariants for anything signed.
+- Architecture spans a planned 7-layer model (L0–L7) where current production emphasis is L2 (HTX cover transport + framing) and transitional enablement of L1 (path selection prototypes). Higher layers (mixnet, payments, alias ledger) are roadmap items—do not prematurely implement non-specified features.
+- Security posture: censorship resistance, forward secrecy, and deterministic serialization invariants for signed bootstrap seeds.
 - Development principle: Every code change must trace to `qnet-spec/specs/001-qnet/tasks.md` (add a task minimally if missing). No speculative abstractions.
+- **Note on terminology**: QNet uses "traffic obfuscation" (resist ML fingerprinting via padding/jitter), NOT "traffic masking" (disguising as specific decoy sites is physically impossible without ISP cooperation—see Refraction Networking).
 
 ## 2. Core Architecture (Working Pieces)
 - Rust workspace crates (`crates/`):
   - `core-crypto` (primitives), `core-cbor` (deterministic encoding), `core-framing` (AEAD frame layer), `htx` (HTTP Tunneling / TLS origin mirroring), emerging: `core-routing`, `core-mesh`, `core-mix`, `mixnode`, `alias-ledger`, `voucher`.
-- Apps (`apps/`): `stealth-browser` (Helper SOCKS5 proxy + status API), `edge-gateway` (server-side masking / decoy terminator).
+- Apps (`apps/`): `stealth-browser` (Helper SOCKS5 proxy + status API), `edge-gateway` (exit node / traffic terminator).
 - Specs & governance: `qnet-spec/specs/001-qnet/*` (spec, plan, tasks), guardrails: `qnet-spec/memory/ai-guardrail.md`, `testing-rules.md`, principles: `constitution.md`.
 - Demos / tooling: `scripts/` (PowerShell demos), `linter/` (Go spec compliance), `fuzz/` (cargo-fuzz targets), `examples/echo`.
 
@@ -30,10 +31,10 @@ Additional architectural detail (from `docs/ARCHITECTURE.md` + crate docs):
 - Cryptographic invariants:
   - Use `core-crypto` wrappers: ChaCha20-Poly1305 AEAD, Ed25519 signatures, X25519 DH, HKDF-SHA256. No raw ring calls outside wrapper crates.
   - Nonce uniqueness: monotonic counters internal to framing/transport (never derive ad hoc nonces per call).
-- Deterministic serialization: `core-cbor` ensures canonical CBOR (DET-CBOR) for anything signed (catalog, seeds). Never handcraft CBOR—use provided helpers.
+- Deterministic serialization: `core-cbor` ensures canonical CBOR (DET-CBOR) for anything signed (bootstrap seeds). Never handcraft CBOR—use provided helpers.
 - HTX handshake: Noise XK derivative with Ed25519 static verification + ephemeral X25519; key schedule provides forward secrecy; do not alter pattern order without updating spec + adding tests.
 - Status & control plane: Local-only (127.0.0.1) HTTP minimal server in Helper; endpoints must remain lightweight and safe under partial reads.
-- Decoy catalog precedence: catalog-first; seeds only invoked if no valid, fresh signed catalog available (enforced logic when tasks define). Avoid seed-first fallbacks unless spec changes.
+- Bootstrap precedence: Hardcoded operator exit nodes (priority 1) + public libp2p DHT for decentralized discovery (priority 2).
 
 ## 3. Required Development Flow
 1. Locate or define task mapping in `qnet-spec/specs/001-qnet/tasks.md`—every change must trace back (add a task if truly missing, minimal diff).
@@ -45,10 +46,10 @@ Additional architectural detail (from `docs/ARCHITECTURE.md` + crate docs):
 Task traceability examples:
 - Adding a new status field → Add/locate task in `tasks.md` referencing performance/reliability requirement (e.g., T6.x). Update `/status` JSON additively; document in `qnet-spec/docs/helper.md` & extension doc if consumed by extension.
 - Adjusting HTX framing timing → Create/locate task citing handshake reliability metrics; add regression test (timing tolerance) if deterministically assertable.
-- Catalog loader change → Reference catalog update model section; include test validating signature rejection on tamper + expired TTL fallback.
+- Bootstrap seed change → Reference bootstrap loader; include test validating signature rejection on tamper.
 
 ## 4. Coding Conventions & Patterns
-- Deterministic serialization: use `core-cbor` helpers; never hand-roll ad hoc CBOR for signed/catalog objects.
+- Deterministic serialization: use `core-cbor` helpers; never hand-roll ad hoc CBOR for signed objects.
 - Framing: use `core-framing::FrameEncoder/Decoder`; do NOT duplicate framing logic—extend via config or new frame type enums if required (update docs + tests).
 - Cryptography: call provided wrappers in `core-crypto`; no new external crypto libs without justification.
 - TLS origin mirroring / HTX: changes live in `htx/`; preserve handshake timing and template-derived behaviors; add regression tests if modifying handshake or fingerprint logic.
@@ -57,7 +58,7 @@ Task traceability examples:
 
 Further conventions (integrated from crate docs & architecture):
 - Keep public API minimal & domain-specific; no generic util dumping into core crates.
-- Logging: Prefer concise, greppable markers (`state-transition:`, `catalog:`, `htx-handshake:`). Avoid leaking secrets (keys, nonces). Redact if ambiguous.
+- Logging: Prefer concise, greppable markers (`state-transition:`, `bootstrap:`, `htx-handshake:`). Avoid leaking secrets (keys, nonces). Redact if ambiguous.
 - Error enums: Distinguish between validation (`InvalidFrame`, `BadSignature`) vs IO/transport (`Io`, `Timeout`). Provide `thiserror` Display messages that aid debugging without internal state dumps.
 - Partial / streaming reads: In status or protocol servers, design tolerant loops with bounded deadline instead of busy `try_read` loops (Windows compatibility).
 - Do not widen error surface with `unwrap()` in non-test code; if invariant truly unreachable, prefer `debug_assert!` + explicit error branch.
@@ -67,29 +68,28 @@ Further conventions (integrated from crate docs & architecture):
 - Unit tests cover: happy path + at least 1 boundary + 1 failure case per new public API.
 - Fuzz targets live under `fuzz/fuzz_targets`; extend when modifying parsers / wire formats.
 - Benchmark-sensitive code (crypto, framing, htx) requires Criterion bench update if algorithmic changes made.
-- Integration tests for end-to-end (e.g., SOCKS proxy to real HTTPS via decoy) belong in `tests/` or dedicated crate-level `tests/` dir; can use localhost certs in `certs/`.
+- Integration tests for end-to-end (e.g., SOCKS proxy to real HTTPS via exit node) belong in `tests/` or dedicated crate-level `tests/` dir; can use localhost certs in `certs/`.
 
 Augmented rules (from `memory/testing-rules.md`):
 - Coverage goals: ≥80% for framing/handshake core paths; treat uncovered branches in critical modules as candidate test additions unless impossible to deterministically stimulate.
-- Negative/tamper tests: Mandatory for signed assets (catalog/seeds) → ensure rejection on: signature mismatch, expired `expires_at`, version regression, truncated file.
+- Negative/tamper tests: Mandatory for signed bootstrap seeds → ensure rejection on: signature mismatch, expired `expires_at`, version regression, truncated file.
 - Performance-sensitive change: attach before/after Criterion output snippet in PR description; if regression >5% justify or revert.
-- Fuzzing triggers: ANY parse layer modification in `core-framing`, `htx` handshake decode, catalog parsing → extend or add fuzz target.
+- Fuzzing triggers: ANY parse layer modification in `core-framing`, `htx` handshake decode → extend or add fuzz target.
 - Determinism check: Where encoding/serialization touched, add test hashing serialized bytes to stable digest.
 - Deletions: Ensure no orphan tasks remain referring to removed component.
 
 ## 6. Helper / Extension Model (Current Reality)
 - Do NOT assume full P2P yet: helper is a local SOCKS5 on `127.0.0.1:1088` + status API `127.0.0.1:8088`.
-- Catalog-first masking: signed catalog ingestion + decoy selection—changes must preserve atomic update & signature verify path.
+- Bootstrap model: Hardcoded operator exit nodes + libp2p DHT for peer discovery.
 - If adding API fields to status endpoint, update extension docs under `qnet-spec/docs/` and add backward-compatible JSON field (never rename without deprecation).
 
 Detailed Helper semantics (from `docs/helper.md` & `docs/extension.md`):
 - Default ports: SOCKS5 `127.0.0.1:1088`, Status `127.0.0.1:8088` (do not bind 0.0.0.0 without explicit task).
-- Core endpoints (current / evolving): `/status`, `/status.txt`, `/ping`, `/config`, `/update`, root HTML status page; dev may add ephemeral diagnostics—document once stabilized.
-- `/status` payload fields (current set – additive only): `mode`, `state`, `decoy_count`, `catalog_version`, `catalog_expires_at`, `catalog_source`, `last_target`, `last_decoy`, `last_update` (object), `peers_online`, `checkup_phase`, `seed_url`, plus `config_mode` for backward compat. Keep new experimental fields behind optional flag if unstable.
-- Update contract: Manual trigger (`/update` or internal command) returns JSON `{ updated, from, version, error? }`; integrate into status via `last_update` snapshot.
+- Core endpoints (current / evolving): `/status`, `/status.txt`, `/ping`, `/config`, root HTML status page; dev may add ephemeral diagnostics—document once stabilized.
+- `/status` payload fields (current set – additive only): `mode`, `state`, `last_target`, `peers_online`, `checkup_phase`, plus `config_mode` for backward compat. Keep new experimental fields behind optional flag if unstable.
 - Native Messaging (extension production): use JSON length‑prefixed messages; any addition to commands must version or capability advertise to avoid breaking older extensions.
-- Security posture: only localhost; do not accept arbitrary file paths or command execution. Rate-limit frequent update triggers (future task) – design for idempotence.
-- Dev flags: `STEALTH_DECOY_ALLOW_UNSIGNED=1` (dev only), `HTX_INNER_PLAINTEXT=1`, `HTX_EKM_EXPORTER_NO_CTX=1` – never rely on these in tests simulating production acceptance.
+- Security posture: only localhost; do not accept arbitrary file paths or command execution.
+- Dev flags: `HTX_INNER_PLAINTEXT=1`, `HTX_EKM_EXPORTER_NO_CTX=1` – never rely on these in tests simulating production acceptance.
 
 ## 7. Performance & Security Guardrails
 - Maintain AEAD throughput targets (see root README benchmarks). If regression >5% in benches, investigate or document rationale.
@@ -98,13 +98,12 @@ Detailed Helper semantics (from `docs/helper.md` & `docs/extension.md`):
 - Avoid allocations in hot loops (framing, crypto) — prefer stack buffers, reuse Vec capacity.
 
 Expanded security notes:
-- Threat model (excerpt): adversaries include passive network observers, active MITM, path scorers, and localized censorship middleboxes. Resist simple DPI by template-based TLS mirroring (HTX) and plausible decoy traffic profiles.
+- Threat model (excerpt): adversaries include passive network observers, active MITM, path scorers, and localized censorship middleboxes. Resist ML-based fingerprinting via traffic obfuscation (padding, timing jitter).
 - Confidentiality: rely exclusively on AEAD (ChaCha20-Poly1305). Never mix plaintext debug on production code paths (gated behind `cfg!(debug_assertions)` or feature).
 - Integrity: All signed config objects validated via DET-CBOR canonicalization before Ed25519 verification. Explicitly reject on any structural mismatch (missing mandatory field, extra unexpected field should be tolerated unless spec forbids—validate per schema version).
 - Forward secrecy: HTX ephemeral DH + rekey mechanism (if present). If altering handshake messages, must update transcript hash tests.
 - Nonce reuse prevention: Only increment counters; never reset within lifetime of key except on successful rekey that zeroes counters & rotates key.
 - Timing side-channels: Avoid branching on secret data in cryptographic wrappers (use constant-time libs). Do not log cryptographic failures verbatim with secret context.
-- Catalog attack resistance: Enforce `catalog_version` monotonicity to avoid rollback; treat lower version as reject-with-log.
 
 ## 8. Lint / Build / Tooling Commands
 - Full workspace build: `cargo build --workspace`.
@@ -113,14 +112,13 @@ Expanded security notes:
 - Format check: `cargo fmt --check`.
 - Fuzz (example): `cargo +nightly fuzz run framing_fuzz`.
 - Spec linter (Go): `cd linter && go build -o qnet-lint ./cmd/qnet-lint && ./qnet-lint validate ..`.
-- Demo secure connection (Windows): `./scripts/demo-secure-connection.ps1 -WithDecoy -Origin https://www.wikipedia.org` (adjust capture params as needed).
+- Demo secure connection (Windows): `./scripts/demo-secure-connection.ps1 -Origin https://www.wikipedia.org` (adjust capture params as needed).
 
 Additional tooling / automation guidance:
-- Catalog signer: `cargo run -p catalog-signer -- sign ...` — MUST set `CATALOG_PRIVKEY` env. Verification: `catalog-signer verify` with pinned pubkey file.
 - Spec linter (`linter/` Go): Ensure `qnet-spec/specs/001-qnet/tasks.md` references are valid; run after adding new tasks.
 - Fuzz seeds: Place under `fuzz/corpus/<target>`; keep minimized with `cargo fuzz cmin` (nightly) before committing large new seeds.
 - Performance baseline updates: When intentional improvement, update `artifacts/perf-summary.md` referencing hardware profile (`artifacts/*-hw-profile.txt`).
-- Windows network capture scripts under `qnet-spec/templates/dpi-capture.ps1` for reproducible masking evaluation—document deviations.
+- Windows network capture scripts under `qnet-spec/templates/dpi-capture.ps1` for reproducible obfuscation evaluation—document deviations.
 
 ## 9. When Adding a New Crate or Module
 - Justify via spec task; create minimal `README.md` describing purpose + example.
@@ -149,30 +147,24 @@ Extended PR checklist fields (encouraged):
 ## 11. Anti-Patterns to Avoid
 - Inventing unimplemented future phases (payments, full alias ledger consensus) in core crates prematurely.
 - Duplicating framing / crypto instead of reusing existing abstractions.
-- Skipping catalog signature verification in tests by hardcoding bypasses (use dev fixtures or feature flags).
 - Introducing blocking I/O in async paths without clear justification.
+- Using "traffic masking" terminology (use "traffic obfuscation" instead—masking implies disguising as specific sites, which is impossible without ISP cooperation).
 
 Additional anti-patterns:
 - Silent catch-all `match _` swallowing actionable errors—prefer enumerating expected cases.
-- Duplicating catalog signature logic outside the central loader (risk of divergence).
-- Embedding dynamic config (catalog JSON) into code constants without version validation.
 - Overreliance on global mutable state; prefer passing Arc<AppState>/config objects.
 - Adding external cryptography crates due to perceived convenience (must justify & route through `core-crypto`).
 - Creating test-only code paths in production modules (use cfg(test) blocks instead).
+- Relying solely on `fetch_webpage` tool for technical research—always ask user to conduct comprehensive research for complex topics.
 
 ## 12. Minimal Example References
 - Framing usage: see `crates/core-framing/README.md` quick start.
 - HTX handshake & dial pattern: refer to snippet in root `README.md` under Integration Example.
-- Catalog & masking flow: inspect helper code (status handler + catalog loader modules) before modifications.
+- Bootstrap & peer discovery: see `crates/core-mesh/src/discovery.rs` for hardcoded seeds + DHT integration.
 
 Supplemental quick references:
 - HTX handshake trace: see `htx` crate docs for initiator/respond example; confirm message pattern ordering with spec before altering.
 - Frame encoder/decoder usage: maintain monotonic nonce; test with fuzz target if adjusting length or AAD composition.
-- Catalog verification mini-sequence:
-  1) Read JSON -> remove `signature_hex` -> DET-CBOR encode
-  2) Ed25519 verify against pinned pubkeys
-  3) Check `expires_at` > now (with grace) & `catalog_version` >= active_version
-  4) Atomic persist (temp file + fsync + rename)
 - Helper status extension: when adding new JSON field also update extension consumption logic (feature-detect field presence for backward compat).
 
 ## 13. Decision Making
@@ -188,6 +180,20 @@ When you encounter uncertainty about HOW a technology/protocol actually works:
 5. **IMPLEMENT** based on evidence from research
 
 **CRITICAL RULE**: Consolidate ALL uncertainty about a technology into ONE super-prompt. Do NOT create separate prompts for related aspects (e.g., if uncertain about DHT discovery, include provider records, querying, mode configuration, timing, event handling, etc. ALL in one prompt).
+
+**USER RESEARCH REQUIREMENT (Mandatory)**:
+The AI agent MUST NOT rely solely on `fetch_webpage` or other automated tools for technical research. When encountering complex topics:
+1. **ASK THE USER** to conduct comprehensive research using external AI research agents or manual investigation
+2. **Provide specific research questions** the user should answer
+3. **Wait for user-provided findings** before proceeding with implementation
+4. **Rationale**: Fetch tools provide shallow, potentially outdated information. User-conducted research with dedicated research agents yields deeper, more accurate understanding.
+
+**When to request user research:**
+- Protocol internals (libp2p, Noise, TLS, QUIC mechanics)
+- Third-party library behavior beyond basic API usage
+- Performance characteristics requiring benchmarks or real-world data
+- Security properties requiring cryptographic analysis
+- Any topic where fetch results are insufficient or conflicting
 
 **Topics requiring research-first approach:**
 - Distributed protocol mechanics (DHT, Kademlia, gossip, consensus)
@@ -248,9 +254,9 @@ Future-layers clarity (do NOT prematurely implement):
 - Alias ledger consensus: Leave advanced consensus/auction logic unimplemented; only basic struct definitions permissible if tasks demand.
 
 Operational readiness notes:
-- Catalog-first path must remain operational even if mesh/routing layers absent—avoid introducing dependencies upward.
+- Bootstrap path (hardcoded seeds + DHT) must remain operational even if advanced routing layers absent—avoid introducing dependencies upward.
 - Helper must degrade gracefully: offline state is acceptable; UI should show `offline` rather than hang.
-- Edge gateway handshake logs are ground truth for decoy masking events; maintain stable log markers for test automation.
+- Edge gateway handshake logs are ground truth for traffic obfuscation events; maintain stable log markers for test automation.
 
 ---
 If any section above seems incomplete for your current change, open an issue or append clarifying notes in the PR so maintainers can extend these instructions.

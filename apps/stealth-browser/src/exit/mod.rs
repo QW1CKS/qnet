@@ -3,6 +3,10 @@
 //! This module implements HTTP/HTTPS exit node logic, allowing super peers
 //! to forward traffic from relay peers to the public internet.
 //!
+//! Note: Implemented for Task 2.1.11.5, will be wired in Task 2.1.11.6.
+#![allow(dead_code)]
+#![allow(unused_imports)]
+//!
 //! # Architecture
 //!
 //! Exit nodes receive encrypted streams from relay peers, decrypt them,

@@ -12,6 +12,12 @@ pub mod circuit;
 pub mod mesh_network;
 
 #[cfg(feature = "with-libp2p")]
+pub mod stream_protocol;
+
+#[cfg(feature = "with-libp2p")]
+pub mod nat;
+
+#[cfg(feature = "with-libp2p")]
 mod libp2p_impl {
     use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
     use futures::prelude::*;

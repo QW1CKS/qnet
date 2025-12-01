@@ -1,4 +1,7 @@
 //! HTTP CONNECT request parser.
+//!
+//! Note: Called by handler in Task 2.1.11.6.
+#![allow(dead_code)]
 
 use super::errors::{ExitError, Result};
 

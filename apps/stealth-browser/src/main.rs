@@ -550,7 +550,9 @@ impl HelperMode {
         matches!(self, HelperMode::Exit | HelperMode::Super)
     }
 
-    /// Check if mode should query directory on startup
+    /// Check if mode should query directory on startup.
+    /// Note: Reserved for Task 2.1.11.6 startup sequence.
+    #[allow(dead_code)]
     pub fn queries_directory(&self) -> bool {
         !matches!(self, HelperMode::Bootstrap) // All except bootstrap query directory
     }
@@ -717,16 +719,13 @@ struct StatusSnapshot {
     state: ConnState,
     last_seed: Option<String>,
     last_checked_ms_ago: Option<u64>,
-    // Most recent SOCKS CONNECT target and decoy used (masked mode)
+    // Most recent SOCKS CONNECT target used
     last_target: Option<String>,
-    last_decoy: Option<String>,
     // Masked connection statistics
     masked_attempts: Option<u64>,
     masked_successes: Option<u64>,
     masked_failures: Option<u64>,
     last_masked_error: Option<String>,
-    // Decoy inventory (loaded from signed file during Routine Checkup)
-    decoy_count: Option<u32>,
     peers_online: Option<u32>,
     checkup_phase: Option<String>,
 }
@@ -739,9 +738,8 @@ struct AppState {
     last_masked_connect: Mutex<Option<StdInstant>>,
     // Masked stats (attempt/success/failure counters + last error)
     masked_stats: Mutex<MaskedStats>,
-    // Resolved IP forms (best-effort) of current target / decoy
+    // Resolved IP form (best-effort) of current target
     last_target_ip: Mutex<Option<String>>,
-    last_decoy_ip: Mutex<Option<String>>,
     // Mesh peer count updated by discovery thread (task 2.1.6)
     mesh_peer_count: Arc<AtomicU32>,
     // Active circuits count updated by mesh thread (task 2.4.3)
@@ -830,12 +828,10 @@ impl AppState {
             last_seed: None,
             last_checked_ms_ago: None,
             last_target: None,
-            last_decoy: None,
             masked_attempts: Some(0),
             masked_successes: Some(0),
             masked_failures: Some(0),
             last_masked_error: None,
-            decoy_count: None,
             peers_online: None,
             checkup_phase: Some("idle".into()),
         };
@@ -849,7 +845,6 @@ impl AppState {
             last_masked_connect: Mutex::new(None),
             masked_stats: Mutex::new(MaskedStats::default()),
             last_target_ip: Mutex::new(None),
-            last_decoy_ip: Mutex::new(None),
             mesh_peer_count: Arc::new(AtomicU32::new(0)),
             active_circuits: Arc::new(AtomicU32::new(0)),
             relay_packets_relayed: Arc::new(AtomicU64::new(0)),
@@ -1266,6 +1261,10 @@ fn spawn_mesh_discovery(
                 .with_idle_connection_timeout(std::time::Duration::from_secs(60));
             let mut swarm = Swarm::new(transport, discovery, peer_id, swarm_config);
 
+            // Initialize NAT manager for reachability tracking
+            let mut nat_manager = core_mesh::nat::NatManager::new();
+            info!("mesh: NAT manager initialized (status: {})", nat_manager.status());
+
             // Listen on all interfaces with fixed port 4001 for direct peering
             // Changed from tcp/0 (dynamic) to tcp/4001 (fixed) for reliable bootstrap
             let listen_addr = "/ip4/0.0.0.0/tcp/4001".parse().unwrap();
@@ -1344,6 +1343,20 @@ fn spawn_mesh_discovery(
             let mut interval =
                 async_std::stream::interval(std::time::Duration::from_secs(5)).fuse();
 
+            // Pending stream requests awaiting OutboundStream events
+            // Maps request_id -> (peer_id, oneshot sender for channels)
+            type StreamResponse = tokio::sync::oneshot::Sender<
+                Result<
+                    (
+                        tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+                        tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+                    ),
+                    String,
+                >,
+            >;
+            let mut pending_streams: std::collections::HashMap<u64, (libp2p::PeerId, StreamResponse)> =
+                std::collections::HashMap::new();
+
             info!("mesh: Swarm event loop starting");
 
             // Main event loop
@@ -1389,47 +1402,18 @@ fn spawn_mesh_discovery(
                                 async_std::task::sleep(std::time::Duration::from_secs(2)).await;
                             }
 
-                            // Create bidirectional channels
-                            let (to_peer_tx, mut to_peer_rx) =
-                                tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-                            let (_from_peer_tx, from_peer_rx) =
-                                tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-
-                            // Open libp2p stream using request_response pattern
-                            // For simplicity, we'll use a direct stream approach via dial
-                            // This creates a new connection/stream to the peer
-                            info!("mesh: Creating stream to peer {}", peer_id);
-
-                            // Clone for async task
-                            let peer_id_clone = peer_id;
-
-                            // Spawn task to handle stream I/O
-                            async_std::task::spawn(async move {
-                                // In a full implementation, we would:
-                                // 1. Get a stream handle from Swarm via protocol negotiation
-                                // 2. Use libp2p::core::upgrade to negotiate /qnet/stream/1.0.0
-                                // 3. Copy data bidirectionally
-                                //
-                                // For now, simulate with a minimal placeholder that logs
-                                // Actual implementation requires connection handler integration
-
-                                info!("mesh: Stream task started for peer {}", peer_id_clone);
-
-                                // Read from to_peer_rx and "send" to peer
-                                while let Some(data) = to_peer_rx.recv().await {
-                                    debug!(
-                                        "mesh: Would send {} bytes to peer {}",
-                                        data.len(),
-                                        peer_id_clone
-                                    );
-                                    // TODO: Write to actual libp2p stream
+                            // Request a stream via the stream protocol
+                            match swarm.behaviour_mut().stream.open_stream(peer_id) {
+                                Ok(request_id) => {
+                                    info!("mesh: Requested stream to peer {} (request_id={})", peer_id, request_id);
+                                    // Store the response channel to fulfill when OutboundStream event fires
+                                    pending_streams.insert(request_id, (peer_id, response));
                                 }
-
-                                info!("mesh: Stream task ended for peer {}", peer_id_clone);
-                            });
-
-                            // Return channels to SOCKS5 handler
-                            let _ = response.send(Ok((to_peer_tx, from_peer_rx)));
+                                Err(e) => {
+                                    warn!("mesh: Failed to request stream to {}: {}", peer_id, e);
+                                    let _ = response.send(Err(format!("Stream request failed: {}", e)));
+                                }
+                            }
                         }
                     }
                 }
@@ -1492,25 +1476,29 @@ fn spawn_mesh_discovery(
                                     }
                                     DiscoveryBehaviorEvent::Autonat(autonat_event) => {
                                         use libp2p::autonat;
+                                        use core_mesh::nat::NatStatus;
                                         match autonat_event {
                                             autonat::Event::StatusChanged { old, new } => {
                                                 info!("mesh: NAT status changed: {:?} -> {:?}", old, new);
                                                 match new {
                                                     autonat::NatStatus::Public(addr) => {
                                                         info!("mesh: Public address detected: {}", addr);
-                                                        // Server mode already set at initialization (research fix)
-                                                        // Keeping in Server mode for DHT provider record storage
-                                                        info!("mesh: Public node confirmed, maintaining Server mode");
+                                                        nat_manager.set_status(NatStatus::Public);
+                                                        nat_manager.set_public_address(addr);
+                                                        // Public nodes don't need relay reservations
+                                                        info!("mesh: Public node confirmed, relay not required");
                                                     }
                                                     autonat::NatStatus::Private => {
                                                         info!("mesh: Behind NAT - relay will be used for connectivity");
-                                                        // Research fix: Keep Server mode even behind NAT
-                                                        // Allows node to store provider records for DHT propagation
-                                                        // Without this, provider discovery fails (Client mode = no storage)
-                                                        info!("mesh: Maintaining Server mode for DHT participation");
+                                                        nat_manager.set_status(NatStatus::Private);
+                                                        // Node behind NAT should seek relay reservations
+                                                        if nat_manager.should_seek_relay() && !nat_manager.has_relay_peers() {
+                                                            info!("mesh: Will seek relay reservations for NAT traversal");
+                                                        }
                                                     }
                                                     autonat::NatStatus::Unknown => {
                                                         debug!("mesh: NAT status unknown");
+                                                        nat_manager.set_status(NatStatus::Unknown);
                                                     }
                                                 }
                                             }
@@ -1526,6 +1514,109 @@ fn spawn_mesh_discovery(
                                         // TODO: Fix relay event variants for libp2p 0.53.2
                                         // The Event enum may have different variant names in this version
                                         debug!("mesh: Relay client event: {:?}", relay_event);
+                                    }
+                                    DiscoveryBehaviorEvent::Dcutr(dcutr_event) => {
+                                        // DCUtR Event is a struct with remote_peer_id and result fields
+                                        let peer_id = dcutr_event.remote_peer_id;
+                                        match dcutr_event.result {
+                                            Ok(connection_id) => {
+                                                info!("mesh: DCUtR hole punch succeeded - direct connection to {} (conn: {:?})", peer_id, connection_id);
+                                            }
+                                            Err(error) => {
+                                                warn!("mesh: DCUtR hole punch failed to {}: {:?}", peer_id, error);
+                                            }
+                                        }
+                                    }
+                                    DiscoveryBehaviorEvent::Stream(stream_event) => {
+                                        use core_mesh::stream_protocol::QNetStreamBehaviourEvent;
+                                        match stream_event {
+                                            QNetStreamBehaviourEvent::InboundStream { peer_id, stream } => {
+                                                info!("mesh: Inbound stream from peer {}", peer_id);
+                                                // TODO: Handle inbound stream (accept tunnel requests from peers)
+                                                // For now, just log and drop
+                                                drop(stream);
+                                            }
+                                            QNetStreamBehaviourEvent::OutboundStream { peer_id, stream, request_id } => {
+                                                info!("mesh: Outbound stream to peer {} (request {})", peer_id, request_id);
+
+                                                // Look up pending request
+                                                if let Some((_expected_peer, response_tx)) = pending_streams.remove(&request_id) {
+                                                    // Create bidirectional channels
+                                                    let (to_peer_tx, mut to_peer_rx) =
+                                                        tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                                                    let (from_peer_tx, from_peer_rx) =
+                                                        tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+                                                    // Return channels to the SOCKS5 handler
+                                                    if response_tx.send(Ok((to_peer_tx, from_peer_rx))).is_err() {
+                                                        warn!("mesh: OpenStream requester dropped before receiving channels");
+                                                        continue;
+                                                    }
+
+                                                    // Spawn bidirectional bridge task
+                                                    async_std::task::spawn(async move {
+                                                        use core_mesh::stream_protocol::{read_frame, write_frame, StreamFrame, FrameType};
+                                                        use futures::io::AsyncReadExt;
+
+                                                        let (mut read_half, mut write_half) = stream.split();
+
+                                                        // Task 1: Channel -> libp2p stream (outbound data)
+                                                        let outbound_task = async {
+                                                            while let Some(data) = to_peer_rx.recv().await {
+                                                                let frame = StreamFrame::data(data);
+                                                                if let Err(e) = write_frame(&mut write_half, &frame).await {
+                                                                    warn!("mesh: Failed to write frame to peer {}: {}", peer_id, e);
+                                                                    break;
+                                                                }
+                                                            }
+                                                            // Send close frame
+                                                            let _ = write_frame(&mut write_half, &StreamFrame::close()).await;
+                                                            debug!("mesh: Outbound stream to {} closed", peer_id);
+                                                        };
+
+                                                        // Task 2: libp2p stream -> Channel (inbound data)
+                                                        let inbound_task = async {
+                                                            loop {
+                                                                match read_frame(&mut read_half).await {
+                                                                    Ok(frame) => {
+                                                                        match frame.frame_type {
+                                                                            FrameType::Data => {
+                                                                                if from_peer_tx.send(frame.data).is_err() {
+                                                                                    debug!("mesh: Inbound receiver dropped for {}", peer_id);
+                                                                                    break;
+                                                                                }
+                                                                            }
+                                                                            FrameType::Close => {
+                                                                                debug!("mesh: Peer {} sent close frame", peer_id);
+                                                                                break;
+                                                                            }
+                                                                            _ => {
+                                                                                debug!("mesh: Ignoring non-data frame type {:?}", frame.frame_type);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        debug!("mesh: Read error from peer {}: {}", peer_id, e);
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                            debug!("mesh: Inbound stream from {} closed", peer_id);
+                                                        };
+
+                                                        // Run both directions concurrently
+                                                        futures::future::join(outbound_task, inbound_task).await;
+                                                        info!("mesh: Stream bridge to {} complete", peer_id);
+                                                    });
+                                                } else {
+                                                    warn!("mesh: OutboundStream for unknown request_id {}", request_id);
+                                                    drop(stream);
+                                                }
+                                            }
+                                            QNetStreamBehaviourEvent::Error { peer_id, error } => {
+                                                warn!("mesh: Stream error with peer {}: {}", peer_id, error);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1677,7 +1768,6 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
     };
     let masked_stats = app.masked_stats.lock().ok().map(|g| g.clone());
     let target_ip = app.last_target_ip.lock().ok().and_then(|g| g.clone());
-    let decoy_ip = app.last_decoy_ip.lock().ok().and_then(|g| g.clone());
     // Read current mesh peer count from atomic (updated by discovery thread)
     let mesh_peers = app.mesh_peer_count.load(Ordering::Relaxed);
     let mut json = serde_json::json!({
@@ -1695,30 +1785,16 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         json["last_target"] = serde_json::json!(t.clone());
         json["current_target"] = serde_json::json!(t);
     }
-    if let Some(d) = snap.last_decoy {
-        json["last_decoy"] = serde_json::json!(d.clone());
-        json["current_decoy"] = serde_json::json!(d);
-    }
     if let Some(ip) = target_ip {
         json["current_target_ip"] = serde_json::json!(ip);
     }
-    if let Some(ip) = decoy_ip {
-        json["current_decoy_ip"] = serde_json::json!(ip);
-    }
-    // Derive host-only (no port) versions for UI clarity
+    // Derive host-only (no port) version for UI clarity
     if let Some(ct) = json.get("current_target").and_then(|v| v.as_str()) {
         if let Some((host, _)) = ct.rsplit_once(':') {
             // rsplit_once keeps left part possibly with colons (IPv6); domain:port typical
             // Only set if host contains alphabetic char (avoid overriding numeric-only IP target)
             if host.chars().any(|c| c.is_ascii_alphabetic()) {
                 json["current_target_host"] = serde_json::json!(host);
-            }
-        }
-    }
-    if let Some(cd) = json.get("current_decoy").and_then(|v| v.as_str()) {
-        if let Some((host, _)) = cd.rsplit_once(':') {
-            if host.chars().any(|c| c.is_ascii_alphabetic()) {
-                json["current_decoy_host"] = serde_json::json!(host);
             }
         }
     }
@@ -1729,10 +1805,6 @@ fn build_status_json(app: &AppState) -> serde_json::Value {
         if let Some(le) = &ms.last_error {
             json["last_masked_error"] = serde_json::json!(le);
         }
-    }
-    // Removed: catalog_version, catalog_expires_at, catalog_source (catalog system removed)
-    if let Some(n) = snap.decoy_count {
-        json["decoy_count"] = serde_json::json!(n);
     }
     // Prefer live mesh peer count over snapshot value (task 2.1.6)
     json["peers_online"] = serde_json::json!(mesh_peers);
@@ -1898,18 +1970,6 @@ fn handle_status_blocking(
         if let Some(v) = get("current_target_ip") {
             lines.push(format!("Current Target IP: {}", v.as_str().unwrap_or("?")));
         }
-        if let Some(v) =
-            get("current_decoy_host").or_else(|| get("current_decoy").or_else(|| get("last_decoy")))
-        {
-            lines.push(format!("Current Decoy: {}", v.as_str().unwrap_or("?")));
-        }
-        if let Some(v) = get("current_decoy_ip") {
-            lines.push(format!("Current Decoy IP: {}", v.as_str().unwrap_or("?")));
-        }
-        if let Some(v) = get("decoy_count") {
-            lines.push(format!("Decoy count: {}", v));
-        }
-        // Removed: catalog_version (catalog system removed)
         if let Some(v) = get("peers_online") {
             lines.push(format!("Peers online: {}", v));
         }
@@ -1942,16 +2002,9 @@ fn handle_status_blocking(
         if let Some(v) = js.get("mode").and_then(|v| v.as_str()) {
             pre_hdr_lines.push(format!("Mode: {}", v));
         }
-        if let Some(v) = js.get("decoy_count") {
-            pre_hdr_lines.push(format!("Decoy count: {}", v));
-        }
         if let Some(v) = js.get("current_target").or_else(|| js.get("last_target")) {
             pre_hdr_lines.push(format!("Current target: {}", v.as_str().unwrap_or("?")));
         }
-        if let Some(v) = js.get("current_decoy").or_else(|| js.get("last_decoy")) {
-            pre_hdr_lines.push(format!("Current decoy: {}", v.as_str().unwrap_or("?")));
-        }
-        // Removed: catalog_version (catalog system removed)
         if let Some(v) = js.get("peers_online") {
             pre_hdr_lines.push(format!("Peers online: {}", v));
         }
@@ -1961,7 +2014,7 @@ fn handle_status_blocking(
         let pre_hdr = pre_hdr_lines.join("\n");
         let init_json = js.to_string();
         let socks_addr = js.get("socks_addr").and_then(|v| v.as_str()).unwrap_or("");
-        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;const decHost=j.current_decoy_host;const decIp=j.current_decoy_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(decHost)h+='\\nCurrent Decoy: '+decHost;else if(j.current_decoy)h+='\\nCurrent Decoy: '+j.current_decoy;if(decIp)h+='\\nCurrent Decoy IP: '+decIp;if(typeof j.decoy_count==='number')h+='\\nDecoy count: '+j.decoy_count;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
+        let html_template = r#"<html><head><title>QNet Stealth</title><meta charset='utf-8'><style>body{font-family:sans-serif;margin:10px} .mono{font-family:monospace;color:#222;font-size:13px} #hdr{white-space:pre;font-weight:600;margin-top:8px} .state-offline{color:#c00} .state-connected{color:#060} .state-calibrating{color:#c60} .err{color:#c00} #diag{margin-top:8px;font-size:11px;color:#555;white-space:pre-wrap;max-height:55vh;overflow:auto;border:1px solid #eee;padding:6px} button.reload,button.terminate{margin-left:8px;font-weight:600;cursor:pointer} button.terminate{color:#fff;background:#c00;border:1px solid #900;padding:4px 10px} #topbar{position:sticky;top:0;background:#fafafa;padding:6px 10px;border:1px solid #ddd;display:flex;flex-wrap:wrap;align-items:center;gap:12px} #topbar .links a{margin-right:10px} #socks{font-family:monospace;color:#333} </style></head><body><div id='topbar' class='mono'><span><strong>QNet Stealth — Status</strong></span><span id='socks'>SOCKS: __SOCKS_ADDR__</span><span class='links'><a href='/status'>/status JSON</a><a href='/status.txt'>/status.txt</a><a href='/ping'>/ping</a><a href='/config'>/config</a><a href='/terminate' onclick='return confirm(\"Terminate helper?\")'>/terminate</a></span><span><button class='reload' onclick='location.reload()'>Reload</button><button class='terminate' onclick='terminateHelper()'>Terminate</button></span></div><div id='hdr' class='mono state-__STATE_CLASS__'>__PRE_HDR__</div><pre id='out' class='mono'>(fetching /status)</pre><div id='diag' class='mono'></div><script id='init-json' type='application/json'>__INIT_JSON__</script><script>(function(){const initEl=document.getElementById('init-json');let INIT={};try{INIT=JSON.parse(initEl.textContent);}catch(_e){}const hdr=document.getElementById('hdr');const out=document.getElementById('out');const diag=document.getElementById('diag');function log(m){console.log('[status]',m);diag.textContent=(diag.textContent+'\\n'+new Date().toISOString()+' '+m).trimStart();diag.scrollTop=diag.scrollHeight;}function render(j){if(!j)return;const tgtHost=j.current_target_host;const tgtIp=j.current_target_ip;let h='State: '+j.state;h+='\\nMode: '+j.mode;if(tgtHost)h+='\\nCurrent Target: '+tgtHost;else if(j.current_target)h+='\\nCurrent Target: '+j.current_target;if(tgtIp)h+='\\nCurrent Target IP: '+tgtIp;if(j.peers_online!==undefined)h+='\\nPeers online: '+j.peers_online;if(j.last_masked_error)h+='\\nLast masked error: '+j.last_masked_error;hdr.className='mono state-'+j.state;hdr.textContent=h;out.textContent=JSON.stringify(j,null,2);}render(INIT);log('init rendered');let lastOk=Date.now();async function poll(){try{const r=await fetch('/status?ts='+Date.now(),{cache:'no-store'});if(r.ok){const j=await r.json();render(j);lastOk=Date.now();log('tick ok');}else{log('tick http '+r.status);}}catch(e){log('tick err '+e.message);if(Date.now()-lastOk>9000){hdr.className='mono err';hdr.textContent='Status fetch stalled';}}}setInterval(poll,1600);setTimeout(poll,200);window.terminateHelper=function(){if(!confirm('Terminate helper process?'))return;fetch('/terminate?ts='+Date.now(),{cache:'no-store'}).then(()=>{log('terminate requested');hdr.className='mono err';hdr.textContent='Terminating...';}).catch(e=>log('terminate err '+e.message));};})();</script></body></html>"#;
         let html = html_template
             .replace("__STATE_CLASS__", state_cls)
             .replace("__PRE_HDR__", &html_escape::encode_text(&pre_hdr))
@@ -2413,7 +2466,7 @@ async fn handle_client(
         }
         Mode::Masked => {
             // Production path (client-side):
-            // Open a decoy-shaped outer TLS tunnel to an edge using htx::api::dial(origin), then bridge bytes over inner stream.
+            // Open an obfuscated TLS tunnel to an edge using htx::api::dial(origin), then bridge bytes over inner stream.
             // Note: Requires a cooperating edge server for end-to-end HTTPS; without it, traffic will not complete.
 
             // Parse target into host:port
@@ -2424,10 +2477,8 @@ async fn handle_client(
             } else {
                 format!("https://{}:{}", host, port)
             };
-            // Decoy resolution removed (catalog system removed)
-            let decoy_str: Option<String> = None;
 
-            // Attempt dial (htx will consult decoy env if present)
+            // Attempt dial
             if let Some(app) = &app_state {
                 if let Ok(mut ms) = app.masked_stats.lock() {
                     ms.attempts = ms.attempts.saturating_add(1);
@@ -2503,12 +2554,11 @@ async fn handle_client(
                     guard.1 = Some(now);
                     guard.0.last_checked_ms_ago = Some(0);
                     guard.0.last_target = Some(format!("{}:{}", host, port));
-                    guard.0.last_decoy = decoy_str.clone();
                     // Update last_masked_connect while we still hold status lock so monitor can't observe new state without timestamp
                     if let Ok(mut lm) = app.last_masked_connect.lock() {
                         *lm = Some(now);
                     }
-                    // Resolve host & decoy to IPs (best effort, do not block long)
+                    // Resolve host to IP (best effort, do not block long)
                     if let Ok(mut tip) = app.last_target_ip.lock() {
                         if let Ok(mut iter) = (|| {
                             std::net::ToSocketAddrs::to_socket_addrs(
@@ -2520,40 +2570,19 @@ async fn handle_client(
                             }
                         }
                     }
-                    if let Some(decoy_hostport) = &decoy_str {
-                        if let Some((dh, dp)) = decoy_hostport.split_once(':') {
-                            if let Ok(mut dip) = app.last_decoy_ip.lock() {
-                                if let Ok(mut iter) = (|| {
-                                    std::net::ToSocketAddrs::to_socket_addrs(
-                                        &(format!("{}:{}", dh, dp)),
-                                    )
-                                })() {
-                                    if let Some(addr) = iter.find(|a| a.is_ipv4()) {
-                                        *dip = Some(addr.ip().to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
                 eprintln!(
-                    "state-transition:connected mode=masked target={}:{} decoy={}",
+                    "state-transition:connected mode=masked target={}:{}",
                     host,
-                    port,
-                    decoy_str.clone().unwrap_or_else(|| "(none)".into())
+                    port
                 );
                 if let Ok(mut ms) = app.masked_stats.lock() {
                     ms.successes = ms.successes.saturating_add(1);
                 }
             }
             // Emit a concise log line for operator visibility
-            if let Some(d) = &decoy_str {
-                info!(target = %format!("{}:{}", host, port), decoy=%d, "masked: CONNECT via decoy");
-                eprintln!("masked: target={}:{}, decoy={}", host, port, d);
-            } else {
-                info!(target = %format!("{}:{}", host, port), "masked: CONNECT (no decoy; direct template)");
-                eprintln!("masked: target={}:{}, decoy=(none)", host, port);
-            }
+            info!(target = %format!("{}:{}", host, port), "masked: CONNECT via obfuscated tunnel");
+            eprintln!("masked: target={}:{}", host, port);
             // Bridge TCP <-> SecureStream (one stream per CONNECT)
             bridge_tcp_secure(stream, ss).await
         }
@@ -2679,8 +2708,10 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
 
 // =====================
 // Routine Checkup (stub peer discovery)
+// Note: Reserved for Task 2.1.11.6 background checkup.
 // =====================
 
+#[allow(dead_code)]
 async fn run_routine_checkup(app: Arc<AppState>) -> Result<()> {
     // Removed: catalog update phase (catalog system removed)
     // Removed: decoy catalog loading phase (catalog system removed)

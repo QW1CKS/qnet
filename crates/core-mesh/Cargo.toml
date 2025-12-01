@@ -33,7 +33,7 @@ version = "0.53"
 optional = true
 default-features = false
 features = [
-    "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros", "request-response", "async-std", "relay", "autonat"
+    "tcp", "dns", "yamux", "noise", "identify", "ping", "mdns", "gossipsub", "macros", "request-response", "async-std", "relay", "autonat", "dcutr"
 ]
 
 [dev-dependencies]

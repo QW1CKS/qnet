@@ -51,7 +51,9 @@ impl Default for ExitConfig {
 }
 
 impl ExitConfig {
-    /// Load from environment variables or use defaults
+    /// Load from environment variables or use defaults.
+    /// Note: Used in Task 2.1.11.6 when wiring exit node into Super mode.
+    #[allow(dead_code)]
     pub fn from_env() -> Self {
         let mut config = Self::default();
 

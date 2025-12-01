@@ -391,4 +391,159 @@ mod tests {
         let exp = init.exporter(b"test").unwrap();
         assert!(exp.iter().any(|&b| b != 0));
     }
+
+    #[test]
+    fn noise_xk_m1_tamper_detected() {
+        // Tampering with m1 should cause responder to fail on m2 or produce different keys
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, rs);
+        let mut resp = Handshake::init_responder(sr);
+
+        let mut m1 = init.next(None).unwrap().unwrap();
+        // Tamper with ephemeral point in m1 (first 32 bytes)
+        m1[0] ^= 1;
+
+        // Responder should still process (X25519 is lenient) but keys will differ
+        let m2 = resp.next(Some(&m1)).unwrap().unwrap();
+
+        // Initiator will fail to decrypt m2 because transcript differs
+        let result = init.next(Some(&m2));
+        assert!(result.is_err(), "Tampered m1 should cause m2 decryption failure");
+    }
+
+    #[test]
+    fn noise_xk_m2_tamper_detected() {
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, rs);
+        let mut resp = Handshake::init_responder(sr);
+
+        let m1 = init.next(None).unwrap().unwrap();
+        let mut m2 = resp.next(Some(&m1)).unwrap().unwrap();
+
+        // Tamper with encrypted portion of m2 (after ephemeral - bytes 32+)
+        let tamper_idx = 40;
+        if m2.len() > tamper_idx {
+            m2[tamper_idx] ^= 1;
+        }
+
+        let result = init.next(Some(&m2));
+        assert!(result.is_err(), "Tampered m2 should cause AEAD decryption failure");
+    }
+
+    #[test]
+    fn noise_xk_m3_tamper_detected() {
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, rs);
+        let mut resp = Handshake::init_responder(sr);
+
+        let m1 = init.next(None).unwrap().unwrap();
+        let m2 = resp.next(Some(&m1)).unwrap().unwrap();
+        let mut m3 = init.next(Some(&m2)).unwrap().unwrap();
+
+        // Tamper with m3
+        let last = m3.len() - 1;
+        m3[last] ^= 1;
+
+        let result = resp.next(Some(&m3));
+        assert!(result.is_err(), "Tampered m3 should cause AEAD decryption failure");
+    }
+
+    #[test]
+    fn noise_xk_wrong_responder_key_fails() {
+        // If initiator has wrong rs (responder static), handshake should fail
+        let (si, sr) = static_keys();
+        // Wrong key - use initiator's public key instead of responder's
+        let wrong_rs = (si * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, wrong_rs);
+        let mut resp = Handshake::init_responder(sr);
+
+        let m1 = init.next(None).unwrap().unwrap();
+        let m2 = resp.next(Some(&m1)).unwrap().unwrap();
+
+        // Initiator should fail to decrypt m2 because ee/es will be wrong
+        let result = init.next(Some(&m2));
+        assert!(result.is_err(), "Wrong responder static key should cause decryption failure");
+    }
+
+    #[test]
+    fn noise_xk_exporter_deterministic() {
+        // Same handshake should produce same exporter output
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        // First handshake
+        let mut init1 = Handshake::init_initiator(si, rs);
+        let mut resp1 = Handshake::init_responder(sr);
+        let m1 = init1.next(None).unwrap().unwrap();
+        let m2 = resp1.next(Some(&m1)).unwrap().unwrap();
+        let m3 = init1.next(Some(&m2)).unwrap().unwrap();
+        let _ = resp1.next(Some(&m3)).unwrap();
+        let exp1_init = init1.exporter(b"channel-binding").unwrap();
+        let exp1_resp = resp1.exporter(b"channel-binding").unwrap();
+
+        // Second handshake with same keys
+        let mut init2 = Handshake::init_initiator(si, rs);
+        let mut resp2 = Handshake::init_responder(sr);
+        let m1_2 = init2.next(None).unwrap().unwrap();
+        let m2_2 = resp2.next(Some(&m1_2)).unwrap().unwrap();
+        let m3_2 = init2.next(Some(&m2_2)).unwrap().unwrap();
+        let _ = resp2.next(Some(&m3_2)).unwrap();
+        let exp2_init = init2.exporter(b"channel-binding").unwrap();
+        let exp2_resp = resp2.exporter(b"channel-binding").unwrap();
+
+        // Both parties should have matching exporters
+        assert_eq!(exp1_init, exp1_resp, "Initiator and responder exporters must match");
+        // Same static keys produce same exporter (deterministic)
+        assert_eq!(exp1_init, exp2_init, "Same keys should produce same exporter");
+    }
+
+    #[test]
+    fn noise_xk_exporter_different_labels_differ() {
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, rs);
+        let mut resp = Handshake::init_responder(sr);
+        let m1 = init.next(None).unwrap().unwrap();
+        let m2 = resp.next(Some(&m1)).unwrap().unwrap();
+        let m3 = init.next(Some(&m2)).unwrap().unwrap();
+        let _ = resp.next(Some(&m3)).unwrap();
+
+        let exp_a = init.exporter(b"label-a").unwrap();
+        let exp_b = init.exporter(b"label-b").unwrap();
+
+        assert_ne!(exp_a, exp_b, "Different labels must produce different exporters");
+    }
+
+    #[test]
+    fn noise_xk_transport_keys_symmetric() {
+        // Verify transport key symmetry: init.tx == resp.rx and init.rx == resp.tx
+        let (si, sr) = static_keys();
+        let rs = (sr * X25519_BASEPOINT).to_bytes();
+
+        let mut init = Handshake::init_initiator(si, rs);
+        let mut resp = Handshake::init_responder(sr);
+
+        let m1 = init.next(None).unwrap().unwrap();
+        let m2 = resp.next(Some(&m1)).unwrap().unwrap();
+        let m3 = init.next(Some(&m2)).unwrap().unwrap();
+        let _ = resp.next(Some(&m3)).unwrap();
+
+        let (i_tx, i_rx) = init.transport_keys().unwrap();
+        let (r_tx, r_rx) = resp.transport_keys().unwrap();
+
+        // Initiator sends with i_tx, responder receives with r_rx
+        assert_eq!(i_tx, r_rx, "Initiator TX must equal Responder RX");
+        // Responder sends with r_tx, initiator receives with i_rx
+        assert_eq!(r_tx, i_rx, "Responder TX must equal Initiator RX");
+        // TX and RX should differ (separate key pairs)
+        assert_ne!(i_tx, i_rx, "TX and RX keys must differ");
+    }
 }
