@@ -1,30 +1,22 @@
-# QNet Home Super Peer Testing Guide (InstaTunnel)
+# QNet Home Super Peer Testing Guide
 
-This guide provides step-by-step instructions for running a QNet super peer on a home laptop/desktop using **InstaTunnel** to bypass CGNAT and expose your local services to the internet.
+This guide provides step-by-step instructions for running a QNet super peer on a home laptop/desktop behind CGNAT.
 
 ---
 
-## Why InstaTunnel?
+## Tunneling Strategy
 
-Most home networks are behind CGNAT (Carrier-Grade NAT), making traditional port forwarding impossible. InstaTunnel solves this by creating secure tunnels from your laptop to the public internet.
+Different QNet services require different tunnel types:
 
-| Feature | InstaTunnel | ngrok | Cloudflare Tunnel |
-|---------|-------------|-------|-------------------|
-| **Free Session Duration** | 24 hours | 2 hours | Unlimited |
-| **Free Concurrent Tunnels** | 3 | 1 | Unlimited |
-| **Custom Subdomains (Free)** | ✅ Yes | ❌ No | ✅ Yes |
-| **Setup Time** | < 30 seconds | ~5 minutes | ~10 minutes |
-| **Account Required** | Optional | Required | Required |
-| **TCP Tunnels** | ✅ Yes | ✅ Yes | ✅ Yes |
-| **Request Inspection** | ✅ Dashboard | ✅ Dashboard | ❌ No |
-| **Cost (Pro tier)** | $5/mo | $10/mo | Free |
+| Port | Service | Protocol | Tunnel Tool | Why |
+|------|---------|----------|-------------|-----|
+| 8088 | Status API | HTTP | InstaTunnel | HTTP-only tool, perfect for web APIs |
+| 1088 | SOCKS5 Proxy | Raw TCP | Bore | Raw TCP tunneling required |
+| 4001 | libp2p Mesh | Raw TCP | Bore | Raw TCP tunneling required |
 
-**InstaTunnel is ideal for QNet because:**
-- **24-hour sessions** vs ngrok's 2-hour limit
-- **3 free tunnels** (enough for Status API + SOCKS5 + libp2p)
-- **Custom subdomains** for consistent, memorable URLs
-- **Zero configuration** - works immediately
-- **TCP tunnel support** - essential for libp2p mesh connections
+**Why two tools?**
+- **InstaTunnel** only supports HTTP/HTTPS - it cannot forward raw TCP protocols like SOCKS5 or libp2p
+- **Bore** is a minimal Rust-based TCP tunnel that forwards arbitrary byte streams without protocol inspection
 
 ---
 
@@ -37,8 +29,8 @@ Most home networks are behind CGNAT (Carrier-Grade NAT), making traditional port
 - Internet connection (WiFi or Ethernet)
 
 ### Software Requirements
-- Rust toolchain installed (`rustup` with stable channel)
-- Node.js and npm (for InstaTunnel installation)
+- Rust toolchain (`rustup` with stable channel)
+- Node.js and npm (for InstaTunnel)
 - PowerShell 7+ or Windows Terminal
 - Git for Windows
 - QNet source code cloned locally
@@ -46,8 +38,6 @@ Most home networks are behind CGNAT (Carrier-Grade NAT), making traditional port
 ---
 
 ## Part 1: Verify CGNAT Status
-
-Before proceeding, confirm you need InstaTunnel:
 
 ### 1.1 Check Your Network Setup
 
@@ -62,8 +52,8 @@ Before proceeding, confirm you need InstaTunnel:
 ```
 
 **Step 3: Compare the IPs**
-- ✅ **IPs match** → You have a real public IP (port forwarding may work, but InstaTunnel is still easier)
-- ❌ **IPs don't match** → You're behind CGNAT (InstaTunnel required)
+- ✅ **IPs match** → You have a real public IP (port forwarding may work)
+- ❌ **IPs don't match** → You're behind CGNAT (tunneling required)
 
 **Common CGNAT indicators:**
 - Router WAN IP starts with `100.64.x.x` to `100.127.x.x` (CGNAT range)
@@ -71,39 +61,49 @@ Before proceeding, confirm you need InstaTunnel:
 
 ---
 
-## Part 2: Install InstaTunnel
+## Part 2: Install Tunneling Tools
 
-### 2.1 Install via NPM (Recommended)
+### 2.1 Install Bore (for raw TCP)
+
+**Option A: Cargo (recommended)**
+```powershell
+cargo install bore-cli
+```
+
+**Option B: Prebuilt binary**
+1. Download from: https://github.com/ekzhang/bore/releases
+2. Extract `bore.exe` to a folder in your PATH (e.g., `C:\Tools\bore\`)
+3. Add to PATH if needed
+
+**Verify installation:**
+```powershell
+bore --version
+```
+
+### 2.2 Install InstaTunnel (for HTTP)
 
 ```powershell
-# Install globally
 npm install -g instatunnel
-
-# Verify installation
 instatunnel --version
 ```
 
-### 2.2 Alternative: Direct Download
+### 2.3 Configure Credentials (DO NOT commit to repo!)
 
-1. Visit: https://www.instatunnel.my/downloads
-2. Download Windows installer
-3. Run installer
-4. Add to PATH if not automatic
-
-### 2.3 Test Installation
-
+**For InstaTunnel API key:**
 ```powershell
-# Quick test - expose a simple HTTP server
-# First, start a test server
-npx http-server -p 8888
-
-# In another terminal, create tunnel
-instatunnel http 8888 --name test-tunnel
-
-# You should see:
-# ✓ Tunnel created
-# ✓ URL: https://test-tunnel.instatunnel.my
+# Create config file (this is in your HOME, not the repo)
+@"
+api_key: "YOUR_API_KEY_HERE"
+"@ | Out-File -FilePath "$HOME\.instatunnel.yaml" -Encoding utf8
 ```
+
+**For Bore secret (if self-hosting):**
+```powershell
+# Set as environment variable (not in repo)
+$env:BORE_SECRET = "YOUR_SECRET_HERE"
+```
+
+> ⚠️ **NEVER commit API keys, secrets, or passwords to the repository!**
 
 ---
 
@@ -114,16 +114,11 @@ instatunnel http 8888 --name test-tunnel
 ```powershell
 cd P:\GITHUB\qnet
 
-# Build release version (faster runtime)
+# Build release version
 cargo build --release -p stealth-browser
-
-# Or debug version (faster compilation)
-cargo build -p stealth-browser
 ```
 
 ### 3.2 Generate Persistent Keypair
-
-For a stable peer ID across restarts:
 
 ```powershell
 # Create data directory
@@ -133,7 +128,7 @@ New-Item -ItemType Directory -Path "P:\GITHUB\qnet\data" -Force
 cargo run -p stealth-browser -- --generate-keypair P:\GITHUB\qnet\data\keypair.pb
 ```
 
-Note the peer ID from the output (e.g., `12D3KooWABC123...`). You'll need this later.
+Note the peer ID from the output (e.g., `12D3KooWABC123...`).
 
 ---
 
@@ -144,11 +139,9 @@ Note the peer ID from the output (e.g., `12D3KooWABC123...`). You'll need this l
 ```powershell
 cd P:\GITHUB\qnet
 
-# Set environment variables
 $env:RUST_LOG = "info"
 $env:QNET_KEYPAIR_PATH = "P:\GITHUB\qnet\data\keypair.pb"
 
-# Start super peer
 cargo run --release -p stealth-browser -- --helper-mode super
 ```
 
@@ -156,95 +149,86 @@ cargo run --release -p stealth-browser -- --helper-mode super
 ```
 [INFO] stealth-browser starting
 [INFO] config loaded port=1088 status_port=8088 mode=Direct helper_mode=Super
-[INFO] helper mode features helper_mode=Super features="all features"
 [INFO] Loaded persistent keypair peer_id=12D3KooW...
 [INFO] status server listening status_addr=0.0.0.0:8088
 [INFO] starting SOCKS5 server addr=0.0.0.0:1088 mode=Direct
 [INFO] mesh: Listening on /ip4/0.0.0.0/tcp/4001
-[INFO] mesh: local_peer_id=12D3KooW...
 ```
 
 **Keep this terminal running!**
 
 ### 4.2 Verify Local Access
 
-Open a new terminal:
 ```powershell
-# Test status endpoint
 Invoke-RestMethod http://127.0.0.1:8088/status | ConvertTo-Json
-
-# Test ping
 Invoke-RestMethod http://127.0.0.1:8088/ping
 ```
 
 ---
 
-## Part 5: Create InstaTunnel Tunnels
+## Part 5: Create Tunnels
 
-You need **3 tunnels** for full super peer functionality:
-
-| Port | Service | Tunnel Type | Purpose |
-|------|---------|-------------|---------|
-| 8088 | Status API | HTTP | Web status page, directory endpoints |
-| 1088 | SOCKS5 Proxy | TCP | Client proxy connections |
-| 4001 | libp2p | TCP | Mesh peer connections |
-
-### 5.1 Create Status API Tunnel (HTTP)
+### 5.1 Status API Tunnel (InstaTunnel - HTTP)
 
 Open **Terminal 2**:
 ```powershell
-# Create HTTP tunnel with password protection
-instatunnel http 8088 --name qnet-status --password "YourSecurePassword123"
+# Basic tunnel
+instatunnel 8088 -s qnet-status
+
+# With password protection (recommended)
+instatunnel 8088 -s qnet-status --password "YOUR_PASSWORD"
 ```
 
 **Output:**
 ```
-✓ Tunnel created
-✓ URL: https://qnet-status.instatunnel.my
-✓ Password protected
+✅ Tunnel created: https://qnet-status.instatunnel.my
 ```
 
 **Record this URL:** `https://qnet-status.instatunnel.my`
 
-### 5.2 Create SOCKS5 Proxy Tunnel (TCP)
+### 5.2 SOCKS5 Proxy Tunnel (Bore - TCP)
 
 Open **Terminal 3**:
 ```powershell
-# Create TCP tunnel for SOCKS5 proxy
-instatunnel tcp 1088 --name qnet-socks
+# Using public bore.pub server (no setup required)
+bore local 1088 --to bore.pub
+
+# Or with self-hosted server + authentication
+bore local 1088 --to your-vps.example.com --secret $env:BORE_SECRET
 ```
 
 **Output:**
 ```
-✓ TCP Tunnel created  
-✓ Address: tcp://qnet-socks.instatunnel.my:12345
+2024-01-15T10:30:00.000Z INFO bore::client > listening at bore.pub:43210
 ```
 
-**Record this address:** `qnet-socks.instatunnel.my:12345` (port will vary)
+**Record this address:** `bore.pub:43210` (port will vary each time)
 
-### 5.3 Create libp2p Mesh Tunnel (TCP)
+### 5.3 libp2p Mesh Tunnel (Bore - TCP)
 
 Open **Terminal 4**:
 ```powershell
-# Create TCP tunnel for libp2p mesh
-instatunnel tcp 4001 --name qnet-mesh
+# Using public bore.pub server
+bore local 4001 --to bore.pub
+
+# Or with self-hosted server
+bore local 4001 --to your-vps.example.com --secret $env:BORE_SECRET
 ```
 
 **Output:**
 ```
-✓ TCP Tunnel created
-✓ Address: tcp://qnet-mesh.instatunnel.my:23456
+2024-01-15T10:31:00.000Z INFO bore::client > listening at bore.pub:43211
 ```
 
-**Record this address:** `qnet-mesh.instatunnel.my:23456` (port will vary)
+**Record this address:** `bore.pub:43211` (port will vary each time)
 
 ### 5.4 Summary of Your Tunnels
 
-| Service | Local Port | InstaTunnel URL |
-|---------|------------|-----------------|
+| Service | Local Port | Public Address |
+|---------|------------|----------------|
 | Status API | 8088 | `https://qnet-status.instatunnel.my` |
-| SOCKS5 | 1088 | `tcp://qnet-socks.instatunnel.my:<PORT>` |
-| libp2p | 4001 | `tcp://qnet-mesh.instatunnel.my:<PORT>` |
+| SOCKS5 | 1088 | `bore.pub:<PORT>` (from output) |
+| libp2p | 4001 | `bore.pub:<PORT>` (from output) |
 
 ---
 
@@ -260,16 +244,22 @@ Open `crates/core-mesh/src/discovery.rs` and find `hardcoded_operator_nodes()`:
 pub fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
     vec![
         OperatorNode {
-            peer_id: "12D3KooWYourPeerIdFromStep3".to_string(),
-            multiaddr: "/dns4/qnet-mesh.instatunnel.my/tcp/23456".to_string(),
+            peer_id: "YOUR_PEER_ID_HERE".to_string(),
+            multiaddr: "/ip4/BORE_SERVER_IP/tcp/BORE_PORT".to_string(),
         },
     ]
 }
 ```
 
 **Replace:**
-- `12D3KooWYourPeerIdFromStep3` → Your actual peer ID from keypair generation
-- `23456` → The actual port from your libp2p tunnel output
+- `YOUR_PEER_ID_HERE` → Your peer ID from keypair generation
+- `BORE_SERVER_IP` → IP of bore server (e.g., `bore.pub` resolves to an IP)
+- `BORE_PORT` → The port from your libp2p bore tunnel output
+
+**Example with bore.pub:**
+```rust
+multiaddr: "/dns4/bore.pub/tcp/43211".to_string(),
+```
 
 ### 6.2 Rebuild After Changes
 
@@ -283,17 +273,11 @@ cargo build --release -p stealth-browser
 
 ### 7.1 Test Status API
 
-From your phone (on mobile data, NOT WiFi) or any external device:
+From your phone (on mobile data) or any external device:
 
-**Browser test:**
-1. Open: `https://qnet-status.instatunnel.my`
-2. Enter password when prompted: `YourSecurePassword123`
-3. You should see the QNet status page
-
-**Command line test:**
 ```bash
-# From any external machine
-curl -u ":YourSecurePassword123" https://qnet-status.instatunnel.my/ping
+# If password protected
+curl https://qnet-status.instatunnel.my/ping
 
 # Expected: {"ok":true,"ts":1234567890}
 ```
@@ -301,122 +285,111 @@ curl -u ":YourSecurePassword123" https://qnet-status.instatunnel.my/ping
 ### 7.2 Test SOCKS5 Proxy
 
 ```bash
-# Replace 12345 with your actual SOCKS tunnel port
-curl --socks5-hostname qnet-socks.instatunnel.my:12345 https://httpbin.org/ip
+# Replace with your actual bore port
+curl --socks5-hostname bore.pub:43210 https://httpbin.org/ip
 
-# Expected: {"origin": "YOUR_HOME_IP"}
+# Expected: {"origin": "YOUR_IP"}
 ```
 
-### 7.3 Test Directory API
+### 7.3 Test libp2p Connection
 
-```bash
-curl -u ":YourSecurePassword123" https://qnet-status.instatunnel.my/api/relays/by-country
-
-# Expected: {} (empty initially, or list of registered relays)
-```
+Run a client on another machine pointing to your bore tunnel address.
 
 ---
 
-## Part 8: Test Client Connections
+## Part 8: Self-Hosting Bore Server (Optional)
 
-### 8.1 Run Client on Another Machine
+For stable, predictable ports, run your own bore server on a VPS.
 
-On a different computer (or the same one with different ports):
+### 8.1 On Your VPS
 
-1. **Update discovery.rs** with your InstaTunnel addresses (as shown in Part 6)
+```bash
+# Install bore
+cargo install bore-cli
 
-2. **Build and run client:**
+# Run server with authentication and restricted port range
+bore server \
+  --min-port 40000 \
+  --max-port 41000 \
+  --secret "YOUR_BORE_SECRET"
+```
+
+**Firewall rules needed:**
+- TCP 7835 (bore control port)
+- TCP 40000-41000 (tunnel ports)
+
+### 8.2 On Your Home Machine
+
 ```powershell
-cd P:\GITHUB\qnet
-$env:STEALTH_SINGLE_INSTANCE_OVERRIDE = "1"
-cargo run -p stealth-browser -- --socks-port 1089 --status-port 8089
+$env:BORE_SECRET = "YOUR_BORE_SECRET"
+
+# Fixed ports for predictable addresses
+bore local 1088 --to your-vps.example.com --port 40001 --secret $env:BORE_SECRET
+bore local 4001 --to your-vps.example.com --port 40002 --secret $env:BORE_SECRET
 ```
 
-3. **Watch logs for connection:**
-```
-[INFO] mesh: Dialing /dns4/qnet-mesh.instatunnel.my/tcp/23456
-[INFO] mesh: Connection established peer_id=12D3KooW...
-```
-
-### 8.2 Verify Mesh Connection
-
-Check your super peer's status:
-```powershell
-Invoke-RestMethod http://127.0.0.1:8088/status | ConvertTo-Json
-```
-
-Look for `peers_online` > 0.
+Now your addresses are always:
+- SOCKS5: `your-vps.example.com:40001`
+- libp2p: `your-vps.example.com:40002`
 
 ---
 
 ## Part 9: Convenience Scripts
 
-### 9.1 Start All Tunnels Script
+### 9.1 Start All Tunnels
 
-Create `P:\GITHUB\qnet\scripts\start-tunnels.ps1`:
+Create `scripts/start-tunnels.ps1`:
 
 ```powershell
-# QNet InstaTunnel Startup Script
+# QNet Tunnel Startup Script
+# NOTE: Set your secrets as environment variables before running!
+# $env:BORE_SECRET = "..." (if using self-hosted bore)
+
 param(
-    [string]$Password = "ChangeThisPassword123"
+    [string]$BoreServer = "bore.pub",
+    [string]$StatusSubdomain = "qnet-status"
 )
 
-Write-Host "Starting QNet InstaTunnel tunnels..." -ForegroundColor Cyan
+Write-Host "Starting QNet tunnels..." -ForegroundColor Cyan
 
-# Start tunnels as background jobs
-$statusJob = Start-Job -Name "qnet-status" -ScriptBlock {
-    param($pwd)
-    instatunnel http 8088 --name qnet-status --password $pwd
-} -ArgumentList $Password
+# Start InstaTunnel for Status API (HTTP)
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel 8088 -s $StatusSubdomain"
 
-$socksJob = Start-Job -Name "qnet-socks" -ScriptBlock {
-    instatunnel tcp 1088 --name qnet-socks
-}
+# Start Bore for SOCKS5 (TCP)
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 1088 --to $BoreServer"
 
-$meshJob = Start-Job -Name "qnet-mesh" -ScriptBlock {
-    instatunnel tcp 4001 --name qnet-mesh
-}
+# Start Bore for libp2p (TCP)
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 4001 --to $BoreServer"
 
-# Wait a moment for tunnels to establish
-Start-Sleep -Seconds 3
-
-# Show status
-Write-Host "`nTunnel Jobs:" -ForegroundColor Green
-Get-Job | Where-Object { $_.Name -like "qnet-*" } | Format-Table Name, State
-
-Write-Host "`nTo view tunnel URLs:" -ForegroundColor Yellow
-Write-Host "  Receive-Job -Name qnet-status -Keep"
-Write-Host "  Receive-Job -Name qnet-socks -Keep"
-Write-Host "  Receive-Job -Name qnet-mesh -Keep"
-
-Write-Host "`nTo stop all tunnels:" -ForegroundColor Yellow
-Write-Host "  Get-Job -Name 'qnet-*' | Stop-Job; Get-Job -Name 'qnet-*' | Remove-Job"
-```
-
-**Usage:**
-```powershell
-.\scripts\start-tunnels.ps1 -Password "MySecurePassword"
+Write-Host "Tunnels starting in separate windows..." -ForegroundColor Green
+Write-Host "Check each window for the assigned public addresses!" -ForegroundColor Yellow
 ```
 
 ### 9.2 Full Startup Script
 
-Create `P:\GITHUB\qnet\scripts\start-home-superpeer.ps1`:
+Create `scripts/start-home-superpeer.ps1`:
 
 ```powershell
 # QNet Home Super Peer Full Startup
 param(
-    [string]$Password = "ChangeThisPassword123"
+    [string]$BoreServer = "bore.pub"
 )
 
 $ErrorActionPreference = "Stop"
 
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
-║           QNet Home Super Peer (InstaTunnel Mode)             ║
+║           QNet Home Super Peer                                ║
+║           Bore (TCP) + InstaTunnel (HTTP)                     ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Cyan
 
 # Check prerequisites
+if (-not (Get-Command bore -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: Bore not installed. Run: cargo install bore-cli" -ForegroundColor Red
+    exit 1
+}
+
 if (-not (Get-Command instatunnel -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: InstaTunnel not installed. Run: npm install -g instatunnel" -ForegroundColor Red
     exit 1
@@ -433,18 +406,18 @@ if (-not (Test-Path $env:QNET_KEYPAIR_PATH)) {
     cargo run -p stealth-browser -- --generate-keypair $env:QNET_KEYPAIR_PATH
 }
 
-Write-Host "`nStarting InstaTunnel tunnels..." -ForegroundColor Cyan
+Write-Host "`nStarting tunnels..." -ForegroundColor Cyan
 
 # Start tunnels in new windows
-Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel http 8088 --name qnet-status --password '$Password'"
-Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel tcp 1088 --name qnet-socks"
-Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel tcp 4001 --name qnet-mesh"
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel 8088 -s qnet-status"
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 1088 --to $BoreServer"
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 4001 --to $BoreServer"
 
 Write-Host "Waiting for tunnels to establish..." -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
 Write-Host "`nStarting QNet Super Peer..." -ForegroundColor Cyan
-Write-Host "Check the tunnel windows for your public URLs!" -ForegroundColor Green
+Write-Host "Check the tunnel windows for your public addresses!" -ForegroundColor Green
 
 # Start super peer (this blocks)
 cargo run --release -p stealth-browser -- --helper-mode super
@@ -454,78 +427,50 @@ cargo run --release -p stealth-browser -- --helper-mode super
 
 ## Part 10: Monitoring & Debugging
 
-### 10.1 InstaTunnel Dashboard
+### 10.1 Check Tunnel Status
 
-InstaTunnel provides a web dashboard for request inspection:
+**Bore tunnels:** Each bore terminal shows connection activity
 
-1. Open: https://dashboard.instatunnel.my
-2. View real-time request/response logs
-3. Inspect headers, bodies, status codes
-4. Replay failed requests for debugging
-
-### 10.2 Check Tunnel Status
-
+**InstaTunnel:** 
 ```powershell
-# View all tunnel jobs
-Get-Job -Name "qnet-*"
-
-# View specific tunnel output
-Receive-Job -Name qnet-status -Keep
-Receive-Job -Name qnet-mesh -Keep
+instatunnel --list
+instatunnel --logs
 ```
 
-### 10.3 Monitor Super Peer Logs
-
-The super peer terminal shows real-time connection info:
-- Incoming mesh connections
-- Directory registrations
-- Exit node requests
-- Ping/keepalive events
-
-### 10.4 Check Mesh Health
+### 10.2 Monitor Super Peer
 
 ```powershell
-# Local status
 Invoke-RestMethod http://127.0.0.1:8088/status | ConvertTo-Json -Depth 4
-
-# Remote status (via tunnel)
-curl -u ":YourPassword" https://qnet-status.instatunnel.my/status
 ```
 
 ---
 
 ## Part 11: Troubleshooting
 
-### Tunnel Issues
+### Bore Issues
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| "Tunnel name already in use" | Previous session still active | Wait 5 min or use different name |
+| "Connection refused" to bore.pub | Firewall blocking outbound 7835 | Check firewall rules |
+| Port already in use | Previous tunnel still running | Kill old bore processes |
+| "authentication failed" | Wrong secret | Check BORE_SECRET matches server |
+
+### InstaTunnel Issues
+
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| "Subdomain taken" | Name already in use | Choose different subdomain |
 | Tunnel disconnects | 24-hour session limit | Restart tunnel |
-| "Connection refused" | Super peer not running | Start super peer first |
-| Slow connections | Network latency | Normal (~45ms overhead) |
-
-### Mesh Connection Issues
-
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| 0 peers connected | No clients connecting | Normal if just started |
-| Dial failures | Wrong multiaddr in discovery.rs | Check hostname and port |
-| Peer ID mismatch | Using wrong keypair | Regenerate or use correct path |
 
 ### Common Fixes
 
 ```powershell
-# Restart all tunnels
-Get-Job -Name "qnet-*" | Stop-Job
-Get-Job -Name "qnet-*" | Remove-Job
-.\scripts\start-tunnels.ps1
+# Kill all tunnel processes
+Get-Process bore -ErrorAction SilentlyContinue | Stop-Process
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process
 
-# Check if ports are in use
-netstat -an | findstr "1088 8088 4001"
-
-# Kill orphaned processes
-Get-Process stealth-browser -ErrorAction SilentlyContinue | Stop-Process
+# Check what's using ports
+netstat -an | findstr "1088 8088 4001 7835"
 ```
 
 ---
@@ -534,74 +479,38 @@ Get-Process stealth-browser -ErrorAction SilentlyContinue | Stop-Process
 
 ### 12.1 Development/Testing Only
 
-⚠️ **InstaTunnel is for development/testing only, NOT production!**
+⚠️ **This setup is for development/testing only, NOT production!**
 
-Reasons:
-1. **Metadata exposure**: InstaTunnel can see connection patterns and timing
-2. **Centralization**: Traffic routes through InstaTunnel servers
-3. **No censorship resistance**: Standard HTTPS, easily blocked
-4. **Session limits**: 24-hour tunnels require daily restarts
+- **InstaTunnel**: Third-party can see HTTP traffic patterns
+- **bore.pub**: Public server, anyone can use it
+- **No encryption**: Bore forwards raw TCP without encryption
 
-### 12.2 Security Best Practices
+### 12.2 For Production
 
-**Always use password protection:**
-```powershell
-# Generate random password
-$password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 20 | ForEach-Object { [char]$_ })
-instatunnel http 8088 --name qnet-status --password $password
-Write-Host "Password: $password"
-```
+Use a proper VPS with:
+- Real public IP
+- Self-hosted bore server with authentication
+- Or no tunneling at all
 
-**Rotate subdomain names:**
-```powershell
-$date = Get-Date -Format "yyyyMMdd"
-instatunnel http 8088 --name "qnet-status-$date"
-```
-
-**Monitor access:**
-- Check InstaTunnel dashboard for unexpected requests
-- Review super peer logs for suspicious activity
-
-### 12.3 Production Deployment
-
-For 24/7 production super peers, use a proper VPS:
-- See `droplet-testing.md` for DigitalOcean deployment
-- Cost: ~$6/month for basic droplet
-- Benefits: Real public IP, no tunnels, full control
+See `droplet-testing.md` for cloud deployment.
 
 ---
 
 ## Part 13: Session Management
 
-### 13.1 Handling 24-Hour Limit
+### Bore Sessions
 
-InstaTunnel free tier disconnects after 24 hours. Options:
+Bore tunnels persist until:
+- You press Ctrl+C
+- Network disconnection
+- bore.pub server restarts
 
-**Option A: Manual restart (daily)**
-```powershell
-# Stop old tunnels
-Get-Job -Name "qnet-*" | Stop-Job; Get-Job -Name "qnet-*" | Remove-Job
+**Ports are dynamic** - you get a new port each time you start a tunnel (unless using `--port` with self-hosted server).
 
-# Start fresh tunnels
-.\scripts\start-tunnels.ps1
-```
+### InstaTunnel Sessions
 
-**Option B: Scheduled task (automatic)**
-```powershell
-# Create daily restart task
-$action = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument "-File P:\GITHUB\qnet\scripts\start-tunnels.ps1"
-$trigger = New-ScheduledTaskTrigger -Daily -At "3:00AM"
-Register-ScheduledTask -TaskName "QNet Tunnel Restart" -Action $action -Trigger $trigger
-```
-
-**Option C: Upgrade to Pro ($5/mo)**
-- Unlimited session duration
-- 10 concurrent tunnels
-- Custom domains
-
-### 13.2 Keeping Super Peer Running
-
-The super peer itself doesn't have session limits. Only tunnels need restarting.
+- 24-hour limit on free tier
+- Restart tunnel daily
 
 ---
 
@@ -609,92 +518,35 @@ The super peer itself doesn't have session limits. Only tunnels need restarting.
 
 | Task | Command |
 |------|---------|
-| Install InstaTunnel | `npm install -g instatunnel` |
+| Install bore | `cargo install bore-cli` |
+| Install instatunnel | `npm install -g instatunnel` |
 | Start super peer | `cargo run --release -p stealth-browser -- --helper-mode super` |
-| Tunnel status API | `instatunnel http 8088 --name qnet-status --password "xxx"` |
-| Tunnel SOCKS5 | `instatunnel tcp 1088 --name qnet-socks` |
-| Tunnel libp2p | `instatunnel tcp 4001 --name qnet-mesh` |
+| Tunnel Status API | `instatunnel 8088 -s qnet-status` |
+| Tunnel SOCKS5 | `bore local 1088 --to bore.pub` |
+| Tunnel libp2p | `bore local 4001 --to bore.pub` |
 | Check local status | `Invoke-RestMethod http://127.0.0.1:8088/status` |
-| Check tunnel status | `Receive-Job -Name qnet-status -Keep` |
-| Stop all tunnels | `Get-Job -Name "qnet-*" \| Stop-Job; Get-Job -Name "qnet-*" \| Remove-Job` |
 | Generate keypair | `cargo run -p stealth-browser -- --generate-keypair data/keypair.pb` |
 
 ---
 
 ## Next Steps
 
-After successful home testing with InstaTunnel:
+After successful home testing:
 
-1. **Validate stability**: Run for 24-48 hours (restart tunnels daily)
-2. **Test reconnection**: Stop/start super peer, verify clients reconnect
-3. **Load test**: Connect multiple clients simultaneously
-4. **Deploy to droplet**: Follow `droplet-testing.md` for production deployment
-
----
-
-## Appendix A: Fallback Options
-
-### ngrok (Alternative)
-
-If InstaTunnel is unavailable:
-
-```powershell
-# Install
-choco install ngrok
-# or download from https://ngrok.com/download
-
-# Authenticate (required)
-ngrok config add-authtoken YOUR_AUTH_TOKEN
-
-# Create tunnels (one at a time on free tier)
-ngrok http 8088
-```
-
-**Limitations:**
-- 2-hour session limit (vs InstaTunnel's 24 hours)
-- Only 1 tunnel on free tier (vs InstaTunnel's 3)
-- Account required
-
-### Cloudflare Tunnel (Alternative)
-
-For unlimited sessions (requires Cloudflare account + DNS):
-
-```powershell
-# Install cloudflared
-choco install cloudflared
-
-# Authenticate
-cloudflared tunnel login
-
-# Create tunnel
-cloudflared tunnel create qnet-home
-cloudflared tunnel route dns qnet-home qnet.yourdomain.com
-
-# Run tunnel
-cloudflared tunnel run --url http://localhost:8088 qnet-home
-```
-
-**Benefits:**
-- Unlimited session duration
-- Free forever
-- DDoS protection
-
-**Drawbacks:**
-- Requires domain with Cloudflare DNS
-- More complex setup (~10 minutes)
-- No request inspection dashboard
+1. **Validate stability**: Run for several hours, monitor reconnections
+2. **Test client connections**: Connect from another machine via bore tunnels
+3. **Deploy to VPS**: Follow `droplet-testing.md` for production deployment
 
 ---
 
-## Appendix B: Port Forwarding (Non-CGNAT Users)
+## Appendix A: Tool Comparison
 
-If you have a real public IP (router WAN IP = public IP), you can use traditional port forwarding instead of InstaTunnel. This requires:
-
-1. Router admin access
-2. Static/reserved IP for your laptop
-3. Windows Firewall rules
-4. Three port forwarding rules (1088, 8088, 4001)
-
-For detailed port forwarding instructions, see the archived version in git history or search online for "[Your Router Model] port forwarding guide".
-
-InstaTunnel is still recommended even for non-CGNAT users due to simpler setup.
+| Feature | Bore | InstaTunnel | ngrok |
+|---------|------|-------------|-------|
+| **Protocol** | Raw TCP only | HTTP/HTTPS only | HTTP + TCP |
+| **Self-hostable** | ✅ Yes | ❌ No | ✅ Yes (paid) |
+| **Free tier** | Unlimited (bore.pub) | 24h sessions, 3 tunnels | 2h sessions, 1 tunnel |
+| **Fixed ports** | ✅ With self-hosted | ❌ Random subdomains | ✅ Paid only |
+| **Authentication** | HMAC shared secret | API key | Auth token |
+| **Encryption** | ❌ None (app layer) | ✅ TLS | ✅ TLS |
+| **Best for** | SOCKS5, libp2p, SSH | Web APIs, webhooks | General purpose |
