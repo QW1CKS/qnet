@@ -137,7 +137,7 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     vec![
         // Droplet (always available)
         BootstrapNode::new(
-            "12D3KooWHQgjat3MaVsArYHupRKEnkfMdC1AVp154v3PARergcbN"
+            "12D3KooWM7WLwXkvU7pkewNdCjS2YFRyjEryrqP5g7ii4tbW8bsG"
                 .parse()
                 .unwrap(), // Droplet peer ID (NYC3 region, Dec 2025)
             "/ip4/64.226.125.167/tcp/4001".parse().unwrap(),
