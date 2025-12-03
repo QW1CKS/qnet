@@ -43,11 +43,11 @@ Invoke-RestMethod https://ifconfig.me
 ```
 
 **Result interpretation:**
-- ✅ **IPs match** → You have a real public IP, proceed with guide
+- ✅ **IPs match** → You have a real public IP, proceed to Part 2 (Port Forwarding)
 - ❌ **IPs don't match** → You're behind CGNAT, options:
   - Contact ISP to request a real public IP (may cost extra)
   - Use a VPS/droplet instead (skip to `droplet-testing.md`)
-  - Use a tunneling service like ngrok or Cloudflare Tunnel (advanced)
+  - **Use InstaTunnel** (recommended for CGNAT) → Skip to **Part 10: InstaTunnel for CGNAT**
 
 ### 1.2 Check for Double NAT
 
@@ -444,11 +444,12 @@ Some routers disconnect idle connections. Options:
 
 | Limitation | Impact | Mitigation |
 |------------|--------|------------|
+| **CGNAT** | Port forwarding impossible | Use InstaTunnel (see Part 10) |
 | Dynamic IP | Public IP may change | Use DDNS service (No-IP, DuckDNS) |
 | Uptime | Laptop may restart, lose power | Use UPS, disable updates during testing |
 | Bandwidth | Home upload speeds often limited | Monitor with `netstat` |
 | ISP TOS | Some ISPs prohibit servers | Check ISP terms, use low bandwidth |
-| NAT/Firewall | Complex setup | Follow this guide carefully |
+| NAT/Firewall | Complex setup | Follow this guide or use InstaTunnel |
 | Security | Home network exposed | Use firewall, monitor logs |
 
 ---
@@ -487,6 +488,197 @@ Some routers disconnect idle connections. Options:
 
 ---
 
+## Part 10: InstaTunnel for CGNAT Users
+
+If you're behind CGNAT (your router's WAN IP doesn't match your public IP), InstaTunnel provides a zero-configuration solution to expose your local super peer to the internet.
+
+### 10.1 Why InstaTunnel?
+
+| Feature | InstaTunnel | ngrok | Cloudflare Tunnel |
+|---------|-------------|-------|-------------------|
+| **Free Session Duration** | 24 hours | 2 hours | Unlimited |
+| **Free Concurrent Tunnels** | 3 | 1 | Unlimited |
+| **Custom Subdomains (Free)** | ✅ Yes | ❌ No | ✅ Yes |
+| **Setup Time** | < 30 seconds | ~5 minutes | ~10 minutes |
+| **Account Required** | Optional | Required | Required |
+| **Cost (Pro tier)** | $5/mo | $10/mo | Free |
+
+InstaTunnel is ideal for QNet development because:
+- **24-hour sessions** (vs ngrok's 2-hour limit)
+- **3 free tunnels** (enough for Status API, SOCKS5, libp2p)
+- **Custom subdomains** for consistent URLs
+- **Zero configuration** required
+
+### 10.2 Installation
+
+**Option 1: NPM (Recommended)**
+```powershell
+npm install -g instatunnel
+```
+
+**Option 2: Direct Download**
+1. Visit: https://www.instatunnel.my/downloads
+2. Download Windows installer
+3. Run installer and add to PATH
+
+**Verify installation:**
+```powershell
+instatunnel --version
+```
+
+### 10.3 Expose QNet Super Peer
+
+**Step 1: Start your super peer locally**
+```powershell
+cd P:\GITHUB\qnet
+$env:RUST_LOG = "info"
+cargo run -p stealth-browser -- --helper-mode super
+```
+
+Wait for startup messages confirming ports 1088, 8088, and 4001 are listening.
+
+**Step 2: Create tunnels (in separate terminals)**
+
+**Terminal 2: Status API (HTTP)**
+```powershell
+instatunnel http 8088 --name qnet-status --password "YourSecurePassword123"
+# Output: https://qnet-status.instatunnel.my
+```
+
+**Terminal 3: SOCKS5 Proxy (TCP)**
+```powershell
+instatunnel tcp 1088 --name qnet-socks
+# Output: tcp://qnet-socks.instatunnel.my:12345
+```
+
+**Terminal 4: libp2p Mesh (TCP)**
+```powershell
+instatunnel tcp 4001 --name qnet-mesh
+# Output: tcp://qnet-mesh.instatunnel.my:23456
+```
+
+### 10.4 Update Hardcoded Operator Nodes
+
+For mesh connections via InstaTunnel, you need to extract the TCP tunnel address.
+
+**Get the tunnel port:**
+When you run `instatunnel tcp 4001`, note the output port (e.g., `tcp://qnet-mesh.instatunnel.my:23456`).
+
+**Update discovery.rs:**
+```rust
+pub fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
+    vec![
+        OperatorNode {
+            // Use the InstaTunnel hostname and port
+            peer_id: "<YOUR_PEER_ID>".to_string(),
+            multiaddr: "/dns4/qnet-mesh.instatunnel.my/tcp/23456".to_string(),
+        },
+    ]
+}
+```
+
+**Note:** Replace `23456` with the actual port from your InstaTunnel TCP tunnel output.
+
+### 10.5 Testing via InstaTunnel
+
+**Test Status API (from any device):**
+```powershell
+# From phone on mobile data, another laptop, etc.
+curl https://qnet-status.instatunnel.my/ping -u ":YourSecurePassword123"
+# Expected: {"ok":true,"ts":...}
+```
+
+**Test Full Status:**
+```powershell
+curl https://qnet-status.instatunnel.my/status -u ":YourSecurePassword123"
+```
+
+**Test SOCKS5 Proxy:**
+```powershell
+# Use the TCP tunnel address
+curl.exe --socks5-hostname qnet-socks.instatunnel.my:12345 https://httpbin.org/ip
+# Should return your laptop's public IP
+```
+
+### 10.6 Request Inspection (Debugging)
+
+InstaTunnel provides a web dashboard for debugging:
+
+1. Open: https://dashboard.instatunnel.my
+2. View real-time request logs
+3. Inspect headers, bodies, response codes
+4. Replay failed requests with modifications
+
+This is invaluable for debugging relay registration issues.
+
+### 10.7 Running Multiple Tunnels Script
+
+Create a PowerShell script to start all tunnels at once:
+
+```powershell
+# File: start-tunnels.ps1
+$password = "YourSecurePassword123"
+
+# Start tunnels in background jobs
+Start-Job -Name "qnet-status" -ScriptBlock { instatunnel http 8088 --name qnet-status --password $using:password }
+Start-Job -Name "qnet-socks" -ScriptBlock { instatunnel tcp 1088 --name qnet-socks }
+Start-Job -Name "qnet-mesh" -ScriptBlock { instatunnel tcp 4001 --name qnet-mesh }
+
+Write-Host "Tunnels started. Check with: Get-Job"
+Write-Host "View output: Receive-Job -Name qnet-status"
+Write-Host "Stop all: Get-Job | Stop-Job; Get-Job | Remove-Job"
+```
+
+### 10.8 InstaTunnel Limitations
+
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| 24-hour session limit | Tunnel disconnects daily | Restart tunnels, or upgrade to Pro ($5/mo) |
+| 3 concurrent tunnels | Sufficient for QNet (3 ports) | Pro tier offers 10 tunnels |
+| Centralized service | Metadata visible to InstaTunnel | Use only for dev/testing, not production |
+| No UDP support | QUIC not supported | Use TCP for now |
+| Latency overhead | ~45ms added | Acceptable for testing |
+
+### 10.9 Security Considerations
+
+⚠️ **Development/Testing Only**
+
+InstaTunnel should NOT be used for production super peers because:
+1. **Metadata exposure**: InstaTunnel can see connection patterns
+2. **Centralization**: Defeats QNet's decentralized purpose
+3. **No censorship resistance**: HTTPS easily blocked
+
+**Always use password protection:**
+```powershell
+instatunnel http 8088 --name qnet-status --password "$(Get-Random -Maximum 999999999)"
+```
+
+**Rotate subdomains periodically:**
+```powershell
+$date = Get-Date -Format "yyyyMMdd"
+instatunnel http 8088 --name "qnet-status-$date"
+```
+
+### 10.10 Fallback: ngrok
+
+If InstaTunnel is unavailable, use ngrok as backup:
+
+```powershell
+# Install ngrok
+choco install ngrok
+# or download from https://ngrok.com/download
+
+# Authenticate (required)
+ngrok config add-authtoken YOUR_AUTH_TOKEN
+
+# Start tunnel
+ngrok http 8088
+```
+
+Note: ngrok free tier has 2-hour session limits and only 1 tunnel.
+
+---
+
 ## Next Steps
 
 After successful home testing:
@@ -508,3 +700,5 @@ After successful home testing:
 | `Invoke-RestMethod https://ifconfig.me` | Get public IP |
 | `Get-NetFirewallRule -DisplayName "QNet*"` | Check firewall rules |
 | `netstat -an \| findstr "1088 8088 4001"` | Check listening ports |
+| `instatunnel http 8088 --name qnet-status` | Expose status API via tunnel |
+| `instatunnel tcp 4001 --name qnet-mesh` | Expose libp2p via tunnel |
