@@ -1513,6 +1513,11 @@ fn spawn_mesh_discovery(
 
                                 match discovery_event {
                                     DiscoveryBehaviorEvent::Mdns(mdns_event) => {
+                                        // QNET_NO_MDNS=1 disables mDNS discovery (for testing bore tunnels over internet)
+                                        if std::env::var("QNET_NO_MDNS").ok().as_deref() == Some("1") {
+                                            continue; // Skip mDNS events entirely
+                                        }
+
                                         use libp2p::mdns;
                                         match mdns_event {
                                             mdns::Event::Discovered(list) => {

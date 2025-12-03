@@ -132,19 +132,16 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     //     ),
     // ]
 
-    // Direct peering configuration for testing (Dec 1 2025)
-    // One-way connection: Windows behind NAT/firewall, so only Windows connects TO droplet
-    // Droplet is publicly accessible and will accept the connection
-    // Once connected, both nodes can bootstrap via each other
+    // Direct peering configuration for testing (Dec 3 2025)
+    // Home super peer exposed via bore tunnel for testing
     vec![
+        // Droplet (always available)
         BootstrapNode::new(
             "12D3KooWHQgjat3MaVsArYHupRKEnkfMdC1AVp154v3PARergcbN"
                 .parse()
-                .unwrap(), // Droplet peer ID (NYC3 region, Dec 2025) - STABLE via persistent keypair
-            "/ip4/104.248.22.27/tcp/4001".parse().unwrap(),
+                .unwrap(), // Droplet peer ID (NYC3 region, Dec 2025)
+            "/ip4/64.226.125.167/tcp/4001".parse().unwrap(),
         ),
-        // Note: Windows peer removed from seeds because it's not publicly reachable
-        // Windows will connect to droplet, then both discover each other via DHT provider records
     ]
 }
 
