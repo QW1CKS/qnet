@@ -1,22 +1,26 @@
 # QNet Home Super Peer Testing Guide
 
-This guide provides step-by-step instructions for running a QNet super peer on a home laptop/desktop behind CGNAT.
+This guide provides step-by-step instructions for running a QNet super peer on a home laptop/desktop behind CGNAT using **Bore** for TCP tunneling.
 
 ---
 
-## Tunneling Strategy
+## Why Bore?
 
-Different QNet services require different tunnel types:
+**Bore** is a minimal Rust-based TCP tunnel that forwards arbitrary byte streams without protocol inspection. It's perfect for QNet because:
 
-| Port | Service | Protocol | Tunnel Tool | Why |
-|------|---------|----------|-------------|-----|
-| 8088 | Status API | HTTP | InstaTunnel | HTTP-only tool, perfect for web APIs |
-| 1088 | SOCKS5 Proxy | Raw TCP | Bore | Raw TCP tunneling required |
-| 4001 | libp2p Mesh | Raw TCP | Bore | Raw TCP tunneling required |
+- **Raw TCP support** - Works with any protocol (HTTP, SOCKS5, libp2p)
+- **Self-hostable** - Run your own server for stable ports
+- **Free public server** - `bore.pub` available for testing
+- **Simple** - Single binary, ~400 lines of Rust
+- **No account required** - Just run it
 
-**Why two tools?**
-- **InstaTunnel** only supports HTTP/HTTPS - it cannot forward raw TCP protocols like SOCKS5 or libp2p
-- **Bore** is a minimal Rust-based TCP tunnel that forwards arbitrary byte streams without protocol inspection
+| Port | Service | Protocol |
+|------|---------|----------|
+| 8088 | Status API | HTTP |
+| 1088 | SOCKS5 Proxy | Raw TCP |
+| 4001 | libp2p Mesh | Raw TCP |
+
+All three ports tunnel through bore identically.
 
 ---
 
@@ -30,7 +34,6 @@ Different QNet services require different tunnel types:
 
 ### Software Requirements
 - Rust toolchain (`rustup` with stable channel)
-- Node.js and npm (for InstaTunnel)
 - PowerShell 7+ or Windows Terminal
 - Git for Windows
 - QNet source code cloned locally
@@ -61,49 +64,34 @@ Different QNet services require different tunnel types:
 
 ---
 
-## Part 2: Install Tunneling Tools
+## Part 2: Install Bore
 
-### 2.1 Install Bore (for raw TCP)
+### 2.1 Install via Cargo (Recommended)
 
-**Option A: Cargo (recommended)**
 ```powershell
 cargo install bore-cli
 ```
 
-**Option B: Prebuilt binary**
+### 2.2 Alternative: Prebuilt Binary
+
 1. Download from: https://github.com/ekzhang/bore/releases
 2. Extract `bore.exe` to a folder in your PATH (e.g., `C:\Tools\bore\`)
 3. Add to PATH if needed
 
-**Verify installation:**
+### 2.3 Verify Installation
+
 ```powershell
 bore --version
 ```
 
-### 2.2 Install InstaTunnel (for HTTP)
+### 2.4 Configure Secret (If Self-Hosting)
 
 ```powershell
-npm install -g instatunnel
-instatunnel --version
-```
-
-### 2.3 Configure Credentials (DO NOT commit to repo!)
-
-**For InstaTunnel API key:**
-```powershell
-# Create config file (this is in your HOME, not the repo)
-@"
-api_key: "YOUR_API_KEY_HERE"
-"@ | Out-File -FilePath "$HOME\.instatunnel.yaml" -Encoding utf8
-```
-
-**For Bore secret (if self-hosting):**
-```powershell
-# Set as environment variable (not in repo)
+# Set as environment variable (DO NOT commit to repo!)
 $env:BORE_SECRET = "YOUR_SECRET_HERE"
 ```
 
-> ⚠️ **NEVER commit API keys, secrets, or passwords to the repository!**
+> ⚠️ **NEVER commit secrets or passwords to the repository!**
 
 ---
 
@@ -166,35 +154,19 @@ Invoke-RestMethod http://127.0.0.1:8088/ping
 
 ---
 
-## Part 5: Create Tunnels
+## Part 5: Create Bore Tunnels
 
-### 5.1 Status API Tunnel (InstaTunnel - HTTP)
+You need **3 tunnels** - one for each port. Each runs in a separate terminal.
+
+### 5.1 Status API Tunnel (Port 8088)
 
 Open **Terminal 2**:
 ```powershell
-# Basic tunnel
-instatunnel 8088 -s qnet-status
+# Using public bore.pub server
+bore local 8088 --to bore.pub
 
-# With password protection (recommended)
-instatunnel 8088 -s qnet-status --password "YOUR_PASSWORD"
-```
-
-**Output:**
-```
-✅ Tunnel created: https://qnet-status.instatunnel.my
-```
-
-**Record this URL:** `https://qnet-status.instatunnel.my`
-
-### 5.2 SOCKS5 Proxy Tunnel (Bore - TCP)
-
-Open **Terminal 3**:
-```powershell
-# Using public bore.pub server (no setup required)
-bore local 1088 --to bore.pub
-
-# Or with self-hosted server + authentication
-bore local 1088 --to your-vps.example.com --secret $env:BORE_SECRET
+# Or with self-hosted server
+bore local 8088 --to your-vps.example.com --secret $env:BORE_SECRET
 ```
 
 **Output:**
@@ -202,33 +174,45 @@ bore local 1088 --to your-vps.example.com --secret $env:BORE_SECRET
 2024-01-15T10:30:00.000Z INFO bore::client > listening at bore.pub:43210
 ```
 
-**Record this address:** `bore.pub:43210` (port will vary each time)
+**Record this address:** `bore.pub:43210`
 
-### 5.3 libp2p Mesh Tunnel (Bore - TCP)
+### 5.2 SOCKS5 Proxy Tunnel (Port 1088)
 
-Open **Terminal 4**:
+Open **Terminal 3**:
 ```powershell
-# Using public bore.pub server
-bore local 4001 --to bore.pub
-
-# Or with self-hosted server
-bore local 4001 --to your-vps.example.com --secret $env:BORE_SECRET
+bore local 1088 --to bore.pub
 ```
 
 **Output:**
 ```
-2024-01-15T10:31:00.000Z INFO bore::client > listening at bore.pub:43211
+2024-01-15T10:30:01.000Z INFO bore::client > listening at bore.pub:43211
 ```
 
-**Record this address:** `bore.pub:43211` (port will vary each time)
+**Record this address:** `bore.pub:43211`
+
+### 5.3 libp2p Mesh Tunnel (Port 4001)
+
+Open **Terminal 4**:
+```powershell
+bore local 4001 --to bore.pub
+```
+
+**Output:**
+```
+2024-01-15T10:30:02.000Z INFO bore::client > listening at bore.pub:43212
+```
+
+**Record this address:** `bore.pub:43212`
 
 ### 5.4 Summary of Your Tunnels
 
 | Service | Local Port | Public Address |
 |---------|------------|----------------|
-| Status API | 8088 | `https://qnet-status.instatunnel.my` |
+| Status API | 8088 | `bore.pub:<PORT>` (from output) |
 | SOCKS5 | 1088 | `bore.pub:<PORT>` (from output) |
 | libp2p | 4001 | `bore.pub:<PORT>` (from output) |
+
+> **Note:** Ports are assigned dynamically each time you start a tunnel on `bore.pub`. For fixed ports, use a self-hosted bore server (see Part 7).
 
 ---
 
@@ -245,7 +229,7 @@ pub fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
     vec![
         OperatorNode {
             peer_id: "YOUR_PEER_ID_HERE".to_string(),
-            multiaddr: "/ip4/BORE_SERVER_IP/tcp/BORE_PORT".to_string(),
+            multiaddr: "/dns4/bore.pub/tcp/BORE_PORT".to_string(),
         },
     ]
 }
@@ -253,13 +237,7 @@ pub fn hardcoded_operator_nodes() -> Vec<OperatorNode> {
 
 **Replace:**
 - `YOUR_PEER_ID_HERE` → Your peer ID from keypair generation
-- `BORE_SERVER_IP` → IP of bore server (e.g., `bore.pub` resolves to an IP)
 - `BORE_PORT` → The port from your libp2p bore tunnel output
-
-**Example with bore.pub:**
-```rust
-multiaddr: "/dns4/bore.pub/tcp/43211".to_string(),
-```
 
 ### 6.2 Rebuild After Changes
 
@@ -269,39 +247,11 @@ cargo build --release -p stealth-browser
 
 ---
 
-## Part 7: Test External Access
-
-### 7.1 Test Status API
-
-From your phone (on mobile data) or any external device:
-
-```bash
-# If password protected
-curl https://qnet-status.instatunnel.my/ping
-
-# Expected: {"ok":true,"ts":1234567890}
-```
-
-### 7.2 Test SOCKS5 Proxy
-
-```bash
-# Replace with your actual bore port
-curl --socks5-hostname bore.pub:43210 https://httpbin.org/ip
-
-# Expected: {"origin": "YOUR_IP"}
-```
-
-### 7.3 Test libp2p Connection
-
-Run a client on another machine pointing to your bore tunnel address.
-
----
-
-## Part 8: Self-Hosting Bore Server (Optional)
+## Part 7: Self-Hosting Bore Server (Recommended)
 
 For stable, predictable ports, run your own bore server on a VPS.
 
-### 8.1 On Your VPS
+### 7.1 On Your VPS
 
 ```bash
 # Install bore
@@ -318,19 +268,49 @@ bore server \
 - TCP 7835 (bore control port)
 - TCP 40000-41000 (tunnel ports)
 
-### 8.2 On Your Home Machine
+### 7.2 On Your Home Machine
 
 ```powershell
 $env:BORE_SECRET = "YOUR_BORE_SECRET"
 
 # Fixed ports for predictable addresses
-bore local 1088 --to your-vps.example.com --port 40001 --secret $env:BORE_SECRET
-bore local 4001 --to your-vps.example.com --port 40002 --secret $env:BORE_SECRET
+bore local 8088 --to your-vps.example.com --port 40001 --secret $env:BORE_SECRET
+bore local 1088 --to your-vps.example.com --port 40002 --secret $env:BORE_SECRET
+bore local 4001 --to your-vps.example.com --port 40003 --secret $env:BORE_SECRET
 ```
 
 Now your addresses are always:
-- SOCKS5: `your-vps.example.com:40001`
-- libp2p: `your-vps.example.com:40002`
+- Status API: `your-vps.example.com:40001`
+- SOCKS5: `your-vps.example.com:40002`
+- libp2p: `your-vps.example.com:40003`
+
+---
+
+## Part 8: Test External Access
+
+### 8.1 Test Status API
+
+From your phone (on mobile data) or any external device:
+
+```bash
+# Replace with your actual bore port
+curl http://bore.pub:43210/ping
+
+# Expected: {"ok":true,"ts":1234567890}
+```
+
+### 8.2 Test SOCKS5 Proxy
+
+```bash
+# Replace with your actual bore port
+curl --socks5-hostname bore.pub:43211 https://httpbin.org/ip
+
+# Expected: {"origin": "YOUR_IP"}
+```
+
+### 8.3 Test libp2p Connection
+
+Run a client on another machine pointing to your bore tunnel address.
 
 ---
 
@@ -341,28 +321,22 @@ Now your addresses are always:
 Create `scripts/start-tunnels.ps1`:
 
 ```powershell
-# QNet Tunnel Startup Script
-# NOTE: Set your secrets as environment variables before running!
-# $env:BORE_SECRET = "..." (if using self-hosted bore)
+# QNet Bore Tunnel Startup Script
+# NOTE: Set BORE_SECRET as environment variable if using self-hosted server
 
 param(
-    [string]$BoreServer = "bore.pub",
-    [string]$StatusSubdomain = "qnet-status"
+    [string]$BoreServer = "bore.pub"
 )
 
-Write-Host "Starting QNet tunnels..." -ForegroundColor Cyan
+Write-Host "Starting QNet bore tunnels..." -ForegroundColor Cyan
 
-# Start InstaTunnel for Status API (HTTP)
-Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel 8088 -s $StatusSubdomain"
-
-# Start Bore for SOCKS5 (TCP)
+# Start bore tunnels in separate windows
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 8088 --to $BoreServer"
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 1088 --to $BoreServer"
-
-# Start Bore for libp2p (TCP)
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 4001 --to $BoreServer"
 
 Write-Host "Tunnels starting in separate windows..." -ForegroundColor Green
-Write-Host "Check each window for the assigned public addresses!" -ForegroundColor Yellow
+Write-Host "Check each window for the assigned public ports!" -ForegroundColor Yellow
 ```
 
 ### 9.2 Full Startup Script
@@ -379,19 +353,13 @@ $ErrorActionPreference = "Stop"
 
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
-║           QNet Home Super Peer                                ║
-║           Bore (TCP) + InstaTunnel (HTTP)                     ║
+║           QNet Home Super Peer (Bore Tunnels)                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Cyan
 
 # Check prerequisites
 if (-not (Get-Command bore -ErrorAction SilentlyContinue)) {
     Write-Host "ERROR: Bore not installed. Run: cargo install bore-cli" -ForegroundColor Red
-    exit 1
-}
-
-if (-not (Get-Command instatunnel -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: InstaTunnel not installed. Run: npm install -g instatunnel" -ForegroundColor Red
     exit 1
 }
 
@@ -406,10 +374,10 @@ if (-not (Test-Path $env:QNET_KEYPAIR_PATH)) {
     cargo run -p stealth-browser -- --generate-keypair $env:QNET_KEYPAIR_PATH
 }
 
-Write-Host "`nStarting tunnels..." -ForegroundColor Cyan
+Write-Host "`nStarting bore tunnels..." -ForegroundColor Cyan
 
 # Start tunnels in new windows
-Start-Process pwsh -ArgumentList "-NoExit", "-Command", "instatunnel 8088 -s qnet-status"
+Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 8088 --to $BoreServer"
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 1088 --to $BoreServer"
 Start-Process pwsh -ArgumentList "-NoExit", "-Command", "bore local 4001 --to $BoreServer"
 
@@ -417,7 +385,7 @@ Write-Host "Waiting for tunnels to establish..." -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
 Write-Host "`nStarting QNet Super Peer..." -ForegroundColor Cyan
-Write-Host "Check the tunnel windows for your public addresses!" -ForegroundColor Green
+Write-Host "Check the tunnel windows for your public ports!" -ForegroundColor Green
 
 # Start super peer (this blocks)
 cargo run --release -p stealth-browser -- --helper-mode super
@@ -429,13 +397,7 @@ cargo run --release -p stealth-browser -- --helper-mode super
 
 ### 10.1 Check Tunnel Status
 
-**Bore tunnels:** Each bore terminal shows connection activity
-
-**InstaTunnel:** 
-```powershell
-instatunnel --list
-instatunnel --logs
-```
+Each bore terminal shows connection activity in real-time.
 
 ### 10.2 Monitor Super Peer
 
@@ -447,27 +409,18 @@ Invoke-RestMethod http://127.0.0.1:8088/status | ConvertTo-Json -Depth 4
 
 ## Part 11: Troubleshooting
 
-### Bore Issues
-
 | Problem | Cause | Solution |
 |---------|-------|----------|
 | "Connection refused" to bore.pub | Firewall blocking outbound 7835 | Check firewall rules |
 | Port already in use | Previous tunnel still running | Kill old bore processes |
 | "authentication failed" | Wrong secret | Check BORE_SECRET matches server |
-
-### InstaTunnel Issues
-
-| Problem | Cause | Solution |
-|---------|-------|----------|
-| "Subdomain taken" | Name already in use | Choose different subdomain |
-| Tunnel disconnects | 24-hour session limit | Restart tunnel |
+| Tunnel disconnects | Network interruption | Restart tunnel |
 
 ### Common Fixes
 
 ```powershell
-# Kill all tunnel processes
+# Kill all bore processes
 Get-Process bore -ErrorAction SilentlyContinue | Stop-Process
-Get-Process node -ErrorAction SilentlyContinue | Stop-Process
 
 # Check what's using ports
 netstat -an | findstr "1088 8088 4001 7835"
@@ -481,9 +434,8 @@ netstat -an | findstr "1088 8088 4001 7835"
 
 ⚠️ **This setup is for development/testing only, NOT production!**
 
-- **InstaTunnel**: Third-party can see HTTP traffic patterns
 - **bore.pub**: Public server, anyone can use it
-- **No encryption**: Bore forwards raw TCP without encryption
+- **No encryption**: Bore forwards raw TCP without encryption (your app layer should encrypt)
 
 ### 12.2 For Production
 
@@ -498,19 +450,12 @@ See `droplet-testing.md` for cloud deployment.
 
 ## Part 13: Session Management
 
-### Bore Sessions
-
 Bore tunnels persist until:
 - You press Ctrl+C
 - Network disconnection
 - bore.pub server restarts
 
-**Ports are dynamic** - you get a new port each time you start a tunnel (unless using `--port` with self-hosted server).
-
-### InstaTunnel Sessions
-
-- 24-hour limit on free tier
-- Restart tunnel daily
+**Ports are dynamic** on bore.pub - you get a new port each time. For fixed ports, use a self-hosted bore server with `--port` flag.
 
 ---
 
@@ -519,13 +464,13 @@ Bore tunnels persist until:
 | Task | Command |
 |------|---------|
 | Install bore | `cargo install bore-cli` |
-| Install instatunnel | `npm install -g instatunnel` |
 | Start super peer | `cargo run --release -p stealth-browser -- --helper-mode super` |
-| Tunnel Status API | `instatunnel 8088 -s qnet-status` |
+| Tunnel Status API | `bore local 8088 --to bore.pub` |
 | Tunnel SOCKS5 | `bore local 1088 --to bore.pub` |
 | Tunnel libp2p | `bore local 4001 --to bore.pub` |
 | Check local status | `Invoke-RestMethod http://127.0.0.1:8088/status` |
 | Generate keypair | `cargo run -p stealth-browser -- --generate-keypair data/keypair.pb` |
+| Kill all tunnels | `Get-Process bore \| Stop-Process` |
 
 ---
 
@@ -536,17 +481,3 @@ After successful home testing:
 1. **Validate stability**: Run for several hours, monitor reconnections
 2. **Test client connections**: Connect from another machine via bore tunnels
 3. **Deploy to VPS**: Follow `droplet-testing.md` for production deployment
-
----
-
-## Appendix A: Tool Comparison
-
-| Feature | Bore | InstaTunnel | ngrok |
-|---------|------|-------------|-------|
-| **Protocol** | Raw TCP only | HTTP/HTTPS only | HTTP + TCP |
-| **Self-hostable** | ✅ Yes | ❌ No | ✅ Yes (paid) |
-| **Free tier** | Unlimited (bore.pub) | 24h sessions, 3 tunnels | 2h sessions, 1 tunnel |
-| **Fixed ports** | ✅ With self-hosted | ❌ Random subdomains | ✅ Paid only |
-| **Authentication** | HMAC shared secret | API key | Auth token |
-| **Encryption** | ❌ None (app layer) | ✅ TLS | ✅ TLS |
-| **Best for** | SOCKS5, libp2p, SSH | Web APIs, webhooks | General purpose |
