@@ -132,15 +132,15 @@ fn qnet_operator_seeds() -> Vec<BootstrapNode> {
     //     ),
     // ]
 
-    // Direct peering configuration for testing (Dec 3 2025)
-    // Home super peer exposed via bore tunnel for testing
+    // Direct peering configuration for testing (Dec 4 2025)
+    // DigitalOcean droplet super peer
     vec![
         // Droplet (always available)
         BootstrapNode::new(
-            "12D3KooWM7WLwXkvU7pkewNdCjS2YFRyjEryrqP5g7ii4tbW8bsG"
+            "12D3KooWFpLkRevvkpFSvWxRZ3UrmS6a2fkhwMBJGQNuDb64gg7W"
                 .parse()
                 .unwrap(), // Droplet peer ID (NYC3 region, Dec 2025)
-            "/ip4/64.226.125.167/tcp/4001".parse().unwrap(),
+            "/ip4/157.230.96.134/tcp/4001".parse().unwrap(),
         ),
     ]
 }
